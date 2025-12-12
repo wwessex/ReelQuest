@@ -799,6 +799,7 @@
     <nav class="tabs">
       <button class="tab-btn active" data-tab="for-you">For You</button>
       <button class="tab-btn" data-tab="discover">Discover</button>
+      <button class="tab-btn" data-tab="radar">Radar</button>
       <button class="tab-btn" data-tab="watchlist">Watchlist</button>
       <button class="tab-btn" data-tab="watched">Watched</button>
       <button class="tab-btn" data-tab="lists">Lists</button>
@@ -942,6 +943,10 @@
         forYouResults: [],
         forYouLoading: false,
         forYouLoaded: false,
+        radarResults: [],
+        discoverMode: "default",
+        discoverSeedTitle: "",
+        filters: { minYear: 0, hideWatched: false, hideWatchlist: false, excludedGenres: [] },
         items: [],
         lists: [],
         listsUi: { mode: "index", activeListId: null },
@@ -1012,6 +1017,7 @@
               items: state.items,
               lists: state.lists,
               listsUi: state.listsUi,
+              filters: state.filters,
               favouriteGenres: state.favouriteGenres,
               sortBy: state.sortBy,
               minRating: state.minRating,
@@ -1071,6 +1077,31 @@
         return Array.isArray(data.results) ? data.results : [];
       }
 
+      async function loadBecauseYouLiked(tmdbId, seedTitle) {
+        state.activeTab = "discover";
+        state.discoverMode = "because";
+        state.discoverSeedTitle = seedTitle || "";
+        state.searchTerm = "";
+        if (els.searchInput) els.searchInput.value = "";
+        els.message.style.display = "block";
+        els.message.textContent = "Loading recommendations…";
+        els.grid.innerHTML = "";
+        try {
+          const url = new URL("https://api.themoviedb.org/3/movie/" + tmdbId + "/recommendations");
+          url.searchParams.set("api_key", TMDB_API_KEY);
+          url.searchParams.set("language", "en-GB");
+          url.searchParams.set("page", "1");
+          const data = await tmdbFetch(url);
+          state.discoverResults = Array.isArray(data.results) ? data.results : [];
+        } catch (err) {
+          console.error(err);
+          state.discoverResults = [];
+          els.message.textContent = "We couldn’t load recommendations. Please try again.";
+        } finally {
+          render();
+        }
+      }
+
       async function loadPopularForDiscover() {
         if (!els.message || !els.grid) return;
         els.message.style.display = "block";
@@ -1093,6 +1124,82 @@
         } finally {
           render();
         }
+      }
+
+      async function loadRadarUpcoming() {
+        els.message.style.display = "block";
+        els.message.textContent = "Loading upcoming releases…";
+        els.grid.innerHTML = "";
+        try {
+          const url = new URL("https://api.themoviedb.org/3/movie/upcoming");
+          url.searchParams.set("api_key", TMDB_API_KEY);
+          url.searchParams.set("language", "en-GB");
+          url.searchParams.set("region", "GB");
+          url.searchParams.set("page", "1");
+
+          const data = await tmdbFetch(url);
+          state.radarResults = Array.isArray(data.results) ? data.results : [];
+        } catch (err) {
+          console.error(err);
+          state.radarResults = [];
+          els.message.textContent =
+            "We couldn’t load upcoming releases. Please check your connection.";
+        } finally {
+          render();
+        }
+      }
+
+      function downloadIcsReminder(title, dateIso) {
+        // dateIso expected yyyy-mm-dd
+        if (!dateIso) {
+          window.alert("No release date available for this film.");
+          return;
+        }
+        const parts = dateIso.split("-");
+        if (parts.length < 3) return;
+
+        const y = parts[0], m = parts[1], d = parts[2];
+
+        // All-day event: DTSTART;VALUE=DATE:YYYYMMDD (end date is next day)
+        function pad2(n) { return String(n).padStart(2, "0"); }
+        const ymd = String(y) + String(m) + String(d);
+
+        // End date next day (simple, safe: create a Date)
+        const dt = new Date(parseInt(y,10), parseInt(m,10)-1, parseInt(d,10));
+        const dtEnd = new Date(dt.getTime() + 24*60*60*1000);
+        const ymdEnd = String(dtEnd.getFullYear()) + pad2(dtEnd.getMonth()+1) + pad2(dtEnd.getDate());
+
+        const uid = "reelquest-" + Date.now() + "@reelquest";
+        const summary = (title || "Film release") + " (Release)";
+
+        const ics =
+          "BEGIN:VCALENDAR\r\n" +
+          "VERSION:2.0\r\n" +
+          "PRODID:-//ReelQuest//EN\r\n" +
+          "CALSCALE:GREGORIAN\r\n" +
+          "BEGIN:VEVENT\r\n" +
+          "UID:" + uid + "\r\n" +
+          "DTSTAMP:" + new Date().toISOString().replace(/[-:]/g, "").split(".")[0] + "Z\r\n" +
+          "SUMMARY:" + summary.replace(/\n/g, " ") + "\r\n" +
+          "DTSTART;VALUE=DATE:" + ymd + "\r\n" +
+          "DTEND;VALUE=DATE:" + ymdEnd + "\r\n" +
+          "BEGIN:VALARM\r\n" +
+          "TRIGGER:-P1D\r\n" +
+          "ACTION:DISPLAY\r\n" +
+          "DESCRIPTION:ReelQuest reminder\r\n" +
+          "END:VALARM\r\n" +
+          "END:VEVENT\r\n" +
+          "END:VCALENDAR\r\n";
+
+        const blob = new Blob([ics], { type: "text/calendar" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "reelquest-reminder.ics";
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
       }
 
       async function loadForYouFallbackPopular() {
@@ -1368,6 +1475,42 @@
           filtered = temp;
         }
 
+        // Extra filters
+        const minYear = state.filters && typeof state.filters.minYear === "number" ? state.filters.minYear : 0;
+        const hideWatched = state.filters ? !!state.filters.hideWatched : false;
+        const hideWatchlist = state.filters ? !!state.filters.hideWatchlist : false;
+        const excludedGenres = state.filters && Array.isArray(state.filters.excludedGenres) ? state.filters.excludedGenres : [];
+
+        if (minYear || hideWatched || hideWatchlist || (excludedGenres && excludedGenres.length)) {
+          const temp2 = [];
+          for (let i = 0; i < filtered.length; i++) {
+            const v = filtered[i];
+
+            // Hide watched/watchlist based on linked local item if present
+            if (hideWatched && v.item && v.item.watched) continue;
+            if (hideWatchlist && v.item && v.item.inWatchlist) continue;
+
+            if (minYear) {
+              const y = yearFromView(v);
+              if (y && y < minYear) continue;
+            }
+
+            if (excludedGenres && excludedGenres.length && v.tmdbMovie && Array.isArray(v.tmdbMovie.genre_ids)) {
+              let blocked = false;
+              for (let g = 0; g < v.tmdbMovie.genre_ids.length; g++) {
+                if (excludedGenres.indexOf(v.tmdbMovie.genre_ids[g]) !== -1) {
+                  blocked = true;
+                  break;
+                }
+              }
+              if (blocked) continue;
+            }
+
+            temp2.push(v);
+          }
+          filtered = temp2;
+        }
+
         if (state.sortBy === "default") {
           return filtered;
         }
@@ -1399,6 +1542,26 @@
         const term = state.searchTerm
           ? state.searchTerm.trim().toLowerCase()
           : "";
+
+        if (state.activeTab === "radar") {
+          let raw = state.radarResults || [];
+          if (term) {
+            const filtered = [];
+            for (let i = 0; i < raw.length; i++) {
+              const m = raw[i];
+              const t = (m.title || "").toLowerCase();
+              if (t.indexOf(term) !== -1) filtered.push(m);
+            }
+            raw = filtered;
+          }
+          const views = [];
+          for (let i = 0; i < raw.length; i++) {
+            const m = raw[i];
+            const linked = findItemByTmdbId(m.id);
+            views.push({ mode: "remote", tmdbMovie: m, item: linked });
+          }
+          return applyFiltersAndSort(views);
+        }
 
         if (state.activeTab === "discover") {
           let raw = state.discoverResults || [];
@@ -1538,6 +1701,142 @@
         panel.appendChild(copy);
         panel.appendChild(sub);
         panel.appendChild(grid);
+
+
+        const filterHeading = document.createElement("div");
+        filterHeading.className = "settings-subheading";
+        filterHeading.style.marginTop = "14px";
+        filterHeading.textContent = "Discovery filters";
+
+        const filterCopy = document.createElement("p");
+        filterCopy.className = "settings-copy";
+        filterCopy.textContent = "These filters affect Discover, For You and Radar.";
+
+        const filterRow = document.createElement("div");
+        filterRow.style.display = "flex";
+        filterRow.style.flexWrap = "wrap";
+        filterRow.style.gap = "10px";
+        filterRow.style.alignItems = "center";
+
+        // Min year
+        const minYearWrap = document.createElement("label");
+        minYearWrap.className = "controls-label";
+        minYearWrap.style.display = "flex";
+        minYearWrap.style.alignItems = "center";
+        minYearWrap.style.gap = "6px";
+        const minYearText = document.createElement("span");
+        minYearText.textContent = "Minimum year";
+        const minYearSelect = document.createElement("select");
+        minYearSelect.className = "controls-select";
+        minYearSelect.style.borderRadius = "14px";
+        minYearSelect.style.padding = "6px 10px";
+
+        const yearOptions = [0, 1980, 1990, 2000, 2010, 2020, new Date().getFullYear() - 1, new Date().getFullYear()];
+        // De-dupe and sort
+        const seenYears = {};
+        const years = [];
+        for (let i = 0; i < yearOptions.length; i++) {
+          const y = yearOptions[i];
+          if (seenYears[y]) continue;
+          seenYears[y] = true;
+          years.push(y);
+        }
+        years.sort(function(a,b){ return a-b; });
+
+        for (let i = 0; i < years.length; i++) {
+          const y = years[i];
+          const opt = document.createElement("option");
+          opt.value = String(y);
+          opt.textContent = y === 0 ? "Any" : String(y);
+          minYearSelect.appendChild(opt);
+        }
+        minYearSelect.value = String(state.filters && typeof state.filters.minYear === "number" ? state.filters.minYear : 0);
+        minYearSelect.addEventListener("change", function (e) {
+          const val = parseInt(e.target.value, 10);
+          state.filters.minYear = isNaN(val) ? 0 : val;
+          saveState();
+          // Refresh current feed
+          if (state.activeTab === "for-you") loadForYouRecommendations();
+          else if (state.activeTab === "discover") loadPopularForDiscover();
+          else if (state.activeTab === "radar") loadRadarUpcoming();
+          else render();
+        });
+
+        minYearWrap.appendChild(minYearText);
+        minYearWrap.appendChild(minYearSelect);
+
+        // Hide watched
+        const hideWatchedBtn = document.createElement("button");
+        hideWatchedBtn.type = "button";
+        hideWatchedBtn.className = "pill-btn";
+        hideWatchedBtn.textContent = (state.filters && state.filters.hideWatched) ? "Hide watched: On" : "Hide watched: Off";
+        hideWatchedBtn.addEventListener("click", function () {
+          state.filters.hideWatched = !state.filters.hideWatched;
+          hideWatchedBtn.textContent = state.filters.hideWatched ? "Hide watched: On" : "Hide watched: Off";
+          saveState();
+          render();
+        });
+
+        // Hide watchlist
+        const hideWatchlistBtn = document.createElement("button");
+        hideWatchlistBtn.type = "button";
+        hideWatchlistBtn.className = "pill-btn";
+        hideWatchlistBtn.textContent = (state.filters && state.filters.hideWatchlist) ? "Hide watchlist: On" : "Hide watchlist: Off";
+        hideWatchlistBtn.addEventListener("click", function () {
+          state.filters.hideWatchlist = !state.filters.hideWatchlist;
+          hideWatchlistBtn.textContent = state.filters.hideWatchlist ? "Hide watchlist: On" : "Hide watchlist: Off";
+          saveState();
+          render();
+        });
+
+        filterRow.appendChild(minYearWrap);
+        filterRow.appendChild(hideWatchedBtn);
+        filterRow.appendChild(hideWatchlistBtn);
+
+        const excludeSub = document.createElement("div");
+        excludeSub.className = "settings-subheading";
+        excludeSub.style.marginTop = "12px";
+        excludeSub.textContent = "Exclude genres";
+
+        const excludeCopy = document.createElement("p");
+        excludeCopy.className = "settings-copy";
+        excludeCopy.textContent = "These genres will be hidden from recommendations and discovery.";
+
+        const excludeGrid = document.createElement("div");
+        excludeGrid.className = "genre-grid";
+
+        const excluded = {};
+        const exArr = state.filters && Array.isArray(state.filters.excludedGenres) ? state.filters.excludedGenres : [];
+        for (let i = 0; i < exArr.length; i++) excluded[exArr[i]] = true;
+
+        function toggleExcludedGenre(id) {
+          const arr = state.filters.excludedGenres;
+          const idx = arr.indexOf(id);
+          if (idx === -1) arr.push(id);
+          else arr.splice(idx, 1);
+          saveState();
+          renderSettings();
+        }
+
+        for (let i = 0; i < GENRES.length; i++) {
+          const genre = GENRES[i];
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "genre-pill";
+          if (excluded[genre.id]) btn.classList.add("active");
+          btn.textContent = genre.name;
+          btn.addEventListener("click", function () {
+            toggleExcludedGenre(genre.id);
+          });
+          excludeGrid.appendChild(btn);
+        }
+
+        panel.appendChild(filterHeading);
+        panel.appendChild(filterCopy);
+        panel.appendChild(filterRow);
+        panel.appendChild(excludeSub);
+        panel.appendChild(excludeCopy);
+        panel.appendChild(excludeGrid);
 
         const toolsHeading = document.createElement("div");
         toolsHeading.className = "settings-subheading";
@@ -1942,8 +2241,16 @@
           placeholder = "Search within your recommendations…";
         } else if (state.activeTab === "discover") {
           title = "Discover";
-          subtitle = "Explore the latest in cinema.";
+          if (state.discoverMode === "because") {
+            subtitle = "Because you liked “" + state.discoverSeedTitle + "”.";
+          } else {
+            subtitle = "Explore the latest in cinema.";
+          }
           placeholder = "Search titles, directors, genres…";
+        } else if (state.activeTab === "radar") {
+          title = "Radar";
+          subtitle = "Upcoming releases worth keeping an eye on.";
+          placeholder = "Search upcoming releases…";
         } else if (state.activeTab === "watchlist") {
           title = "Watchlist";
           subtitle = "Films you’ve saved to watch later.";
@@ -1980,6 +2287,26 @@
 
         const views = getViewItemsForCurrentTab();
         if (views.length > 0) return "";
+
+        if (state.activeTab === "radar") {
+          let raw = state.radarResults || [];
+          if (term) {
+            const filtered = [];
+            for (let i = 0; i < raw.length; i++) {
+              const m = raw[i];
+              const t = (m.title || "").toLowerCase();
+              if (t.indexOf(term) !== -1) filtered.push(m);
+            }
+            raw = filtered;
+          }
+          const views = [];
+          for (let i = 0; i < raw.length; i++) {
+            const m = raw[i];
+            const linked = findItemByTmdbId(m.id);
+            views.push({ mode: "remote", tmdbMovie: m, item: linked });
+          }
+          return applyFiltersAndSort(views);
+        }
 
         if (state.activeTab === "discover") {
           return "Search TMDB to start discovering films.";
@@ -2088,6 +2415,19 @@
 
         actions.appendChild(eyeBtn);
         actions.appendChild(plusBtn);
+
+        if (state.activeTab === "radar" && tmdbMovie && tmdbMovie.release_date) {
+          const calBtn = document.createElement("button");
+          calBtn.type = "button";
+          calBtn.className = "card-btn";
+          calBtn.title = "Add release reminder";
+          calBtn.textContent = "🗓";
+          calBtn.addEventListener("click", function (e) {
+            e.stopPropagation();
+            downloadIcsReminder(tmdbMovie.title, tmdbMovie.release_date);
+          });
+          actions.appendChild(calBtn);
+        }
 
         if (state.activeTab === "lists" && state.listsUi && state.listsUi.mode === "detail" && tmdbMovie && tmdbMovie.id) {
           const removeBtn = document.createElement("button");
@@ -2289,6 +2629,26 @@
 
       function handleSearchInput(e) {
         state.searchTerm = e.target.value || "";
+        if (state.activeTab === "radar") {
+          let raw = state.radarResults || [];
+          if (term) {
+            const filtered = [];
+            for (let i = 0; i < raw.length; i++) {
+              const m = raw[i];
+              const t = (m.title || "").toLowerCase();
+              if (t.indexOf(term) !== -1) filtered.push(m);
+            }
+            raw = filtered;
+          }
+          const views = [];
+          for (let i = 0; i < raw.length; i++) {
+            const m = raw[i];
+            const linked = findItemByTmdbId(m.id);
+            views.push({ mode: "remote", tmdbMovie: m, item: linked });
+          }
+          return applyFiltersAndSort(views);
+        }
+
         if (state.activeTab === "discover") {
           return;
         }
@@ -2297,6 +2657,26 @@
 
       function handleSearchSubmit(e) {
         e.preventDefault();
+        if (state.activeTab === "radar") {
+          let raw = state.radarResults || [];
+          if (term) {
+            const filtered = [];
+            for (let i = 0; i < raw.length; i++) {
+              const m = raw[i];
+              const t = (m.title || "").toLowerCase();
+              if (t.indexOf(term) !== -1) filtered.push(m);
+            }
+            raw = filtered;
+          }
+          const views = [];
+          for (let i = 0; i < raw.length; i++) {
+            const m = raw[i];
+            const linked = findItemByTmdbId(m.id);
+            views.push({ mode: "remote", tmdbMovie: m, item: linked });
+          }
+          return applyFiltersAndSort(views);
+        }
+
         if (state.activeTab === "discover") {
           performDiscoverSearch();
         } else {
@@ -2315,6 +2695,13 @@
         state.minRating = isNaN(val) ? 0 : val;
         saveState();
         render();
+      }
+
+      async function fetchWatchProviders(tmdbId) {
+        const url = new URL("https://api.themoviedb.org/3/movie/" + tmdbId + "/watch/providers");
+        url.searchParams.set("api_key", TMDB_API_KEY);
+        const data = await tmdbFetch(url);
+        return data && data.results ? data.results : {};
       }
 
       async function fetchDetails(tmdbId) {
@@ -2539,7 +2926,93 @@
 
           els.detailActions.appendChild(listBlock);
 
+          const moreBtn = document.createElement("button");
+          moreBtn.type = "button";
+          moreBtn.className = "pill-btn";
+          moreBtn.textContent = "More like this";
+          moreBtn.addEventListener("click", function () {
+            closeDetail();
+            loadBecauseYouLiked(details.id, title);
+          });
+          els.detailActions.appendChild(moreBtn);
+
           
+
+          // Where to watch (UK)
+          try {
+            const providers = await fetchWatchProviders(details.id);
+            const gb = providers && providers.GB ? providers.GB : null;
+            const wrap = document.createElement("div");
+            wrap.style.marginTop = "10px";
+
+            const heading = document.createElement("div");
+            heading.style.fontSize = "13px";
+            heading.style.fontWeight = "600";
+            heading.textContent = "Where to watch (UK)";
+            wrap.appendChild(heading);
+
+            const row = document.createElement("div");
+            row.style.display = "flex";
+            row.style.flexWrap = "wrap";
+            row.style.gap = "8px";
+            row.style.marginTop = "6px";
+
+            function addProviderPills(list, label) {
+              if (!list || !list.length) return;
+              const lab = document.createElement("div");
+              lab.style.width = "100%";
+              lab.style.fontSize = "12px";
+              lab.style.color = "var(--text-muted)";
+              lab.textContent = label;
+              row.appendChild(lab);
+              for (let i = 0; i < list.length; i++) {
+                const p = list[i];
+                const pill = document.createElement("span");
+                pill.className = "detail-chip";
+                pill.style.display = "inline-flex";
+                pill.style.alignItems = "center";
+                pill.style.gap = "6px";
+                if (p.logo_path) {
+                  const img = document.createElement("img");
+                  img.src = "https://image.tmdb.org/t/p/w45" + p.logo_path;
+                  img.alt = p.provider_name;
+                  img.style.width = "18px";
+                  img.style.height = "18px";
+                  img.style.borderRadius = "4px";
+                  row.appendChild(pill);
+                  pill.appendChild(img);
+                }
+                const text = document.createElement("span");
+                text.textContent = p.provider_name;
+                pill.appendChild(text);
+                row.appendChild(pill);
+              }
+            }
+
+            if (gb) {
+              addProviderPills(gb.flatrate, "Stream");
+              addProviderPills(gb.rent, "Rent");
+              addProviderPills(gb.buy, "Buy");
+              if ((!gb.flatrate || !gb.flatrate.length) && (!gb.rent || !gb.rent.length) && (!gb.buy || !gb.buy.length)) {
+                const none = document.createElement("div");
+                none.style.fontSize = "12px";
+                none.style.color = "var(--text-muted)";
+                none.textContent = "No UK provider data available from TMDB.";
+                row.appendChild(none);
+              }
+            } else {
+              const none = document.createElement("div");
+              none.style.fontSize = "12px";
+              none.style.color = "var(--text-muted)";
+              none.textContent = "No UK provider data available from TMDB.";
+              row.appendChild(none);
+            }
+
+            wrap.appendChild(row);
+            els.detailLinks.appendChild(wrap);
+          } catch (e) {
+            // ignore provider failures
+          }
 
           const videos = details.videos && details.videos.results
             ? details.videos.results
@@ -2613,7 +3086,11 @@
         if (tab === "for-you") {
           loadForYouRecommendations();
         } else if (tab === "discover") {
+          state.discoverMode = "default";
+          state.discoverSeedTitle = "";
           loadPopularForDiscover();
+        } else if (tab === "radar") {
+          loadRadarUpcoming();
         } else {
           render();
         }
@@ -2739,6 +3216,7 @@
         const items = normaliseImportedItems(data && data.items ? data.items : []);
         const lists = normaliseImportedLists(data && data.lists ? data.lists : []);
         const listsUi = data && data.listsUi && typeof data.listsUi === "object" ? data.listsUi : null;
+        const filters = data && data.filters && typeof data.filters === "object" ? data.filters : null;
         const favouriteGenres = Array.isArray(data && data.favouriteGenres) ? data.favouriteGenres : [];
         const sortBy = data && typeof data.sortBy === "string" ? data.sortBy : state.sortBy;
         const minRating = data && typeof data.minRating === "number" ? data.minRating : state.minRating;
@@ -2749,6 +3227,12 @@
         state.listsUi = {
           mode: (listsUi && listsUi.mode === "detail") ? "detail" : "index",
           activeListId: (listsUi && typeof listsUi.activeListId === "string") ? listsUi.activeListId : null
+        };
+        state.filters = {
+          minYear: (filters && typeof filters.minYear === "number") ? filters.minYear : 0,
+          hideWatched: filters ? !!filters.hideWatched : false,
+          hideWatchlist: filters ? !!filters.hideWatchlist : false,
+          excludedGenres: (filters && Array.isArray(filters.excludedGenres)) ? filters.excludedGenres : []
         };
         state.favouriteGenres = favouriteGenres;
         state.sortBy = sortBy;
