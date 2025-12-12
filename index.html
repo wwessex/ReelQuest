@@ -2628,6 +2628,8 @@
           exportedAt: new Date().toISOString(),
           data: {
             items: state.items,
+            lists: state.lists,
+            listsUi: state.listsUi,
             favouriteGenres: state.favouriteGenres,
             sortBy: state.sortBy,
             minRating: state.minRating,
@@ -2658,7 +2660,9 @@
           document.body.removeChild(a);
 
           setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
-          window.alert("Export complete. Your backup file has been saved to your device.");
+          const listCount = Array.isArray(state.lists) ? state.lists.length : 0;
+          const filmCount = Array.isArray(state.items) ? state.items.length : 0;
+          window.alert("Export complete. Saved " + filmCount + " film record(s) and " + listCount + " list(s) to your device.");
         } catch (e) {
           console.error(e);
           window.alert("Sorry — we couldn’t export your data.");
@@ -2733,12 +2737,19 @@
         const data = imported && imported.data ? imported.data : imported;
 
         const items = normaliseImportedItems(data && data.items ? data.items : []);
+        const lists = normaliseImportedLists(data && data.lists ? data.lists : []);
+        const listsUi = data && data.listsUi && typeof data.listsUi === "object" ? data.listsUi : null;
         const favouriteGenres = Array.isArray(data && data.favouriteGenres) ? data.favouriteGenres : [];
         const sortBy = data && typeof data.sortBy === "string" ? data.sortBy : state.sortBy;
         const minRating = data && typeof data.minRating === "number" ? data.minRating : state.minRating;
         const theme = data && (data.theme === "light" || data.theme === "dark") ? data.theme : state.theme;
 
         state.items = items;
+        state.lists = lists;
+        state.listsUi = {
+          mode: (listsUi && listsUi.mode === "detail") ? "detail" : "index",
+          activeListId: (listsUi && typeof listsUi.activeListId === "string") ? listsUi.activeListId : null
+        };
         state.favouriteGenres = favouriteGenres;
         state.sortBy = sortBy;
         state.minRating = minRating;
@@ -2785,7 +2796,10 @@
             if (!confirmReplace) return;
 
             applyImportedData(parsed);
-            window.alert("Import complete. Your ReelQuest data has been restored.");
+            const data = parsed && parsed.data ? parsed.data : parsed;
+            const listCount = data && Array.isArray(data.lists) ? data.lists.length : 0;
+            const filmCount = data && Array.isArray(data.items) ? data.items.length : 0;
+            window.alert("Import complete. Restored " + filmCount + " film record(s) and " + listCount + " list(s).");
           } catch (e) {
             console.error(e);
             window.alert("Sorry — we couldn’t import that file. Please check it’s a valid ReelQuest backup.");
