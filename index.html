@@ -891,6 +891,10 @@
       flex-wrap: nowrap;
     }
 
+  .pill-btn.active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(125, 211, 252, 0.18);
+}
   </style>
 </head>
 <body>
@@ -921,6 +925,7 @@
       <button class="tab-btn" data-tab="radar">Radar</button>
       <button class="tab-btn" data-tab="watchlist">Watchlist</button>
       <button class="tab-btn" data-tab="watched">Watched</button>
+      <button class="tab-btn" data-tab="rewatch">Rewatch</button>
       <button class="tab-btn" data-tab="lists">Lists</button>
     </nav>
 
@@ -954,6 +959,7 @@
               <option value="year-desc">Year (newest)</option>
               <option value="rating-desc">Rating (highest)</option>
               <option value="popularity-desc">Popularity</option>
+              <option value="priority">Priority (watchlist)</option>
             </select>
           </label>
           <label class="controls-label">
@@ -1094,6 +1100,20 @@
           Math.random().toString(16).slice(2)
         );
       }
+
+
+function formatDateUK(ts) {
+  try {
+    return new Intl.DateTimeFormat("en-GB", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric"
+    }).format(new Date(ts));
+  } catch (e) {
+    const d = new Date(ts);
+    return d.toISOString().slice(0, 10);
+  }
+}
 
       function loadState() {
         try {
@@ -1424,41 +1444,64 @@
       }
 
       function ensureItemFromTmdb(tmdbMovie) {
-        const existing = findItemByTmdbId(tmdbMovie.id);
-        if (existing) return existing;
+  const existing = findItemByTmdbId(tmdbMovie.id);
+  if (existing) return existing;
 
-        const item = {
-          id: safeId(),
-          tmdbId: tmdbMovie.id,
-          title: tmdbMovie.title,
-          year: tmdbMovie.release_date
-            ? tmdbMovie.release_date.slice(0, 4)
-            : "",
-          posterPath: tmdbMovie.poster_path || null,
-          rating:
-            typeof tmdbMovie.vote_average === "number"
-              ? tmdbMovie.vote_average
-              : null,
-          inWatchlist: false,
-          watched: false,
-          createdAt: Date.now()
-        };
-        state.items.push(item);
-        saveState();
-        return item;
-      }
+  const now = Date.now();
+  const item = {
+    id: safeId(),
+    tmdbId: tmdbMovie.id,
+    title: tmdbMovie.title,
+    year: tmdbMovie.release_date ? tmdbMovie.release_date.slice(0, 4) : "",
+    posterPath: tmdbMovie.poster_path || null,
+    rating: typeof tmdbMovie.vote_average === "number" ? tmdbMovie.vote_average : null,
+
+    // Lists/workflow
+    inWatchlist: false,
+    watched: false,
+    watchedAt: null,
+    userRating: null,
+    rewatch: false,
+    priority: "medium",
+    tags: [],
+    notes: "",
+
+    createdAt: now,
+    addedAt: now
+  };
+
+  state.items.push(item);
+  saveState();
+  return item;
+}
 
       function toggleWatchlistForItem(item) {
-        item.inWatchlist = !item.inWatchlist;
-        saveState();
-        render();
-      }
+  item.inWatchlist = !item.inWatchlist;
+  if (item.inWatchlist) {
+    // If the user adds something to watchlist, keep priority default if missing
+    if (!item.priority) item.priority = "medium";
+  }
+  saveState();
+  render();
+}
 
       function toggleWatchedForItem(item) {
-        item.watched = !item.watched;
-        saveState();
-        render();
-      }
+  const next = !item.watched;
+  item.watched = next;
+
+  if (next) {
+    // Mark watched should remove from watchlist (avoids appearing in both lists)
+    item.inWatchlist = false;
+    if (!item.watchedAt) item.watchedAt = Date.now();
+    // Rewatch stays as-is (user can toggle)
+  } else {
+    // Optional: keep watchedAt/userRating so history remains, but remove rewatch flag
+    item.rewatch = false;
+  }
+
+  saveState();
+  render();
+}
 
       function clearWatchlist() {
         if (!window.confirm("Clear your watchlist? This will keep your watched history.")) {
@@ -1548,6 +1591,43 @@
           window.alert(finalText);
         }
       }
+
+
+async function pickFromWatchlist() {
+  // Build watchlist views (local) and apply current filters/search
+  const views = getViewItemsForCurrentTab();
+  const candidates = [];
+  for (let i = 0; i < views.length; i++) {
+    const v = views[i];
+    if (v && v.item && v.item.inWatchlist && !v.item.watched) {
+      candidates.push(v);
+    }
+  }
+
+  if (!candidates.length) {
+    window.alert("No eligible films in your watchlist with the current filters.");
+    return;
+  }
+
+  // Try to avoid repeating the last pick if possible
+  let pick = null;
+  if (candidates.length === 1) {
+    pick = candidates[0];
+  } else {
+    for (let tries = 0; tries < 10; tries++) {
+      const v = candidates[Math.floor(Math.random() * candidates.length)];
+      if (!state.lastPickTmdbId || v.item.tmdbId !== state.lastPickTmdbId) {
+        pick = v;
+        break;
+      }
+    }
+    if (!pick) pick = candidates[Math.floor(Math.random() * candidates.length)];
+  }
+
+  state.lastPickTmdbId = pick.item.tmdbId;
+  saveState();
+  openDetailForView(pick);
+}
 
       function ratingFromView(view) {
         if (view.mode === "local") {
@@ -1654,6 +1734,23 @@
           sorted.sort(function (a, b) {
             return ratingFromView(b) - ratingFromView(a);
           });
+        } else if (state.sortBy === "priority") {
+          sorted.sort(function (a, b) {
+            function score(v) {
+              const it = v && v.item ? v.item : null;
+              const p = it && typeof it.priority === "string" ? it.priority : "";
+              if (p === "high") return 3;
+              if (p === "medium") return 2;
+              if (p === "low") return 1;
+              return 0;
+            }
+            const ds = score(b) - score(a);
+            if (ds !== 0) return ds;
+            // tie-break by title
+            const at = titleFromView(a);
+            const bt = titleFromView(b);
+            return String(at).localeCompare(String(bt), "en-GB");
+          });
         } else if (state.sortBy === "popularity-desc") {
           sorted.sort(function (a, b) {
             return popularityFromView(b) - popularityFromView(a);
@@ -1741,6 +1838,10 @@
             if (base[i].inWatchlist) tmp.push(base[i]);
           }
           filteredItems = tmp;
+        } else if (state.activeTab === "rewatch") {
+          title = "Rewatch";
+          subtitle = "Films you’ve marked for a rewatch.";
+          placeholder = "Search your rewatch list…";
         } else if (state.activeTab === "watched") {
           const tmp = [];
           for (let i = 0; i < base.length; i++) {
@@ -2904,6 +3005,10 @@ function moveEntryInList(listId, tmdbId, direction) {
           title = "Watchlist";
           subtitle = "Films you’ve saved to watch later.";
           placeholder = "Search your watchlist…";
+        } else if (state.activeTab === "rewatch") {
+          title = "Rewatch";
+          subtitle = "Films you’ve marked for a rewatch.";
+          placeholder = "Search your rewatch list…";
         } else if (state.activeTab === "watched") {
           title = "Watched";
           subtitle = "Everything you’ve already seen.";
@@ -3098,19 +3203,34 @@ function moveEntryInList(listId, tmdbId, direction) {
         titleLine.className = "movie-title-line";
         titleLine.textContent = title;
 
-        const subline = document.createElement("div");
-        subline.className = "movie-subline";
-        if (isLocal && item.watched && item.inWatchlist) {
-          subline.textContent = "On your watchlist · Watched";
-        } else if (isLocal && item.watched) {
-          subline.textContent = "Watched";
-        } else if (isLocal && item.inWatchlist) {
-          subline.textContent = "On your watchlist";
-        } else if (rating) {
-          subline.textContent = "TMDB · " + rating.toFixed(1) + "★";
-        } else {
-          subline.textContent = "TMDB";
-        }
+const subline = document.createElement("div");
+subline.className = "movie-subline";
+
+if (isLocal) {
+  const bits = [];
+  if (item.inWatchlist) {
+    bits.push("On your watchlist");
+    const p = item.priority || "medium";
+    if (p === "high") bits.push("Priority: High");
+    else if (p === "low") bits.push("Priority: Low");
+    else bits.push("Priority: Medium");
+  }
+  if (item.watched) {
+    bits.push("Watched");
+    if (item.rewatch) bits.push("Rewatch");
+    if (item.watchedAt) bits.push("Watched on " + formatDateUK(item.watchedAt));
+    if (typeof item.userRating === "number") bits.push("Your rating " + item.userRating.toFixed(1) + "/10");
+  }
+  if (!bits.length) {
+    if (rating) bits.push("TMDB · " + rating.toFixed(1) + "★");
+    else bits.push("TMDB");
+  }
+  subline.textContent = bits.join(" · ");
+} else if (rating) {
+  subline.textContent = "TMDB · " + rating.toFixed(1) + "★";
+} else {
+  subline.textContent = "TMDB";
+}
 
         card.appendChild(posterWrapper);
         card.appendChild(titleLine);
@@ -3161,6 +3281,31 @@ function moveEntryInList(listId, tmdbId, direction) {
           shareBtn.textContent = "Share watchlist";
           shareBtn.addEventListener("click", shareWatchlist);
           container.appendChild(shareBtn);
+
+const pickBtn = document.createElement("button");
+pickBtn.type = "button";
+pickBtn.className = "pill-btn";
+pickBtn.textContent = "Pick something for me";
+pickBtn.addEventListener("click", pickFromWatchlist);
+container.appendChild(pickBtn);
+        } else if (state.activeTab === "rewatch") {
+          title = "Rewatch";
+          subtitle = "Films you’ve marked for a rewatch.";
+          placeholder = "Search your rewatch list…";
+        } else if (state.activeTab === "rewatch") {
+          const clearRewatchBtn = document.createElement("button");
+          clearRewatchBtn.type = "button";
+          clearRewatchBtn.className = "pill-btn";
+          clearRewatchBtn.textContent = "Clear rewatch";
+          clearRewatchBtn.addEventListener("click", function () {
+            if (!window.confirm("Clear your rewatch list? This won’t delete watched history.")) return;
+            for (let i = 0; i < state.items.length; i++) {
+              if (state.items[i]) state.items[i].rewatch = false;
+            }
+            saveState();
+            render();
+          });
+          container.appendChild(clearRewatchBtn);
         } else if (state.activeTab === "watched") {
           const clearWatchedBtn = document.createElement("button");
           clearWatchedBtn.type = "button";
@@ -3585,6 +3730,211 @@ function moveEntryInList(listId, tmdbId, direction) {
           });
           els.detailActions.appendChild(moreBtn);
 
+          // Organise (notes, tags, priority, rating, rewatch)
+const orgWrap = document.createElement("div");
+orgWrap.style.marginTop = "12px";
+orgWrap.style.borderTop = "1px solid var(--border-subtle)";
+orgWrap.style.paddingTop = "12px";
+
+const orgHeading = document.createElement("div");
+orgHeading.style.fontSize = "12px";
+orgHeading.style.fontWeight = "700";
+orgHeading.style.color = "var(--text-muted)";
+orgHeading.textContent = "Organise";
+orgWrap.appendChild(orgHeading);
+
+// Priority (useful for watchlist)
+const priRow = document.createElement("div");
+priRow.style.display = "flex";
+priRow.style.flexWrap = "wrap";
+priRow.style.gap = "8px";
+priRow.style.alignItems = "center";
+priRow.style.marginTop = "8px";
+
+const priLabel = document.createElement("span");
+priLabel.textContent = "Priority:";
+priLabel.style.fontSize = "12px";
+priLabel.style.color = "var(--text-muted)";
+priRow.appendChild(priLabel);
+
+function makePriBtn(key, label) {
+  const b = document.createElement("button");
+  b.type = "button";
+  b.className = "pill-btn";
+  b.textContent = label;
+  b.addEventListener("click", function () {
+    linked.priority = key;
+    saveState();
+    render();
+    // update button styles
+    lowBtn.classList.toggle("active", linked.priority === "low");
+    medBtn.classList.toggle("active", linked.priority === "medium");
+    highBtn.classList.toggle("active", linked.priority === "high");
+  });
+  return b;
+}
+
+const lowBtn = makePriBtn("low", "Low");
+const medBtn = makePriBtn("medium", "Medium");
+const highBtn = makePriBtn("high", "High");
+
+lowBtn.classList.toggle("active", linked.priority === "low");
+medBtn.classList.toggle("active", linked.priority === "medium");
+highBtn.classList.toggle("active", linked.priority === "high");
+
+priRow.appendChild(lowBtn);
+priRow.appendChild(medBtn);
+priRow.appendChild(highBtn);
+
+orgWrap.appendChild(priRow);
+
+// Tags
+const tagRow = document.createElement("div");
+tagRow.style.display = "flex";
+tagRow.style.flexWrap = "wrap";
+tagRow.style.gap = "8px";
+tagRow.style.alignItems = "center";
+tagRow.style.marginTop = "10px";
+
+const tagsInput = document.createElement("input");
+tagsInput.type = "text";
+tagsInput.className = "search-input";
+tagsInput.placeholder = "Tags (comma-separated)…";
+tagsInput.style.borderRadius = "14px";
+tagsInput.style.paddingLeft = "14px";
+tagsInput.style.flex = "1 1 220px";
+tagsInput.value = Array.isArray(linked.tags) ? linked.tags.join(", ") : "";
+
+const tagsSave = document.createElement("button");
+tagsSave.type = "button";
+tagsSave.className = "pill-btn";
+tagsSave.textContent = "Save tags";
+tagsSave.addEventListener("click", function () {
+  const raw = String(tagsInput.value || "");
+  const parts = raw.split(",");
+  const next = [];
+  for (let i = 0; i < parts.length; i++) {
+    const t = parts[i].trim();
+    if (t) next.push(t);
+  }
+  linked.tags = next;
+  saveState();
+  render();
+  window.alert("Tags saved.");
+});
+
+tagRow.appendChild(tagsInput);
+tagRow.appendChild(tagsSave);
+orgWrap.appendChild(tagRow);
+
+// Notes
+const notesLabel = document.createElement("div");
+notesLabel.style.marginTop = "10px";
+notesLabel.style.fontSize = "12px";
+notesLabel.style.color = "var(--text-muted)";
+notesLabel.textContent = "Notes";
+orgWrap.appendChild(notesLabel);
+
+const notesArea = document.createElement("textarea");
+notesArea.className = "settings-textarea";
+notesArea.placeholder = "Add your notes…";
+notesArea.value = typeof linked.notes === "string" ? linked.notes : "";
+orgWrap.appendChild(notesArea);
+
+const notesSave = document.createElement("button");
+notesSave.type = "button";
+notesSave.className = "pill-btn";
+notesSave.style.marginTop = "8px";
+notesSave.textContent = "Save notes";
+notesSave.addEventListener("click", function () {
+  linked.notes = String(notesArea.value || "");
+  saveState();
+  render();
+  window.alert("Notes saved.");
+});
+orgWrap.appendChild(notesSave);
+
+// Watched date + your rating + rewatch
+const watchRow = document.createElement("div");
+watchRow.style.display = "flex";
+watchRow.style.flexWrap = "wrap";
+watchRow.style.gap = "8px";
+watchRow.style.alignItems = "center";
+watchRow.style.marginTop = "12px";
+
+const watchedInfo = document.createElement("div");
+watchedInfo.style.fontSize = "12px";
+watchedInfo.style.color = "var(--text-muted)";
+watchedInfo.textContent = linked.watched && linked.watchedAt ? ("Watched on " + formatDateUK(linked.watchedAt)) : "Not marked as watched yet.";
+watchRow.appendChild(watchedInfo);
+
+const ratingWrap = document.createElement("div");
+ratingWrap.style.display = "flex";
+ratingWrap.style.alignItems = "center";
+ratingWrap.style.gap = "8px";
+
+const ratingLabel = document.createElement("span");
+ratingLabel.style.fontSize = "12px";
+ratingLabel.style.color = "var(--text-muted)";
+ratingLabel.textContent = "Your rating:";
+ratingWrap.appendChild(ratingLabel);
+
+const ratingRange = document.createElement("input");
+ratingRange.type = "range";
+ratingRange.min = "0";
+ratingRange.max = "10";
+ratingRange.step = "0.5";
+ratingRange.value = (typeof linked.userRating === "number") ? String(linked.userRating) : "0";
+ratingWrap.appendChild(ratingRange);
+
+const ratingVal = document.createElement("span");
+ratingVal.style.fontSize = "12px";
+ratingVal.style.color = "var(--text-muted)";
+ratingVal.textContent = (typeof linked.userRating === "number") ? linked.userRating.toFixed(1) + "/10" : "—";
+ratingWrap.appendChild(ratingVal);
+
+ratingRange.addEventListener("input", function () {
+  ratingVal.textContent = parseFloat(ratingRange.value).toFixed(1) + "/10";
+});
+
+const ratingSave = document.createElement("button");
+ratingSave.type = "button";
+ratingSave.className = "pill-btn";
+ratingSave.textContent = "Save rating";
+ratingSave.addEventListener("click", function () {
+  if (!linked.watched) {
+    window.alert("Mark as watched before saving your rating.");
+    return;
+  }
+  linked.userRating = parseFloat(ratingRange.value);
+  saveState();
+  render();
+  window.alert("Rating saved.");
+});
+
+ratingWrap.appendChild(ratingSave);
+watchRow.appendChild(ratingWrap);
+
+const rewatchBtn = document.createElement("button");
+rewatchBtn.type = "button";
+rewatchBtn.className = "pill-btn";
+rewatchBtn.textContent = linked.rewatch ? "Rewatch: On" : "Rewatch: Off";
+rewatchBtn.addEventListener("click", function () {
+  if (!linked.watched) {
+    window.alert("Mark as watched before enabling rewatch.");
+    return;
+  }
+  linked.rewatch = !linked.rewatch;
+  rewatchBtn.textContent = linked.rewatch ? "Rewatch: On" : "Rewatch: Off";
+  saveState();
+  render();
+});
+watchRow.appendChild(rewatchBtn);
+
+orgWrap.appendChild(watchRow);
+
+els.detailActions.appendChild(orgWrap);
+
           
 
           // Where to watch (UK)
@@ -3832,31 +4182,54 @@ function moveEntryInList(listId, tmdbId, direction) {
       }
 
       function normaliseImportedItems(items) {
-        if (!Array.isArray(items)) return [];
-        const clean = [];
-        for (let i = 0; i < items.length; i++) {
-          const it = items[i];
-          if (!it || typeof it !== "object") continue;
+  if (!Array.isArray(items)) return [];
+  const clean = [];
+  for (let i = 0; i < items.length; i++) {
+    const it = items[i];
+    if (!it || typeof it !== "object") continue;
 
-          // Basic shape check
-          const tmdbId = typeof it.tmdbId === "number" ? it.tmdbId : null;
-          const title = typeof it.title === "string" ? it.title : "";
-          if (!tmdbId || !title) continue;
+    const tmdbId = typeof it.tmdbId === "number" ? it.tmdbId : null;
+    const title = typeof it.title === "string" ? it.title : "";
+    if (!tmdbId || !title) continue;
 
-          clean.push({
-            id: typeof it.id === "string" ? it.id : safeId(),
-            tmdbId: tmdbId,
-            title: title,
-            year: typeof it.year === "string" ? it.year : "",
-            posterPath: typeof it.posterPath === "string" ? it.posterPath : null,
-            rating: typeof it.rating === "number" ? it.rating : null,
-            inWatchlist: !!it.inWatchlist,
-            watched: !!it.watched,
-            createdAt: typeof it.createdAt === "number" ? it.createdAt : Date.now()
-          });
-        }
-        return clean;
-      }
+    const year = typeof it.year === "string" ? it.year : "";
+    const posterPath = typeof it.posterPath === "string" ? it.posterPath : null;
+    const rating = typeof it.rating === "number" ? it.rating : null;
+
+    const inWatchlist = !!it.inWatchlist;
+    const watched = !!it.watched;
+
+    const notes = typeof it.notes === "string" ? it.notes : "";
+    const tags = Array.isArray(it.tags)
+      ? it.tags.filter(function (t) { return typeof t === "string" && t.trim(); }).map(function (t) { return t.trim(); })
+      : [];
+
+    const priority = (it.priority === "high" || it.priority === "medium" || it.priority === "low") ? it.priority : "medium";
+    const watchedAt = (typeof it.watchedAt === "number") ? it.watchedAt : (watched ? Date.now() : null);
+    const userRating = (typeof it.userRating === "number") ? it.userRating : null;
+    const rewatch = !!it.rewatch;
+
+    clean.push({
+      id: typeof it.id === "string" ? it.id : safeId(),
+      tmdbId: tmdbId,
+      title: title,
+      year: year,
+      posterPath: posterPath,
+      rating: rating,
+      inWatchlist: inWatchlist,
+      watched: watched,
+      watchedAt: watchedAt,
+      userRating: userRating,
+      rewatch: rewatch,
+      priority: priority,
+      tags: tags,
+      notes: notes,
+      createdAt: typeof it.createdAt === "number" ? it.createdAt : (typeof it.addedAt === "number" ? it.addedAt : Date.now()),
+      addedAt: typeof it.addedAt === "number" ? it.addedAt : (typeof it.createdAt === "number" ? it.createdAt : Date.now())
+    });
+  }
+  return clean;
+}
 
       function normaliseImportedLists(lists) {
   if (!Array.isArray(lists)) return [];
