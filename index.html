@@ -3731,7 +3731,13 @@ container.appendChild(pickBtn);
           els.detailActions.appendChild(moreBtn);
 
           // Organise (notes, tags, priority, rating, rewatch)
-const orgWrap = document.createElement("div");
+          const orgWrap = document.createElement("div");
+          orgWrap.style.flex = "1 1 100%";
+          orgWrap.style.width = "100%";
+          orgWrap.style.background = "var(--bg)";
+          orgWrap.style.border = "1px solid var(--border-subtle)";
+          orgWrap.style.borderRadius = "16px";
+          orgWrap.style.padding = "12px";
 orgWrap.style.marginTop = "12px";
 orgWrap.style.borderTop = "1px solid var(--border-subtle)";
 orgWrap.style.paddingTop = "12px";
