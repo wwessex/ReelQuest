@@ -850,7 +850,7 @@
       </div>
 
       <div id="message" class="message">
-        Choose a few favourite genres in Settings to see personalised suggestions here.
+        Pick favourite genres in Settings for personalised recommendations — otherwise we’ll show popular films.
       </div>
 
       <div id="settings-panel" class="settings-panel"></div>
@@ -901,6 +901,7 @@
         <button class="menu-item" type="button" data-tab="discover">Discover</button>
         <button class="menu-item" type="button" data-tab="watchlist">Watchlist</button>
         <button class="menu-item" type="button" data-tab="watched">Watched</button>
+        <button class="menu-item" type="button" data-tab="lists">Lists</button>
         <button class="menu-item" type="button" data-tab="settings">Settings</button>
       </div>
     </div>
@@ -1094,6 +1095,29 @@
         }
       }
 
+      async function loadForYouFallbackPopular() {
+        els.message.style.display = "block";
+        els.message.textContent = "Loading popular films for you…";
+        els.grid.innerHTML = "";
+        try {
+          const url = new URL("https://api.themoviedb.org/3/trending/movie/week");
+          url.searchParams.set("api_key", TMDB_API_KEY);
+          url.searchParams.set("language", "en-GB");
+          const data = await tmdbFetch(url);
+          state.forYouResults = Array.isArray(data.results) ? data.results : [];
+          state.forYouLoaded = true;
+        } catch (err) {
+          console.error(err);
+          state.forYouResults = [];
+          state.forYouLoaded = false;
+          els.message.textContent =
+            "We couldn’t load popular films right now. Please check your connection.";
+        } finally {
+          state.forYouLoading = false;
+          render();
+        }
+      }
+
       async function performDiscoverSearch() {
         const query = state.searchTerm ? state.searchTerm.trim() : "";
         if (!query) {
@@ -1118,10 +1142,10 @@
 
       async function loadForYouRecommendations() {
         if (!state.favouriteGenres.length) {
-          state.forYouResults = [];
+          // Fallback: show popular films so the page never feels empty
+          state.forYouLoading = true;
           state.forYouLoaded = false;
-          state.forYouLoading = false;
-          render();
+          loadForYouFallbackPopular();
           return;
         }
 
@@ -1914,7 +1938,7 @@
 
         if (state.activeTab === "for-you") {
           title = "For You";
-          subtitle = "Smart suggestions based on your favourite genres.";
+          subtitle = "Suggestions based on your favourite genres (or popular picks if you haven’t chosen any yet).";
           placeholder = "Search within your recommendations…";
         } else if (state.activeTab === "discover") {
           title = "Discover";
@@ -1946,7 +1970,7 @@
       function getEmptyMessageForTab() {
         if (state.activeTab === "for-you") {
           if (!state.favouriteGenres.length) {
-            return "Choose a few favourite genres in Settings to see personalised suggestions here.";
+            return "Pick favourite genres in Settings for personalised recommendations — otherwise we’ll show popular films.";
           }
           if (state.forYouLoaded && (!state.forYouResults || !state.forYouResults.length)) {
             return "We couldn’t find any recommendations right now. Try different genres.";
