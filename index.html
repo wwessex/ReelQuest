@@ -2659,6 +2659,28 @@ installBtn.addEventListener("click", function () {
   triggerInstallPrompt();
 });
 
+        const offlineRow = document.createElement("div");
+        offlineRow.style.display = "flex";
+        offlineRow.style.flexWrap = "wrap";
+        offlineRow.style.gap = "10px";
+        offlineRow.style.alignItems = "center";
+
+        const updateSwBtn = document.createElement("button");
+        updateSwBtn.type = "button";
+        updateSwBtn.className = "pill-btn";
+        updateSwBtn.textContent = "Update offline support";
+        updateSwBtn.addEventListener("click", function () { updateOfflineSupport(); });
+
+        const removeSwBtn = document.createElement("button");
+        removeSwBtn.type = "button";
+        removeSwBtn.className = "pill-btn";
+        removeSwBtn.textContent = "Remove offline support";
+        removeSwBtn.addEventListener("click", function () { removeOfflineSupport(); });
+
+        offlineRow.appendChild(updateSwBtn);
+        offlineRow.appendChild(removeSwBtn);
+
+
 const offlineNote = document.createElement("span");
 offlineNote.style.fontSize = "12px";
 offlineNote.style.color = "var(--text-muted)";
@@ -5247,7 +5269,121 @@ els.detailActions.appendChild(orgWrap);
         reader.readAsText(file);
       }
 
-      function init() {
+      // PWA: manifest + install prompt + offline support
+let deferredInstallPrompt = null;
+
+function setupPwaManifest() {
+  const link = document.getElementById("manifest-link");
+  if (!link) return;
+
+  const base = "./";
+  const manifest = {
+    name: "ReelQuest",
+    short_name: "ReelQuest",
+    start_url: base + "?source=pwa",
+    scope: base,
+    display: "standalone",
+    background_color: "#0b1220",
+    theme_color: "#0b1220",
+    description: "A minimal movie watchlist with recommendations, lists and offline-friendly caching.",
+    icons: [
+      { src: base + "icon-192.png", sizes: "192x192", type: "image/png" },
+      { src: base + "icon-512.png", sizes: "512x512", type: "image/png" }
+    ]
+  };
+
+  const href = "data:application/manifest+json," + encodeURIComponent(JSON.stringify(manifest));
+  link.setAttribute("href", href);
+}
+
+function setupInstallPrompt() {
+  window.addEventListener("beforeinstallprompt", function (e) {
+    e.preventDefault();
+    deferredInstallPrompt = e;
+
+    // Only nudge occasionally
+    const seen = cacheGet("rq_seen_install_toast", 1000 * 60 * 60 * 24 * 30);
+    if (!seen) {
+      cacheSet("rq_seen_install_toast", true);
+      toast("Install ReelQuest for quicker access.", {
+        actionText: "Install",
+        onAction: function () { triggerInstallPrompt(); }
+      });
+    }
+  });
+}
+
+async function triggerInstallPrompt() {
+  const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent || "");
+  const isStandalone = (window.navigator && window.navigator.standalone) ? true : false;
+
+  if (isIOS && !isStandalone) {
+    toast("On iPhone: tap Share, then ‘Add to Home Screen’.");
+    return;
+  }
+
+  if (!deferredInstallPrompt) {
+    toast("Install isn’t available on this browser right now.");
+    return;
+  }
+
+  deferredInstallPrompt.prompt();
+  try { await deferredInstallPrompt.userChoice; } catch (e) {}
+  deferredInstallPrompt = null;
+}
+
+async function registerServiceWorker() {
+  try {
+    if (!("serviceWorker" in navigator)) return;
+    if (location.protocol !== "https:" && location.hostname !== "localhost") return;
+    // Query string helps bust caches when you update sw.js
+    await navigator.serviceWorker.register("./sw.js?v=2");
+  } catch (e) {
+    console.warn("Service worker registration failed", e);
+  }
+}
+
+async function removeOfflineSupport() {
+  try {
+    if (!("serviceWorker" in navigator)) return;
+    const reg = await navigator.serviceWorker.getRegistration();
+    if (reg) await reg.unregister();
+  } catch (e) {}
+
+  try {
+    if (typeof caches !== "undefined" && caches.keys) {
+      const keys = await caches.keys();
+      await Promise.all(keys.map(function (k) { return caches.delete(k); }));
+    }
+  } catch (e) {}
+
+  toast("Offline support removed. Refresh the page.");
+}
+
+async function updateOfflineSupport() {
+  try {
+    if (!("serviceWorker" in navigator)) { toast("Offline support isn’t available here."); return; }
+    const reg = await navigator.serviceWorker.getRegistration();
+    if (reg) {
+      await reg.update();
+      toast("Offline support updated.");
+    } else {
+      await registerServiceWorker();
+      toast("Offline support enabled.");
+    }
+  } catch (e) {
+    toast("Couldn’t update offline support.");
+  }
+}
+
+function init() {
+        try {
+          setupPwaManifest();
+          setupInstallPrompt();
+          const qs = new URLSearchParams(location.search || "");
+          if (qs.get("nosw") !== "1") registerServiceWorker();
+        } catch (e) {}
+
         els = {
           tabButtons: document.querySelectorAll(".tab-btn"),
           sectionTitle: document.getElementById("section-title"),
@@ -5359,73 +5495,7 @@ els.detailActions.appendChild(orgWrap);
 
       document.addEventListener("DOMContentLoaded", init);
     })();
-  // PWA: manifest + install prompt
-let deferredInstallPrompt = null;
-
-function setupPwaManifest() {
-  const link = document.getElementById("manifest-link");
-  if (!link) return;
-
-  const base = "./";
-  const manifest = {
-    name: "ReelQuest",
-    short_name: "ReelQuest",
-    start_url: base + "?source=pwa",
-    scope: base,
-    display: "standalone",
-    background_color: "#0b1220",
-    theme_color: "#0b1220",
-    description: "A minimal movie watchlist with recommendations, lists and offline-friendly caching.",
-    icons: [
-      { src: base + "icon-192.png", sizes: "192x192", type: "image/png" },
-      { src: base + "icon-512.png", sizes: "512x512", type: "image/png" }
-    ]
-  };
-
-  const href = "data:application/manifest+json," + encodeURIComponent(JSON.stringify(manifest));
-  link.setAttribute("href", href);
-}
-
-function setupInstallPrompt() {
-  window.addEventListener("beforeinstallprompt", function (e) {
-    e.preventDefault();
-    deferredInstallPrompt = e;
-    // Only nudge occasionally
-    const seen = cacheGet("rq_seen_install_toast", 1000 * 60 * 60 * 24 * 30);
-    if (!seen) {
-      cacheSet("rq_seen_install_toast", true);
-      toast("Install ReelQuest for quicker access.", {
-        actionText: "Install",
-        onAction: function () { triggerInstallPrompt(); }
-      });
-    }
-  });
-}
-
-async function triggerInstallPrompt() {
-  if (!deferredInstallPrompt) {
-    toast("Install isn’t available on this browser right now.");
-    return;
-  }
-  deferredInstallPrompt.prompt();
-  try {
-    await deferredInstallPrompt.userChoice;
-  } catch (e) {}
-  deferredInstallPrompt = null;
-}
-
-async function registerServiceWorker() {
-  try {
-    if (!("serviceWorker" in navigator)) return;
-    if (location.protocol !== "https:" && location.hostname !== "localhost") return;
-    await navigator.serviceWorker.register("./sw.js");
-  } catch (e) {
-    console.warn("Service worker registration failed", e);
-  }
-}
-
-
-</script>
+  </script>
   <div id="toast-host" aria-live="polite" aria-atomic="true"></div>
 </body>
 </html>
