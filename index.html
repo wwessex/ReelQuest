@@ -691,6 +691,12 @@
         <div class="brand-text">ReelQuest</div>
       </div>
       <div class="topbar-actions">
+        <button id="menu-toggle" class="theme-toggle burger-btn" type="button" aria-label="Menu">
+          ☰
+        </button>
+        <button id="settings-toggle" class="theme-toggle" type="button" aria-label="Settings">
+          ⚙︎
+        </button>
         <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">
           ☾
         </button>
@@ -702,13 +708,6 @@
       <button class="tab-btn" data-tab="discover">Discover</button>
       <button class="tab-btn" data-tab="watchlist">Watchlist</button>
       <button class="tab-btn" data-tab="watched">Watched</button>
-      <button
-        class="tab-btn tab-btn-icon"
-        data-tab="settings"
-        aria-label="Settings"
-      >
-        ⚙︎
-      </button>
     </nav>
 
     <main>
@@ -788,6 +787,24 @@
           <div id="detail-actions" class="detail-actions"></div>
           <div id="detail-links"></div>
         </div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- Burger menu overlay (mobile) -->
+  <div id="menu-overlay" class="menu-overlay hidden" aria-hidden="true">
+    <div class="menu-panel" role="dialog" aria-modal="true" aria-label="Navigation menu">
+      <div class="menu-header">
+        <div class="menu-title">Menu</div>
+        <button id="menu-close" class="detail-close" type="button" aria-label="Close menu">×</button>
+      </div>
+      <div class="menu-items">
+        <button class="menu-item" type="button" data-tab="for-you">For You</button>
+        <button class="menu-item" type="button" data-tab="discover">Discover</button>
+        <button class="menu-item" type="button" data-tab="watchlist">Watchlist</button>
+        <button class="menu-item" type="button" data-tab="watched">Watched</button>
+        <button class="menu-item" type="button" data-tab="settings">Settings</button>
       </div>
     </div>
   </div>
@@ -1682,18 +1699,7 @@
 
       function handleTabClick(e) {
         const tab = e.currentTarget.dataset.tab;
-        if (!tab || tab === state.activeTab) return;
-        state.activeTab = tab;
-        state.searchTerm = "";
-        els.searchInput.value = "";
-
-        if (tab === "for-you") {
-          loadForYouRecommendations();
-        } else if (tab === "discover") {
-          loadPopularForDiscover();
-        } else {
-          render();
-        }
+        switchToTab(tab);
       }
 
       function handleSearchInput(e) {
@@ -1906,6 +1912,46 @@
         }
       }
 
+
+      function openMenu() {
+        if (!els.menuOverlay) return;
+        els.menuOverlay.classList.remove("hidden");
+        els.menuOverlay.setAttribute("aria-hidden", "false");
+        updateMenuActiveState();
+      }
+
+      function closeMenu() {
+        if (!els.menuOverlay) return;
+        els.menuOverlay.classList.add("hidden");
+        els.menuOverlay.setAttribute("aria-hidden", "true");
+      }
+
+      function updateMenuActiveState() {
+        if (!els.menuItems) return;
+        for (let i = 0; i < els.menuItems.length; i++) {
+          const b = els.menuItems[i];
+          b.classList.toggle("active", b.dataset.tab === state.activeTab);
+        }
+      }
+
+      function switchToTab(tab) {
+        if (!tab) return;
+        if (tab === state.activeTab) {
+          render();
+          return;
+        }
+        state.activeTab = tab;
+        state.searchTerm = "";
+        if (els.searchInput) els.searchInput.value = "";
+        if (tab === "for-you") {
+          loadForYouRecommendations();
+        } else if (tab === "discover") {
+          loadPopularForDiscover();
+        } else {
+          render();
+        }
+      }
+
       function init() {
         els = {
           tabButtons: document.querySelectorAll(".tab-btn"),
@@ -1930,7 +1976,12 @@
           detailChips: document.getElementById("detail-chips"),
           detailActions: document.getElementById("detail-actions"),
           detailLinks: document.getElementById("detail-links"),
-          themeToggle: document.getElementById("theme-toggle")
+          themeToggle: document.getElementById("theme-toggle"),
+          settingsToggle: document.getElementById("settings-toggle"),
+          menuToggle: document.getElementById("menu-toggle"),
+          menuOverlay: document.getElementById("menu-overlay"),
+          menuClose: document.getElementById("menu-close"),
+          menuItems: document.querySelectorAll(".menu-item")
         };
 
         loadState();
@@ -1952,6 +2003,39 @@
 
         if (els.themeToggle) {
           els.themeToggle.addEventListener("click", toggleTheme);
+        }
+
+        if (els.settingsToggle) {
+          els.settingsToggle.addEventListener("click", function () {
+            switchToTab("settings");
+          });
+        }
+
+        if (els.menuToggle) {
+          els.menuToggle.addEventListener("click", function () {
+            openMenu();
+          });
+        }
+        if (els.menuClose) {
+          els.menuClose.addEventListener("click", function () {
+            closeMenu();
+          });
+        }
+        if (els.menuOverlay) {
+          els.menuOverlay.addEventListener("click", function (e) {
+            if (e.target === els.menuOverlay) {
+              closeMenu();
+            }
+          });
+        }
+        if (els.menuItems) {
+          for (let i = 0; i < els.menuItems.length; i++) {
+            els.menuItems[i].addEventListener("click", function (e) {
+              const tab = e.currentTarget.dataset.tab;
+              closeMenu();
+              switchToTab(tab);
+            });
+          }
         }
 
         if (els.detailClose) {
