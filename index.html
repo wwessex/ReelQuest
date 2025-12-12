@@ -801,6 +801,7 @@
       <button class="tab-btn" data-tab="discover">Discover</button>
       <button class="tab-btn" data-tab="watchlist">Watchlist</button>
       <button class="tab-btn" data-tab="watched">Watched</button>
+      <button class="tab-btn" data-tab="lists">Lists</button>
     </nav>
 
     <main>
@@ -853,6 +854,7 @@
       </div>
 
       <div id="settings-panel" class="settings-panel"></div>
+      <div id="lists-panel" class="settings-panel"></div>
 
       <input id="import-input" type="file" accept="application/json" class="file-input-hidden" />
 
@@ -940,6 +942,8 @@
         forYouLoading: false,
         forYouLoaded: false,
         items: [],
+        lists: [],
+        listsUi: { mode: "index", activeListId: null },
         favouriteGenres: [],
         sortBy: "default",
         minRating: 0,
@@ -982,6 +986,15 @@
           if (typeof parsed.minRating === "number") {
             state.minRating = parsed.minRating;
           }
+          if (Array.isArray(parsed.lists)) {
+            state.lists = parsed.lists;
+          }
+          if (parsed.listsUi && typeof parsed.listsUi === "object") {
+            state.listsUi = {
+              mode: parsed.listsUi.mode === "detail" ? "detail" : "index",
+              activeListId: parsed.listsUi.activeListId || null
+            };
+          }
           if (parsed.theme === "light" || parsed.theme === "dark") {
             state.theme = parsed.theme;
           }
@@ -996,6 +1009,8 @@
             STORAGE_KEY,
             JSON.stringify({
               items: state.items,
+              lists: state.lists,
+              listsUi: state.listsUi,
               favouriteGenres: state.favouriteGenres,
               sortBy: state.sortBy,
               minRating: state.minRating,
@@ -1557,6 +1572,341 @@
         panel.appendChild(toolsRow);
       }
 
+
+      function getListById(listId) {
+        for (let i = 0; i < state.lists.length; i++) {
+          if (state.lists[i].id === listId) return state.lists[i];
+        }
+        return null;
+      }
+
+      function createList(name) {
+        const clean = (name || "").trim();
+        if (!clean) {
+          window.alert("Please enter a list name.");
+          return;
+        }
+        const list = {
+          id: safeId(),
+          name: clean,
+          entries: [],
+          createdAt: Date.now()
+        };
+        state.lists.push(list);
+        state.listsUi = { mode: "detail", activeListId: list.id };
+        saveState();
+        render();
+      }
+
+      function renameList(listId) {
+        const list = getListById(listId);
+        if (!list) return;
+        const next = window.prompt("Rename list", list.name);
+        if (next === null) return;
+        const clean = next.trim();
+        if (!clean) {
+          window.alert("List name can’t be empty.");
+          return;
+        }
+        list.name = clean;
+        saveState();
+        render();
+      }
+
+      function deleteList(listId) {
+        const list = getListById(listId);
+        if (!list) return;
+        const ok = window.confirm("Delete “" + list.name + "”? This can’t be undone.");
+        if (!ok) return;
+
+        const nextLists = [];
+        for (let i = 0; i < state.lists.length; i++) {
+          if (state.lists[i].id !== listId) nextLists.push(state.lists[i]);
+        }
+        state.lists = nextLists;
+        state.listsUi = { mode: "index", activeListId: null };
+        saveState();
+        render();
+      }
+
+      function addTmdbToList(listId, detailsOrMovie) {
+        const list = getListById(listId);
+        if (!list) return;
+
+        const tmdbId = detailsOrMovie.id;
+        // avoid duplicates
+        for (let i = 0; i < list.entries.length; i++) {
+          if (list.entries[i].tmdbId === tmdbId) {
+            return;
+          }
+        }
+
+        const year = detailsOrMovie.release_date ? detailsOrMovie.release_date.slice(0, 4) : "";
+        list.entries.push({
+          tmdbId: tmdbId,
+          title: detailsOrMovie.title || "Untitled",
+          year: year,
+          posterPath: detailsOrMovie.poster_path || null,
+          rating: typeof detailsOrMovie.vote_average === "number" ? detailsOrMovie.vote_average : null,
+          addedAt: Date.now()
+        });
+
+        saveState();
+        render();
+      }
+
+      function removeTmdbFromList(listId, tmdbId) {
+        const list = getListById(listId);
+        if (!list) return;
+        const next = [];
+        for (let i = 0; i < list.entries.length; i++) {
+          if (list.entries[i].tmdbId !== tmdbId) next.push(list.entries[i]);
+        }
+        list.entries = next;
+        saveState();
+        render();
+      }
+
+      function openList(listId) {
+        state.listsUi = { mode: "detail", activeListId: listId };
+        saveState();
+        render();
+      }
+
+      function backToListsIndex() {
+        state.listsUi = { mode: "index", activeListId: null };
+        saveState();
+        render();
+      }
+
+      function renderListsPanel() {
+        const panel = els.listsPanel;
+        panel.innerHTML = "";
+
+        const heading = document.createElement("h2");
+        heading.className = "settings-heading";
+        heading.textContent = "Lists";
+
+        const copy = document.createElement("p");
+        copy.className = "settings-copy";
+        copy.textContent = "Create your own collections (for example, “My favourite horror films”).";
+
+        panel.appendChild(heading);
+        panel.appendChild(copy);
+
+        if (!state.listsUi || state.listsUi.mode === "index") {
+          // Create form
+          const formRow = document.createElement("div");
+          formRow.style.display = "flex";
+          formRow.style.gap = "8px";
+          formRow.style.flexWrap = "wrap";
+          formRow.style.marginTop = "8px";
+
+          const input = document.createElement("input");
+          input.type = "text";
+          input.placeholder = "New list name…";
+          input.className = "search-input";
+          input.style.borderRadius = "14px";
+          input.style.paddingLeft = "14px";
+          input.style.flex = "1 1 220px";
+
+          const createBtn = document.createElement("button");
+          createBtn.type = "button";
+          createBtn.className = "pill-btn";
+          createBtn.textContent = "Create list";
+          createBtn.addEventListener("click", function () {
+            createList(input.value);
+          });
+
+          formRow.appendChild(input);
+          formRow.appendChild(createBtn);
+          panel.appendChild(formRow);
+
+          const listHeading = document.createElement("div");
+          listHeading.className = "settings-subheading";
+          listHeading.style.marginTop = "14px";
+          listHeading.textContent = "Your lists";
+          panel.appendChild(listHeading);
+
+          if (!state.lists.length) {
+            const none = document.createElement("p");
+            none.className = "settings-copy";
+            none.textContent = "No lists yet. Create one above, then add films to it from the detail panel.";
+            panel.appendChild(none);
+            return;
+          }
+
+          // List rows
+          for (let i = 0; i < state.lists.length; i++) {
+            const l = state.lists[i];
+            const row = document.createElement("div");
+            row.style.display = "flex";
+            row.style.alignItems = "center";
+            row.style.justifyContent = "space-between";
+            row.style.gap = "8px";
+            row.style.padding = "8px 10px";
+            row.style.border = "1px solid var(--border-subtle)";
+            row.style.borderRadius = "14px";
+            row.style.background = "var(--bg)";
+            row.style.marginTop = "8px";
+
+            const left = document.createElement("div");
+            left.style.display = "flex";
+            left.style.flexDirection = "column";
+            left.style.gap = "2px";
+
+            const name = document.createElement("div");
+            name.style.fontSize = "13px";
+            name.style.fontWeight = "600";
+            name.textContent = l.name;
+
+            const meta = document.createElement("div");
+            meta.style.fontSize = "12px";
+            meta.style.color = "var(--text-muted)";
+            meta.textContent = (l.entries ? l.entries.length : 0) + " film" + ((l.entries && l.entries.length === 1) ? "" : "s");
+
+            left.appendChild(name);
+            left.appendChild(meta);
+
+            const actions = document.createElement("div");
+            actions.style.display = "flex";
+            actions.style.gap = "6px";
+            actions.style.flexWrap = "wrap";
+
+            const openBtn = document.createElement("button");
+            openBtn.type = "button";
+            openBtn.className = "pill-btn";
+            openBtn.textContent = "Open";
+            openBtn.addEventListener("click", function () {
+              openList(l.id);
+            });
+
+            const renameBtn = document.createElement("button");
+            renameBtn.type = "button";
+            renameBtn.className = "pill-btn";
+            renameBtn.textContent = "Rename";
+            renameBtn.addEventListener("click", function () {
+              renameList(l.id);
+            });
+
+            const deleteBtn = document.createElement("button");
+            deleteBtn.type = "button";
+            deleteBtn.className = "pill-btn";
+            deleteBtn.textContent = "Delete";
+            deleteBtn.addEventListener("click", function () {
+              deleteList(l.id);
+            });
+
+            actions.appendChild(openBtn);
+            actions.appendChild(renameBtn);
+            actions.appendChild(deleteBtn);
+
+            row.appendChild(left);
+            row.appendChild(actions);
+            panel.appendChild(row);
+          }
+        } else {
+          // Detail view
+          const list = getListById(state.listsUi.activeListId);
+          if (!list) {
+            state.listsUi = { mode: "index", activeListId: null };
+            saveState();
+            render();
+            return;
+          }
+
+          const topRow = document.createElement("div");
+          topRow.style.display = "flex";
+          topRow.style.alignItems = "center";
+          topRow.style.justifyContent = "space-between";
+          topRow.style.gap = "8px";
+          topRow.style.marginTop = "10px";
+
+          const backBtn = document.createElement("button");
+          backBtn.type = "button";
+          backBtn.className = "pill-btn";
+          backBtn.textContent = "Back";
+          backBtn.addEventListener("click", backToListsIndex);
+
+          const right = document.createElement("div");
+          right.style.display = "flex";
+          right.style.gap = "6px";
+          right.style.flexWrap = "wrap";
+
+          const renameBtn = document.createElement("button");
+          renameBtn.type = "button";
+          renameBtn.className = "pill-btn";
+          renameBtn.textContent = "Rename";
+          renameBtn.addEventListener("click", function () { renameList(list.id); });
+
+          const deleteBtn = document.createElement("button");
+          deleteBtn.type = "button";
+          deleteBtn.className = "pill-btn";
+          deleteBtn.textContent = "Delete";
+          deleteBtn.addEventListener("click", function () { deleteList(list.id); });
+
+          right.appendChild(renameBtn);
+          right.appendChild(deleteBtn);
+
+          topRow.appendChild(backBtn);
+          topRow.appendChild(right);
+
+          const name = document.createElement("div");
+          name.className = "settings-heading";
+          name.style.marginTop = "12px";
+          name.textContent = list.name;
+
+          const meta = document.createElement("p");
+          meta.className = "settings-copy";
+          meta.textContent = "Films in this list: " + (list.entries ? list.entries.length : 0) + ".";
+
+          const hint = document.createElement("p");
+          hint.className = "settings-copy";
+          hint.textContent = "Tip: open any film’s details and use “Add to list”.";
+
+          panel.appendChild(topRow);
+          panel.appendChild(name);
+          panel.appendChild(meta);
+          panel.appendChild(hint);
+        }
+      }
+
+      function getViewsForActiveList() {
+        const list = getListById(state.listsUi && state.listsUi.activeListId ? state.listsUi.activeListId : null);
+        if (!list || !Array.isArray(list.entries)) return [];
+        const term = state.searchTerm ? state.searchTerm.trim().toLowerCase() : "";
+
+        let entries = list.entries.slice();
+        if (term) {
+          const tmp = [];
+          for (let i = 0; i < entries.length; i++) {
+            const t = (entries[i].title || "").toLowerCase();
+            if (t.indexOf(term) !== -1) tmp.push(entries[i]);
+          }
+          entries = tmp;
+        }
+
+        const views = [];
+        for (let i = 0; i < entries.length; i++) {
+          const e = entries[i];
+          const linked = findItemByTmdbId(e.tmdbId);
+          views.push({
+            mode: "remote",
+            tmdbMovie: {
+              id: e.tmdbId,
+              title: e.title,
+              release_date: e.year ? (e.year + "-01-01") : "",
+              poster_path: e.posterPath,
+              vote_average: typeof e.rating === "number" ? e.rating : 0,
+              popularity: 0
+            },
+            item: linked,
+            __listEntry: true
+          });
+        }
+        return applyFiltersAndSort(views);
+      }
+
       function updateCopyForTab() {
         let title = "";
         let subtitle = "";
@@ -1578,6 +1928,10 @@
           title = "Watched";
           subtitle = "Everything you’ve already seen.";
           placeholder = "Search your watched list…";
+        } else if (state.activeTab === "lists") {
+          title = "Lists";
+          subtitle = "Create and curate your own collections.";
+          placeholder = "Search within your lists…";
         } else if (state.activeTab === "settings") {
           title = "Settings";
           subtitle = "Tune ReelQuest to your taste.";
@@ -1611,6 +1965,12 @@
         }
         if (state.activeTab === "watched") {
           return "You haven’t marked anything as watched yet.";
+        }
+        if (state.activeTab === "lists") {
+          if (!state.listsUi || state.listsUi.mode === "index") {
+            return "Create a list above to start collecting films.";
+          }
+          return "This list is empty. Add films from Discover or For You.";
         }
         return "";
       }
@@ -1704,6 +2064,21 @@
 
         actions.appendChild(eyeBtn);
         actions.appendChild(plusBtn);
+
+        if (state.activeTab === "lists" && state.listsUi && state.listsUi.mode === "detail" && tmdbMovie && tmdbMovie.id) {
+          const removeBtn = document.createElement("button");
+          removeBtn.type = "button";
+          removeBtn.className = "card-btn";
+          removeBtn.title = "Remove from list";
+          removeBtn.textContent = "−";
+          removeBtn.addEventListener("click", function (e) {
+            e.stopPropagation();
+            if (state.listsUi && state.listsUi.activeListId) {
+              removeTmdbFromList(state.listsUi.activeListId, tmdbMovie.id);
+            }
+          });
+          actions.appendChild(removeBtn);
+        }
         posterWrapper.appendChild(actions);
 
         const titleLine = document.createElement("div");
@@ -1800,7 +2175,44 @@
           els.message.style.display = "none";
           els.grid.style.display = "none";
           els.settingsPanel.style.display = "block";
+          if (els.listsPanel) els.listsPanel.style.display = "none";
           renderSettings();
+          renderListActions();
+          if (state.lastTmdbStatus) updateDebug(state.lastTmdbStatus);
+          return;
+        }
+
+        if (state.activeTab === "lists") {
+          els.searchForm.style.display = "block";
+          els.controlsBar.style.display = (state.listsUi && state.listsUi.mode === "detail") ? "flex" : "none";
+          els.message.style.display = "none";
+          els.grid.style.display = (state.listsUi && state.listsUi.mode === "detail") ? "grid" : "none";
+          els.settingsPanel.style.display = "none";
+        if (els.listsPanel) els.listsPanel.style.display = "none";
+          els.listsPanel.style.display = "block";
+          renderListsPanel();
+
+          if (state.listsUi && state.listsUi.mode === "detail") {
+            const views = getViewsForActiveList();
+            els.grid.innerHTML = "";
+            const emptyMessage = getEmptyMessageForTab();
+            if (views.length === 0 && emptyMessage) {
+              els.message.style.display = "block";
+              els.message.textContent = emptyMessage;
+            } else {
+              els.message.style.display = "none";
+              els.message.textContent = "";
+            }
+            for (let i = 0; i < views.length; i++) {
+              const card = createCard(views[i]);
+              els.grid.appendChild(card);
+            }
+          } else {
+            els.grid.innerHTML = "";
+            els.message.style.display = "none";
+            els.message.textContent = "";
+          }
+
           renderListActions();
           if (state.lastTmdbStatus) updateDebug(state.lastTmdbStatus);
           return;
@@ -1810,6 +2222,7 @@
         els.controlsBar.style.display = "flex";
         els.grid.style.display = "grid";
         els.settingsPanel.style.display = "none";
+        if (els.listsPanel) els.listsPanel.style.display = "none";
 
         const views = getViewItemsForCurrentTab();
         els.grid.innerHTML = "";
@@ -2173,6 +2586,43 @@
         return clean;
       }
 
+      function normaliseImportedLists(lists) {
+        if (!Array.isArray(lists)) return [];
+        const clean = [];
+        for (let i = 0; i < lists.length; i++) {
+          const l = lists[i];
+          if (!l || typeof l !== "object") continue;
+          const name = typeof l.name === "string" ? l.name.trim() : "";
+          if (!name) continue;
+
+          const entriesRaw = Array.isArray(l.entries) ? l.entries : [];
+          const entries = [];
+          for (let j = 0; j < entriesRaw.length; j++) {
+            const e = entriesRaw[j];
+            if (!e || typeof e !== "object") continue;
+            const tmdbId = typeof e.tmdbId === "number" ? e.tmdbId : null;
+            const title = typeof e.title === "string" ? e.title : "";
+            if (!tmdbId || !title) continue;
+            entries.push({
+              tmdbId: tmdbId,
+              title: title,
+              year: typeof e.year === "string" ? e.year : "",
+              posterPath: typeof e.posterPath === "string" ? e.posterPath : null,
+              rating: typeof e.rating === "number" ? e.rating : null,
+              addedAt: typeof e.addedAt === "number" ? e.addedAt : Date.now()
+            });
+          }
+
+          clean.push({
+            id: typeof l.id === "string" ? l.id : safeId(),
+            name: name,
+            entries: entries,
+            createdAt: typeof l.createdAt === "number" ? l.createdAt : Date.now()
+          });
+        }
+        return clean;
+      }
+
       function applyImportedData(imported) {
         const data = imported && imported.data ? imported.data : imported;
 
@@ -2254,6 +2704,7 @@
           message: document.getElementById("message"),
           grid: document.getElementById("card-grid"),
           settingsPanel: document.getElementById("settings-panel"),
+          listsPanel: document.getElementById("lists-panel"),
           debug: document.getElementById("debug"),
           controlsBar: document.getElementById("controls-bar"),
           sortSelect: document.getElementById("sort-select"),
