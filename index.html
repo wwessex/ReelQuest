@@ -895,6 +895,201 @@
   border-color: var(--accent);
   box-shadow: 0 0 0 2px rgba(125, 211, 252, 0.18);
 }
+  
+
+/* UX polish */
+:root { --radius-lg: 20px; --radius-md: 16px; --radius-sm: 12px; }
+
+.app-shell {
+  padding-bottom: calc(18px + env(safe-area-inset-bottom, 0px));
+}
+
+/* Toasts */
+#toast-host {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: center;
+  pointer-events: none;
+  z-index: 9999;
+  padding: 0 14px;
+}
+
+.toast {
+  width: min(520px, 100%);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 18px;
+  border: 1px solid var(--border-subtle);
+  background: rgba(20, 22, 28, 0.78);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: 0 18px 40px rgba(0,0,0,0.35);
+  color: var(--text);
+  pointer-events: auto;
+  transform: translateY(10px);
+  opacity: 0;
+  animation: toastIn 160ms ease-out forwards;
+}
+
+.toast.toast-light {
+  background: rgba(255, 255, 255, 0.78);
+  color: #0b1220;
+}
+
+.toast-msg {
+  font-size: 13px;
+  line-height: 1.2;
+  flex: 1 1 auto;
+}
+
+.toast-actions {
+  display: flex;
+  gap: 8px;
+  flex: 0 0 auto;
+  align-items: center;
+}
+
+.toast-btn {
+  border: 1px solid var(--border-subtle);
+  border-radius: 14px;
+  padding: 7px 10px;
+  background: transparent;
+  color: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.toast-btn:hover { border-color: rgba(255,255,255,0.22); }
+
+@keyframes toastIn {
+  to { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes toastOut {
+  to { transform: translateY(10px); opacity: 0; }
+}
+
+/* Skeleton cards */
+.skeleton-card {
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-elevated);
+  overflow: hidden;
+  position: relative;
+  min-height: 270px;
+}
+
+.skeleton-thumb {
+  width: 100%;
+  aspect-ratio: 2/3;
+  background: rgba(255,255,255,0.06);
+}
+
+.skeleton-lines {
+  padding: 10px 12px 12px 12px;
+  display: grid;
+  gap: 8px;
+}
+
+.skeleton-line {
+  height: 12px;
+  border-radius: 10px;
+  background: rgba(255,255,255,0.08);
+}
+
+.skeleton-line.short { width: 68%; }
+.skeleton-line.tiny { width: 48%; }
+
+.shimmer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-60%);
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.10), transparent);
+  animation: shimmer 1.1s ease-in-out infinite;
+}
+
+@keyframes shimmer {
+  0% { transform: translateX(-60%); }
+  100% { transform: translateX(60%); }
+}
+
+/* Detail sections */
+.detail-card {
+  width: 100%;
+  display: block;
+  border: 1px solid var(--border-subtle);
+  border-radius: 18px;
+  background: var(--bg-elevated);
+  padding: 12px;
+  margin-top: 12px;
+}
+
+.detail-kicker {
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--text-muted);
+  letter-spacing: 0.02em;
+  text-transform: none;
+  margin-bottom: 10px;
+}
+
+.organise-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 860px) {
+  .organise-grid { grid-template-columns: 1fr 1fr; }
+}
+
+.organise-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.organise-field label {
+  display: block;
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+  font-weight: 700;
+}
+
+.organise-field .search-input,
+.organise-field .settings-textarea {
+  margin: 0;
+}
+
+/* Micro-interactions */
+.pill-btn, .card-btn, .tab-btn, .menu-item {
+  transition: transform 100ms ease, filter 100ms ease, border-color 120ms ease;
+}
+
+.pill-btn:active, .card-btn:active, .tab-btn:active, .menu-item:active {
+  transform: scale(0.98);
+  filter: brightness(1.06);
+}
+
+.movie-card { animation: fadeIn 140ms ease-out; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(6px);} to {opacity:1; transform:none;} }
+
+@media (prefers-reduced-motion: reduce) {
+  .movie-card, .toast, .shimmer::after { animation: none !important; }
+  .pill-btn, .card-btn, .tab-btn, .menu-item { transition: none !important; }
+}
   </style>
 </head>
 <body>
@@ -1152,6 +1347,69 @@ function formatDateUK(ts) {
         }
       }
 
+
+function toast(message, options) {
+  const host = document.getElementById("toast-host");
+  if (!host) {
+    alertNice(message);
+    return;
+  }
+
+  const opts = options && typeof options === "object" ? options : {};
+  const duration = typeof opts.duration === "number" ? opts.duration : 2400;
+  const actionText = typeof opts.actionText === "string" ? opts.actionText : null;
+  const onAction = typeof opts.onAction === "function" ? opts.onAction : null;
+
+  const el = document.createElement("div");
+  el.className = "toast" + (document.body.classList.contains("light") ? " toast-light" : "");
+  const msg = document.createElement("div");
+  msg.className = "toast-msg";
+  msg.textContent = message;
+
+  const actions = document.createElement("div");
+  actions.className = "toast-actions";
+
+  if (actionText && onAction) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "toast-btn";
+    btn.textContent = actionText;
+    btn.addEventListener("click", function () {
+      try { onAction(); } catch (e) { console.error(e); }
+      dismiss();
+    });
+    actions.appendChild(btn);
+  }
+
+  const closeBtn = document.createElement("button");
+  closeBtn.type = "button";
+  closeBtn.className = "toast-btn";
+  closeBtn.textContent = "Dismiss";
+  closeBtn.addEventListener("click", function () { dismiss(); });
+  actions.appendChild(closeBtn);
+
+  el.appendChild(msg);
+  el.appendChild(actions);
+  host.appendChild(el);
+
+  let gone = false;
+  const timer = window.setTimeout(function () { dismiss(); }, duration);
+
+  function dismiss() {
+    if (gone) return;
+    gone = true;
+    window.clearTimeout(timer);
+    el.style.animation = "toastOut 140ms ease-in forwards";
+    window.setTimeout(function () {
+      try { el.remove(); } catch (e) {}
+    }, 160);
+  }
+}
+
+function alertNice(message) {
+  toast(message);
+}
+
       function saveState() {
         try {
           localStorage.setItem(
@@ -1222,7 +1480,35 @@ function formatDateUK(ts) {
         return Array.isArray(data.results) ? data.results : [];
       }
 
-      async function loadBecauseYouLiked(tmdbId, seedTitle) {
+      function renderSkeletonGrid(count) {
+  const n = typeof count === "number" ? count : 10;
+  els.grid.innerHTML = "";
+  for (let i = 0; i < n; i++) {
+    const card = document.createElement("div");
+    card.className = "skeleton-card shimmer";
+
+    const thumb = document.createElement("div");
+    thumb.className = "skeleton-thumb";
+    card.appendChild(thumb);
+
+    const lines = document.createElement("div");
+    lines.className = "skeleton-lines";
+    const l1 = document.createElement("div");
+    l1.className = "skeleton-line";
+    const l2 = document.createElement("div");
+    l2.className = "skeleton-line short";
+    const l3 = document.createElement("div");
+    l3.className = "skeleton-line tiny";
+    lines.appendChild(l1);
+    lines.appendChild(l2);
+    lines.appendChild(l3);
+
+    card.appendChild(lines);
+    els.grid.appendChild(card);
+  }
+}
+
+async function loadBecauseYouLiked(tmdbId, seedTitle) {
         state.activeTab = "discover";
         state.discoverMode = "because";
         state.discoverSeedTitle = seedTitle || "";
@@ -1230,7 +1516,7 @@ function formatDateUK(ts) {
         if (els.searchInput) els.searchInput.value = "";
         els.message.style.display = "block";
         els.message.textContent = "Loading recommendations…";
-        els.grid.innerHTML = "";
+        renderSkeletonGrid(10);
         try {
           const url = new URL("https://api.themoviedb.org/3/movie/" + tmdbId + "/recommendations");
           url.searchParams.set("api_key", TMDB_API_KEY);
@@ -1251,7 +1537,7 @@ function formatDateUK(ts) {
         if (!els.message || !els.grid) return;
         els.message.style.display = "block";
         els.message.textContent = "Loading popular films…";
-        els.grid.innerHTML = "";
+        renderSkeletonGrid(12);
         try {
           const url = new URL("https://api.themoviedb.org/3/movie/popular");
           url.searchParams.set("api_key", TMDB_API_KEY);
@@ -1274,7 +1560,7 @@ function formatDateUK(ts) {
       async function loadRadarUpcoming() {
         els.message.style.display = "block";
         els.message.textContent = "Loading upcoming releases…";
-        els.grid.innerHTML = "";
+        renderSkeletonGrid(12);
         try {
           const url = new URL("https://api.themoviedb.org/3/movie/upcoming");
           url.searchParams.set("api_key", TMDB_API_KEY);
@@ -1297,7 +1583,7 @@ function formatDateUK(ts) {
       function downloadIcsReminder(title, dateIso) {
         // dateIso expected yyyy-mm-dd
         if (!dateIso) {
-          window.alert("No release date available for this film.");
+          alertNice("No release date available for this film.");
           return;
         }
         const parts = dateIso.split("-");
@@ -1378,7 +1664,7 @@ function formatDateUK(ts) {
         }
         els.message.style.display = "block";
         els.message.textContent = "Searching TMDB…";
-        els.grid.innerHTML = "";
+        renderSkeletonGrid(10);
         try {
           const results = await searchTmdb(query);
           state.discoverResults = results;
@@ -1476,45 +1762,29 @@ function formatDateUK(ts) {
 }
 
       function toggleWatchlistForItem(item) {
+  const was = !!item.inWatchlist;
   item.inWatchlist = !item.inWatchlist;
   if (item.inWatchlist) {
-    // If the user adds something to watchlist, keep priority default if missing
     if (!item.priority) item.priority = "medium";
-  }
-  saveState();
-  render();
-}
-
-      function toggleWatchedForItem(item) {
-  const next = !item.watched;
-  item.watched = next;
-
-  if (next) {
-    // Mark watched should remove from watchlist (avoids appearing in both lists)
-    item.inWatchlist = false;
-    if (!item.watchedAt) item.watchedAt = Date.now();
-    // Rewatch stays as-is (user can toggle)
-  } else {
-    // Optional: keep watchedAt/userRating so history remains, but remove rewatch flag
-    item.rewatch = false;
+    saveState();
+    render();
+    toast("Added to your watchlist.");
+    return;
   }
 
+  // Removed
   saveState();
   render();
+  toast("Removed from your watchlist.", {
+    actionText: "Undo",
+    onAction: function () {
+      item.inWatchlist = true;
+      if (!item.priority) item.priority = "medium";
+      saveState();
+      render();
+    }
+  });
 }
-
-      function clearWatchlist() {
-        if (!window.confirm("Clear your watchlist? This will keep your watched history.")) {
-          return;
-        }
-        for (let i = 0; i < state.items.length; i++) {
-          if (state.items[i].inWatchlist) {
-            state.items[i].inWatchlist = false;
-          }
-        }
-        saveState();
-        render();
-      }
 
       function clearWatched() {
         if (!window.confirm("Clear everything marked as watched?")) {
@@ -1539,7 +1809,7 @@ function formatDateUK(ts) {
         }
 
         if (!watchlist.length) {
-          window.alert("Your watchlist is empty.");
+          alertNice("Your watchlist is empty.");
           return;
         }
 
@@ -1579,16 +1849,16 @@ function formatDateUK(ts) {
           navigator.clipboard
             .writeText(finalText)
             .then(function () {
-              window.alert("Watchlist copied to the clipboard.");
+              alertNice("Watchlist copied to the clipboard.");
             })
             .catch(function () {
-              window.alert(
+              alertNice(
                 "Couldn’t access the clipboard, but here’s your list:\n\n" +
                   finalText
               );
             });
         } else {
-          window.alert(finalText);
+          alertNice(finalText);
         }
       }
 
@@ -1605,7 +1875,7 @@ async function pickFromWatchlist() {
   }
 
   if (!candidates.length) {
-    window.alert("No eligible films in your watchlist with the current filters.");
+    alertNice("No eligible films in your watchlist with the current filters.");
     return;
   }
 
@@ -2315,7 +2585,7 @@ async function refreshSmartList(listId) {
     await fetchSmartListResults(list);
   } catch (e) {
     console.error(e);
-    window.alert("Sorry — we couldn’t refresh this list.");
+    alertNice("Sorry — we couldn’t refresh this list.");
   } finally {
     render();
   }
@@ -2326,7 +2596,7 @@ function createSmartListPreset() {
   if (name === null) return;
   const clean = String(name || "").trim();
   if (!clean) {
-    window.alert("Please enter a list name.");
+    alertNice("Please enter a list name.");
     return;
   }
 
@@ -2412,7 +2682,7 @@ function moveEntryInList(listId, tmdbId, direction) {
       function createList(name, description) {
   const clean = (name || "").trim();
   if (!clean) {
-    window.alert("Please enter a list name.");
+    alertNice("Please enter a list name.");
     return;
   }
   const list = {
@@ -2439,7 +2709,7 @@ function moveEntryInList(listId, tmdbId, direction) {
         if (next === null) return;
         const clean = next.trim();
         if (!clean) {
-          window.alert("List name can’t be empty.");
+          alertNice("List name can’t be empty.");
           return;
         }
         list.name = clean;
@@ -2475,7 +2745,7 @@ function moveEntryInList(listId, tmdbId, direction) {
     }
   } else if (list.type === "smart") {
     // smart lists are auto-generated; do not add manually
-    window.alert("This is a smart list. You can’t add items manually.");
+    alertNice("This is a smart list. You can’t add items manually.");
     return;
   }
 
@@ -3214,6 +3484,14 @@ if (isLocal) {
     if (p === "high") bits.push("Priority: High");
     else if (p === "low") bits.push("Priority: Low");
     else bits.push("Priority: Medium");
+
+if (Array.isArray(item.tags) && item.tags.length) {
+  const show = item.tags.slice(0, 2).join(", ");
+  bits.push("Tags: " + show + (item.tags.length > 2 ? "…" : ""));
+}
+if (item.notes && String(item.notes).trim()) {
+  bits.push("Notes");
+}
   }
   if (item.watched) {
     bits.push("Watched");
@@ -3526,7 +3804,7 @@ container.appendChild(pickBtn);
         }
 
         if (!tmdbId) {
-          window.alert("No extra details available for this title.");
+          alertNice("No extra details available for this title.");
           return;
         }
 
@@ -3691,7 +3969,7 @@ container.appendChild(pickBtn);
             addBtn.addEventListener("click", function () {
               const listId = select.value;
               addTmdbToList(listId, details);
-              window.alert("Added to your list.");
+              alertNice("Added to your list.");
             });
 
             const openListsBtn = document.createElement("button");
@@ -3731,27 +4009,21 @@ container.appendChild(pickBtn);
           els.detailActions.appendChild(moreBtn);
 
           // Organise (notes, tags, priority, rating, rewatch)
-          const orgWrap = document.createElement("div");
-          orgWrap.style.flex = "1 1 100%";
-          orgWrap.style.width = "100%";
-          orgWrap.style.background = "var(--bg)";
-          orgWrap.style.border = "1px solid var(--border-subtle)";
-          orgWrap.style.borderRadius = "16px";
-          orgWrap.style.padding = "12px";
-orgWrap.style.marginTop = "12px";
-orgWrap.style.borderTop = "1px solid var(--border-subtle)";
-orgWrap.style.paddingTop = "12px";
+const orgWrap = document.createElement("div");
+orgWrap.className = "detail-card";
 
 const orgHeading = document.createElement("div");
-orgHeading.style.fontSize = "12px";
-orgHeading.style.fontWeight = "700";
-orgHeading.style.color = "var(--text-muted)";
+orgHeading.className = "detail-kicker";
 orgHeading.textContent = "Organise";
 orgWrap.appendChild(orgHeading);
 
+const orgGrid = document.createElement("div");
+orgGrid.className = "organise-grid";
+orgWrap.appendChild(orgGrid);
+
 // Priority (useful for watchlist)
 const priRow = document.createElement("div");
-priRow.style.display = "flex";
+priRow.className = "organise-row";
 priRow.style.flexWrap = "wrap";
 priRow.style.gap = "8px";
 priRow.style.alignItems = "center";
@@ -3792,11 +4064,11 @@ priRow.appendChild(lowBtn);
 priRow.appendChild(medBtn);
 priRow.appendChild(highBtn);
 
-orgWrap.appendChild(priRow);
+orgGrid.appendChild(priRow);
 
 // Tags
 const tagRow = document.createElement("div");
-tagRow.style.display = "flex";
+tagRow.className = "organise-row";
 tagRow.style.flexWrap = "wrap";
 tagRow.style.gap = "8px";
 tagRow.style.alignItems = "center";
@@ -3826,12 +4098,12 @@ tagsSave.addEventListener("click", function () {
   linked.tags = next;
   saveState();
   render();
-  window.alert("Tags saved.");
+  alertNice("Tags saved.");
 });
 
 tagRow.appendChild(tagsInput);
 tagRow.appendChild(tagsSave);
-orgWrap.appendChild(tagRow);
+orgGrid.appendChild(tagRow);
 
 // Notes
 const notesLabel = document.createElement("div");
@@ -3839,13 +4111,13 @@ notesLabel.style.marginTop = "10px";
 notesLabel.style.fontSize = "12px";
 notesLabel.style.color = "var(--text-muted)";
 notesLabel.textContent = "Notes";
-orgWrap.appendChild(notesLabel);
+orgGrid.appendChild(notesLabel);
 
 const notesArea = document.createElement("textarea");
 notesArea.className = "settings-textarea";
 notesArea.placeholder = "Add your notes…";
 notesArea.value = typeof linked.notes === "string" ? linked.notes : "";
-orgWrap.appendChild(notesArea);
+orgGrid.appendChild(notesArea);
 
 const notesSave = document.createElement("button");
 notesSave.type = "button";
@@ -3856,13 +4128,13 @@ notesSave.addEventListener("click", function () {
   linked.notes = String(notesArea.value || "");
   saveState();
   render();
-  window.alert("Notes saved.");
+  alertNice("Notes saved.");
 });
-orgWrap.appendChild(notesSave);
+orgGrid.appendChild(notesSave);
 
 // Watched date + your rating + rewatch
 const watchRow = document.createElement("div");
-watchRow.style.display = "flex";
+watchRow.className = "organise-row";
 watchRow.style.flexWrap = "wrap";
 watchRow.style.gap = "8px";
 watchRow.style.alignItems = "center";
@@ -3909,13 +4181,13 @@ ratingSave.className = "pill-btn";
 ratingSave.textContent = "Save rating";
 ratingSave.addEventListener("click", function () {
   if (!linked.watched) {
-    window.alert("Mark as watched before saving your rating.");
+    alertNice("Mark as watched before saving your rating.");
     return;
   }
   linked.userRating = parseFloat(ratingRange.value);
   saveState();
   render();
-  window.alert("Rating saved.");
+  alertNice("Rating saved.");
 });
 
 ratingWrap.appendChild(ratingSave);
@@ -3927,7 +4199,7 @@ rewatchBtn.className = "pill-btn";
 rewatchBtn.textContent = linked.rewatch ? "Rewatch: On" : "Rewatch: Off";
 rewatchBtn.addEventListener("click", function () {
   if (!linked.watched) {
-    window.alert("Mark as watched before enabling rewatch.");
+    alertNice("Mark as watched before enabling rewatch.");
     return;
   }
   linked.rewatch = !linked.rewatch;
@@ -3937,7 +4209,7 @@ rewatchBtn.addEventListener("click", function () {
 });
 watchRow.appendChild(rewatchBtn);
 
-orgWrap.appendChild(watchRow);
+orgGrid.appendChild(watchRow);
 
 els.detailActions.appendChild(orgWrap);
 
@@ -4180,10 +4452,10 @@ els.detailActions.appendChild(orgWrap);
           setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
           const listCount = Array.isArray(state.lists) ? state.lists.length : 0;
           const filmCount = Array.isArray(state.items) ? state.items.length : 0;
-          window.alert("Export complete. Saved " + filmCount + " film record(s) and " + listCount + " list(s) to your device.");
+          alertNice("Export complete. Saved " + filmCount + " film record(s) and " + listCount + " list(s) to your device.");
         } catch (e) {
           console.error(e);
-          window.alert("Sorry — we couldn’t export your data.");
+          alertNice("Sorry — we couldn’t export your data.");
         }
       }
 
@@ -4376,16 +4648,16 @@ els.detailActions.appendChild(orgWrap);
             const data = parsed && parsed.data ? parsed.data : parsed;
             const listCount = data && Array.isArray(data.lists) ? data.lists.length : 0;
             const filmCount = data && Array.isArray(data.items) ? data.items.length : 0;
-            window.alert("Import complete. Restored " + filmCount + " film record(s) and " + listCount + " list(s).");
+            alertNice("Import complete. Restored " + filmCount + " film record(s) and " + listCount + " list(s).");
           } catch (e) {
             console.error(e);
-            window.alert("Sorry — we couldn’t import that file. Please check it’s a valid ReelQuest backup.");
+            alertNice("Sorry — we couldn’t import that file. Please check it’s a valid ReelQuest backup.");
           } finally {
             if (els.importInput) els.importInput.value = "";
           }
         };
         reader.onerror = function () {
-          window.alert("Sorry — we couldn’t read that file.");
+          alertNice("Sorry — we couldn’t read that file.");
           if (els.importInput) els.importInput.value = "";
         };
         reader.readAsText(file);
@@ -4504,5 +4776,6 @@ els.detailActions.appendChild(orgWrap);
       document.addEventListener("DOMContentLoaded", init);
     })();
   </script>
+  <div id="toast-host" aria-live="polite" aria-atomic="true"></div>
 </body>
 </html>
