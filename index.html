@@ -1185,9 +1185,6 @@
 
       function toggleWatchedForItem(item) {
         item.watched = !item.watched;
-        if (item.watched && !item.inWatchlist) {
-          item.inWatchlist = true;
-        }
         saveState();
         render();
       }
