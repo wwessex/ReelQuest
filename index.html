@@ -760,6 +760,18 @@
       box-shadow: 0 10px 22px rgba(0, 0, 0, 0.6);
     }
 
+  
+    /* Hidden file input (must not be display:none on iOS) */
+    .file-input-hidden {
+      position: fixed;
+      left: -9999px;
+      top: -9999px;
+      width: 1px;
+      height: 1px;
+      opacity: 0;
+      pointer-events: none;
+    }
+
   </style>
 </head>
 <body>
@@ -842,7 +854,7 @@
 
       <div id="settings-panel" class="settings-panel"></div>
 
-      <input id="import-input" type="file" accept="application/json" style="display:none" />
+      <input id="import-input" type="file" accept="application/json" class="file-input-hidden" />
 
       <div id="card-grid" class="grid"></div>
 
@@ -1516,7 +1528,28 @@
         importBtn.className = "pill-btn";
         importBtn.textContent = "Import data";
         importBtn.addEventListener("click", function () {
-          if (els.importInput) els.importInput.click();
+          // iOS can block clicks on file inputs if they are display:none.
+          // Create a temporary input inside the user gesture for maximum compatibility.
+          const temp = document.createElement("input");
+          temp.type = "file";
+          temp.accept = "application/json";
+          temp.style.position = "fixed";
+          temp.style.left = "-9999px";
+          temp.style.top = "-9999px";
+          temp.style.width = "1px";
+          temp.style.height = "1px";
+          temp.style.opacity = "0";
+          document.body.appendChild(temp);
+
+          temp.addEventListener("change", function (e) {
+            const files = temp.files;
+            if (files && files[0]) {
+              handleImportFile(files[0]);
+            }
+            document.body.removeChild(temp);
+          });
+
+          temp.click();
         });
 
         toolsRow.appendChild(exportBtn);
