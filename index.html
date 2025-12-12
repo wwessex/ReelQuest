@@ -947,6 +947,7 @@
         discoverMode: "default",
         discoverSeedTitle: "",
         filters: { minYear: 0, hideWatched: false, hideWatchlist: false, excludedGenres: [] },
+        country: "GB",
         items: [],
         lists: [],
         listsUi: { mode: "index", activeListId: null },
@@ -1001,6 +1002,9 @@
               activeListId: parsed.listsUi.activeListId || null
             };
           }
+          if (typeof parsed.country === "string" && parsed.country.length === 2) {
+            state.country = parsed.country.toUpperCase();
+          }
           if (parsed.theme === "light" || parsed.theme === "dark") {
             state.theme = parsed.theme;
           }
@@ -1021,7 +1025,9 @@
               favouriteGenres: state.favouriteGenres,
               sortBy: state.sortBy,
               minRating: state.minRating,
-              theme: state.theme
+              theme: state.theme,
+            country: state.country,
+              country: state.country
             })
           );
         } catch (e) {
@@ -1134,7 +1140,7 @@
           const url = new URL("https://api.themoviedb.org/3/movie/upcoming");
           url.searchParams.set("api_key", TMDB_API_KEY);
           url.searchParams.set("language", "en-GB");
-          url.searchParams.set("region", "GB");
+          url.searchParams.set("region", (state.country || "GB"));
           url.searchParams.set("page", "1");
 
           const data = await tmdbFetch(url);
@@ -1699,6 +1705,71 @@
 
         panel.appendChild(heading);
         panel.appendChild(copy);
+
+        const countryHeading = document.createElement("div");
+        countryHeading.className = "settings-subheading";
+        countryHeading.style.marginTop = "12px";
+        countryHeading.textContent = "Country";
+
+        const countryCopy = document.createElement("p");
+        countryCopy.className = "settings-copy";
+        countryCopy.textContent = "Used for “Where to watch” availability and Radar releases.";
+
+        const countryRow = document.createElement("div");
+        countryRow.style.display = "flex";
+        countryRow.style.flexWrap = "wrap";
+        countryRow.style.gap = "10px";
+        countryRow.style.alignItems = "center";
+
+        const countrySelect = document.createElement("select");
+        countrySelect.className = "controls-select";
+        countrySelect.style.borderRadius = "14px";
+        countrySelect.style.padding = "8px 12px";
+
+        const COUNTRIES = [
+          ["GB", "United Kingdom"],
+          ["IE", "Ireland"],
+          ["US", "United States"],
+          ["CA", "Canada"],
+          ["AU", "Australia"],
+          ["NZ", "New Zealand"],
+          ["FR", "France"],
+          ["DE", "Germany"],
+          ["ES", "Spain"],
+          ["IT", "Italy"],
+          ["NL", "Netherlands"],
+          ["SE", "Sweden"],
+          ["NO", "Norway"],
+          ["DK", "Denmark"],
+          ["FI", "Finland"],
+          ["BE", "Belgium"],
+          ["CH", "Switzerland"]
+        ];
+
+        for (let i = 0; i < COUNTRIES.length; i++) {
+          const opt = document.createElement("option");
+          opt.value = COUNTRIES[i][0];
+          opt.textContent = COUNTRIES[i][1];
+          countrySelect.appendChild(opt);
+        }
+
+        countrySelect.value = (state.country || "GB").toUpperCase();
+        countrySelect.addEventListener("change", function (e) {
+          state.country = String(e.target.value || "GB").toUpperCase();
+          saveState();
+          // Refresh Radar immediately, and update provider info next time details are opened
+          if (state.activeTab === "radar") {
+            loadRadarUpcoming();
+          } else {
+            render();
+          }
+        });
+
+        countryRow.appendChild(countrySelect);
+        panel.appendChild(countryHeading);
+        panel.appendChild(countryCopy);
+        panel.appendChild(countryRow);
+
         panel.appendChild(sub);
         panel.appendChild(grid);
 
@@ -2016,6 +2087,71 @@
 
         panel.appendChild(heading);
         panel.appendChild(copy);
+
+        const countryHeading = document.createElement("div");
+        countryHeading.className = "settings-subheading";
+        countryHeading.style.marginTop = "12px";
+        countryHeading.textContent = "Country";
+
+        const countryCopy = document.createElement("p");
+        countryCopy.className = "settings-copy";
+        countryCopy.textContent = "Used for “Where to watch” availability and Radar releases.";
+
+        const countryRow = document.createElement("div");
+        countryRow.style.display = "flex";
+        countryRow.style.flexWrap = "wrap";
+        countryRow.style.gap = "10px";
+        countryRow.style.alignItems = "center";
+
+        const countrySelect = document.createElement("select");
+        countrySelect.className = "controls-select";
+        countrySelect.style.borderRadius = "14px";
+        countrySelect.style.padding = "8px 12px";
+
+        const COUNTRIES = [
+          ["GB", "United Kingdom"],
+          ["IE", "Ireland"],
+          ["US", "United States"],
+          ["CA", "Canada"],
+          ["AU", "Australia"],
+          ["NZ", "New Zealand"],
+          ["FR", "France"],
+          ["DE", "Germany"],
+          ["ES", "Spain"],
+          ["IT", "Italy"],
+          ["NL", "Netherlands"],
+          ["SE", "Sweden"],
+          ["NO", "Norway"],
+          ["DK", "Denmark"],
+          ["FI", "Finland"],
+          ["BE", "Belgium"],
+          ["CH", "Switzerland"]
+        ];
+
+        for (let i = 0; i < COUNTRIES.length; i++) {
+          const opt = document.createElement("option");
+          opt.value = COUNTRIES[i][0];
+          opt.textContent = COUNTRIES[i][1];
+          countrySelect.appendChild(opt);
+        }
+
+        countrySelect.value = (state.country || "GB").toUpperCase();
+        countrySelect.addEventListener("change", function (e) {
+          state.country = String(e.target.value || "GB").toUpperCase();
+          saveState();
+          // Refresh Radar immediately, and update provider info next time details are opened
+          if (state.activeTab === "radar") {
+            loadRadarUpcoming();
+          } else {
+            render();
+          }
+        });
+
+        countryRow.appendChild(countrySelect);
+        panel.appendChild(countryHeading);
+        panel.appendChild(countryCopy);
+        panel.appendChild(countryRow);
+
 
         if (!state.listsUi || state.listsUi.mode === "index") {
           // Create form
@@ -2941,15 +3077,35 @@
           // Where to watch (UK)
           try {
             const providers = await fetchWatchProviders(details.id);
-            const gb = providers && providers.GB ? providers.GB : null;
+            const gb = providers && providers[(state.country || "GB")] ? providers[(state.country || "GB")] : null;
             const wrap = document.createElement("div");
             wrap.style.marginTop = "10px";
 
             const heading = document.createElement("div");
             heading.style.fontSize = "13px";
             heading.style.fontWeight = "600";
-            heading.textContent = "Where to watch (UK)";
+            heading.textContent = "Where to watch (" + (state.country || "GB") + ")";
             wrap.appendChild(heading);
+
+            const providerLink = gb && gb.link ? gb.link : null;
+            if (providerLink) {
+              const jwBtn = document.createElement("a");
+              jwBtn.className = "pill-btn";
+              jwBtn.textContent = "Open on JustWatch";
+              jwBtn.href = providerLink;
+              jwBtn.target = "_blank";
+              jwBtn.rel = "noopener noreferrer";
+              jwBtn.style.display = "inline-flex";
+              jwBtn.style.marginTop = "8px";
+              wrap.appendChild(jwBtn);
+
+              const hint = document.createElement("div");
+              hint.style.fontSize = "12px";
+              hint.style.color = "var(--text-muted)";
+              hint.style.marginTop = "6px";
+              hint.textContent = "Provider buttons open the JustWatch page for this film.";
+              wrap.appendChild(hint);
+            }
 
             const row = document.createElement("div");
             row.style.display = "flex";
@@ -2969,6 +3125,20 @@
                 const p = list[i];
                 const pill = document.createElement("span");
                 pill.className = "detail-chip";
+                if (providerLink) {
+                  pill.style.cursor = "pointer";
+                  pill.setAttribute("role", "link");
+                  pill.setAttribute("tabindex", "0");
+                  pill.addEventListener("click", function () {
+                    window.open(providerLink, "_blank", "noopener");
+                  });
+                  pill.addEventListener("keydown", function (e) {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      window.open(providerLink, "_blank", "noopener");
+                    }
+                  });
+                }
                 pill.style.display = "inline-flex";
                 pill.style.alignItems = "center";
                 pill.style.gap = "6px";
@@ -2997,14 +3167,14 @@
                 const none = document.createElement("div");
                 none.style.fontSize = "12px";
                 none.style.color = "var(--text-muted)";
-                none.textContent = "No UK provider data available from TMDB.";
+                none.textContent = "No provider data available from TMDB for your selected country.";
                 row.appendChild(none);
               }
             } else {
               const none = document.createElement("div");
               none.style.fontSize = "12px";
               none.style.color = "var(--text-muted)";
-              none.textContent = "No UK provider data available from TMDB.";
+              none.textContent = "No provider data available from TMDB for your selected country.";
               row.appendChild(none);
             }
 
@@ -3110,7 +3280,8 @@
             favouriteGenres: state.favouriteGenres,
             sortBy: state.sortBy,
             minRating: state.minRating,
-            theme: state.theme
+            theme: state.theme,
+            country: state.country
           }
         };
         return payload;
@@ -3217,6 +3388,7 @@
         const lists = normaliseImportedLists(data && data.lists ? data.lists : []);
         const listsUi = data && data.listsUi && typeof data.listsUi === "object" ? data.listsUi : null;
         const filters = data && data.filters && typeof data.filters === "object" ? data.filters : null;
+        const country = data && typeof data.country === "string" && data.country.length === 2 ? data.country.toUpperCase() : null;
         const favouriteGenres = Array.isArray(data && data.favouriteGenres) ? data.favouriteGenres : [];
         const sortBy = data && typeof data.sortBy === "string" ? data.sortBy : state.sortBy;
         const minRating = data && typeof data.minRating === "number" ? data.minRating : state.minRating;
@@ -3228,6 +3400,8 @@
           mode: (listsUi && listsUi.mode === "detail") ? "detail" : "index",
           activeListId: (listsUi && typeof listsUi.activeListId === "string") ? listsUi.activeListId : null
         };
+        state.country = country || state.country || "GB";
+
         state.filters = {
           minYear: (filters && typeof filters.minYear === "number") ? filters.minYear : 0,
           hideWatched: filters ? !!filters.hideWatched : false,
