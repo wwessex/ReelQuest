@@ -1890,6 +1890,7 @@ Shared from ReelQuest.";
         loadState();
         applyTheme();
         render();
+        updateDebug("ReelQuest ready (JS initialised)");
 
         if (state.activeTab === "for-you" && state.favouriteGenres.length) {
           loadForYouRecommendations();
