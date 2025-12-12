@@ -842,6 +842,8 @@
 
       <div id="settings-panel" class="settings-panel"></div>
 
+      <input id="import-input" type="file" accept="application/json" style="display:none" />
+
       <div id="card-grid" class="grid"></div>
 
       <div id="debug" class="debug"></div>
@@ -1488,6 +1490,41 @@
         panel.appendChild(copy);
         panel.appendChild(sub);
         panel.appendChild(grid);
+
+        const toolsHeading = document.createElement("div");
+        toolsHeading.className = "settings-subheading";
+        toolsHeading.style.marginTop = "14px";
+        toolsHeading.textContent = "Backup & restore";
+
+        const toolsCopy = document.createElement("p");
+        toolsCopy.className = "settings-copy";
+        toolsCopy.textContent = "Export your watchlist, watched list and preferences to a file, or import them later.";
+
+        const toolsRow = document.createElement("div");
+        toolsRow.style.display = "flex";
+        toolsRow.style.flexWrap = "wrap";
+        toolsRow.style.gap = "8px";
+
+        const exportBtn = document.createElement("button");
+        exportBtn.type = "button";
+        exportBtn.className = "pill-btn";
+        exportBtn.textContent = "Export data";
+        exportBtn.addEventListener("click", exportDataToFile);
+
+        const importBtn = document.createElement("button");
+        importBtn.type = "button";
+        importBtn.className = "pill-btn";
+        importBtn.textContent = "Import data";
+        importBtn.addEventListener("click", function () {
+          if (els.importInput) els.importInput.click();
+        });
+
+        toolsRow.appendChild(exportBtn);
+        toolsRow.appendChild(importBtn);
+
+        panel.appendChild(toolsHeading);
+        panel.appendChild(toolsCopy);
+        panel.appendChild(toolsRow);
       }
 
       function updateCopyForTab() {
@@ -2033,6 +2070,150 @@
         }
       }
 
+
+      function buildExportPayload() {
+        // Only store user data (not API keys or cached TMDB details)
+        const payload = {
+          app: "ReelQuest",
+          version: "v1",
+          exportedAt: new Date().toISOString(),
+          data: {
+            items: state.items,
+            favouriteGenres: state.favouriteGenres,
+            sortBy: state.sortBy,
+            minRating: state.minRating,
+            theme: state.theme
+          }
+        };
+        return payload;
+      }
+
+      function exportDataToFile() {
+        try {
+          const payload = buildExportPayload();
+          const json = JSON.stringify(payload, null, 2);
+          const blob = new Blob([json], { type: "application/json" });
+          const url = URL.createObjectURL(blob);
+
+          const stamp = new Date();
+          const yyyy = stamp.getFullYear();
+          const mm = String(stamp.getMonth() + 1).padStart(2, "0");
+          const dd = String(stamp.getDate()).padStart(2, "0");
+          const filename = "reelquest-backup-" + yyyy + "-" + mm + "-" + dd + ".json";
+
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = filename;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+
+          setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+          window.alert("Export complete. Your backup file has been saved to your device.");
+        } catch (e) {
+          console.error(e);
+          window.alert("Sorry — we couldn’t export your data.");
+        }
+      }
+
+      function normaliseImportedItems(items) {
+        if (!Array.isArray(items)) return [];
+        const clean = [];
+        for (let i = 0; i < items.length; i++) {
+          const it = items[i];
+          if (!it || typeof it !== "object") continue;
+
+          // Basic shape check
+          const tmdbId = typeof it.tmdbId === "number" ? it.tmdbId : null;
+          const title = typeof it.title === "string" ? it.title : "";
+          if (!tmdbId || !title) continue;
+
+          clean.push({
+            id: typeof it.id === "string" ? it.id : safeId(),
+            tmdbId: tmdbId,
+            title: title,
+            year: typeof it.year === "string" ? it.year : "",
+            posterPath: typeof it.posterPath === "string" ? it.posterPath : null,
+            rating: typeof it.rating === "number" ? it.rating : null,
+            inWatchlist: !!it.inWatchlist,
+            watched: !!it.watched,
+            createdAt: typeof it.createdAt === "number" ? it.createdAt : Date.now()
+          });
+        }
+        return clean;
+      }
+
+      function applyImportedData(imported) {
+        const data = imported && imported.data ? imported.data : imported;
+
+        const items = normaliseImportedItems(data && data.items ? data.items : []);
+        const favouriteGenres = Array.isArray(data && data.favouriteGenres) ? data.favouriteGenres : [];
+        const sortBy = data && typeof data.sortBy === "string" ? data.sortBy : state.sortBy;
+        const minRating = data && typeof data.minRating === "number" ? data.minRating : state.minRating;
+        const theme = data && (data.theme === "light" || data.theme === "dark") ? data.theme : state.theme;
+
+        state.items = items;
+        state.favouriteGenres = favouriteGenres;
+        state.sortBy = sortBy;
+        state.minRating = minRating;
+        state.theme = theme;
+
+        // Clear caches that could be stale
+        state.detailsCache = {};
+
+        saveState();
+        applyTheme();
+
+        // Refresh current tab content
+        if (state.activeTab === "for-you") {
+          loadForYouRecommendations();
+        } else if (state.activeTab === "discover") {
+          loadPopularForDiscover();
+        } else {
+          render();
+        }
+      }
+
+      function handleImportFile(file) {
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = function () {
+          try {
+            const text = String(reader.result || "");
+            const parsed = JSON.parse(text);
+
+            const looksLikeReelQuest =
+              parsed && typeof parsed === "object" &&
+              (parsed.app === "ReelQuest" || parsed.version || parsed.data);
+
+            if (!looksLikeReelQuest) {
+              const ok = window.confirm(
+                "This file doesn’t look like a ReelQuest backup. Try importing anyway?"
+              );
+              if (!ok) return;
+            }
+
+            const confirmReplace = window.confirm(
+              "Importing will replace your current watchlist, watched list and preferences on this device. Continue?"
+            );
+            if (!confirmReplace) return;
+
+            applyImportedData(parsed);
+            window.alert("Import complete. Your ReelQuest data has been restored.");
+          } catch (e) {
+            console.error(e);
+            window.alert("Sorry — we couldn’t import that file. Please check it’s a valid ReelQuest backup.");
+          } finally {
+            if (els.importInput) els.importInput.value = "";
+          }
+        };
+        reader.onerror = function () {
+          window.alert("Sorry — we couldn’t read that file.");
+          if (els.importInput) els.importInput.value = "";
+        };
+        reader.readAsText(file);
+      }
+
       function init() {
         els = {
           tabButtons: document.querySelectorAll(".tab-btn"),
@@ -2081,6 +2262,15 @@
         els.searchForm.addEventListener("submit", handleSearchSubmit);
         els.sortSelect.addEventListener("change", handleSortChange);
         els.ratingFilterSelect.addEventListener("change", handleRatingFilterChange);
+
+        if (els.importInput) {
+          els.importInput.addEventListener("change", function (e) {
+            const files = e.target && e.target.files ? e.target.files : null;
+            if (files && files[0]) {
+              handleImportFile(files[0]);
+            }
+          });
+        }
 
         if (els.themeToggle) {
           els.themeToggle.addEventListener("click", toggleTheme);
