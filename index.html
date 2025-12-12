@@ -1743,7 +1743,11 @@ Shared from ReelQuest.";
           const year = details.release_date
             ? details.release_date.slice(0, 4)
             : "";
-          const title = details.title || view.item?.title || "Untitled";
+          const title = (function () {
+            if (details.title) return details.title;
+            if (view.item && view.item.title) return view.item.title;
+            return "Untitled";
+          })();
           const runtime = details.runtime ? details.runtime + " min" : "";
           const genresText = (details.genres || [])
             .map(function (g) { return g.name; })
