@@ -2459,6 +2459,88 @@
           els.detailActions.appendChild(watchBtn);
           els.detailActions.appendChild(watchedBtn);
 
+          // Lists: add this film to one of your custom lists
+          const listBlock = document.createElement("div");
+          listBlock.style.display = "flex";
+          listBlock.style.flexWrap = "wrap";
+          listBlock.style.gap = "8px";
+          listBlock.style.alignItems = "center";
+          listBlock.style.marginTop = "10px";
+
+          const listLabel = document.createElement("span");
+          listLabel.textContent = "List:";
+          listLabel.style.fontSize = "12px";
+          listLabel.style.color = "var(--text-muted)";
+          listBlock.appendChild(listLabel);
+
+          if (state.lists && state.lists.length) {
+            const select = document.createElement("select");
+            select.className = "controls-select";
+            select.style.borderRadius = "14px";
+            select.style.padding = "6px 10px";
+            select.style.minWidth = "160px";
+
+            // Prefer currently-open list if you're in Lists > detail
+            let preferredId = null;
+            if (state.activeTab === "lists" && state.listsUi && state.listsUi.mode === "detail") {
+              preferredId = state.listsUi.activeListId;
+            }
+
+            for (let i = 0; i < state.lists.length; i++) {
+              const l = state.lists[i];
+              const opt = document.createElement("option");
+              opt.value = l.id;
+              opt.textContent = l.name;
+              select.appendChild(opt);
+            }
+
+            if (preferredId) {
+              for (let i = 0; i < select.options.length; i++) {
+                if (select.options[i].value === preferredId) {
+                  select.selectedIndex = i;
+                  break;
+                }
+              }
+            }
+
+            const addBtn = document.createElement("button");
+            addBtn.type = "button";
+            addBtn.className = "pill-btn";
+            addBtn.textContent = "Add to list";
+            addBtn.addEventListener("click", function () {
+              const listId = select.value;
+              addTmdbToList(listId, details);
+              window.alert("Added to your list.");
+            });
+
+            const openListsBtn = document.createElement("button");
+            openListsBtn.type = "button";
+            openListsBtn.className = "pill-btn";
+            openListsBtn.textContent = "View lists";
+            openListsBtn.addEventListener("click", function () {
+              closeDetail();
+              switchToTab("lists");
+            });
+
+            listBlock.appendChild(select);
+            listBlock.appendChild(addBtn);
+            listBlock.appendChild(openListsBtn);
+          } else {
+            const createBtn = document.createElement("button");
+            createBtn.type = "button";
+            createBtn.className = "pill-btn";
+            createBtn.textContent = "Create a list";
+            createBtn.addEventListener("click", function () {
+              closeDetail();
+              switchToTab("lists");
+            });
+            listBlock.appendChild(createBtn);
+          }
+
+          els.detailActions.appendChild(listBlock);
+
+          
+
           const videos = details.videos && details.videos.results
             ? details.videos.results
             : [];
