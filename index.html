@@ -1093,9 +1093,7 @@
   
 
 /* Bulk selection */
-.movie-card.selectable {
-  position: relative;
-}
+.movie-card.selectable { position: relative; }
 .select-badge {
   position: absolute;
   top: 10px;
@@ -1173,28 +1171,11 @@
   padding: 12px 14px;
   border-bottom: 1px solid var(--border-subtle);
 }
-.modal-title {
-  font-size: 14px;
-  font-weight: 900;
-  color: var(--text);
-}
-.modal-body {
-  padding: 12px 14px 14px 14px;
-  display: grid;
-  gap: 10px;
-}
-.modal-list {
-  display: grid;
-  gap: 10px;
-  max-height: 50vh;
-  overflow: auto;
-  padding-right: 4px;
-}
+.modal-title { font-size: 14px; font-weight: 900; color: var(--text); }
+.modal-body { padding: 12px 14px 14px 14px; display: grid; gap: 10px; }
+.modal-list { display: grid; gap: 10px; max-height: 50vh; overflow: auto; padding-right: 4px; }
 .modal-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
   border: 1px solid var(--border-subtle);
   border-radius: 16px;
   padding: 10px 12px;
@@ -1202,18 +1183,13 @@
 }
 .modal-row strong { font-size: 13px; }
 .modal-row small { color: var(--text-muted); font-size: 12px; }
-.modal-actions {
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-}
+.modal-actions { display: flex; gap: 10px; flex-wrap: wrap; }
   </style>
-  <link rel="manifest" id="manifest-link" href="">
+  <link rel="manifest" href="./manifest.webmanifest">
   <meta name="theme-color" content="#0b1220">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="apple-touch-icon" href="./icon-192.png">
   <link rel="icon" href="./icon-192.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
 </head>
 <body>
   <div class="app">
@@ -1352,6 +1328,7 @@
   </div>
 
   <script>
+
     (function () {
       const TMDB_API_KEY = "b24323f85318cb1b12fd1ea0a94420de";
 
@@ -1463,6 +1440,16 @@ function formatDateUK(ts) {
           if (typeof parsed.country === "string" && parsed.country.length === 2) {
             state.country = parsed.country.toUpperCase();
           }
+
+if (parsed.ui && typeof parsed.ui === "object") {
+  state.ui = {
+    selectionMode: !!parsed.ui.selectionMode,
+    selectedTmdbIds: Array.isArray(parsed.ui.selectedTmdbIds)
+      ? parsed.ui.selectedTmdbIds.filter(function (n) { return typeof n === "number"; })
+      : []
+  };
+}
+
           if (parsed.theme === "light" || parsed.theme === "dark") {
             state.theme = parsed.theme;
           }
@@ -1535,26 +1522,28 @@ function alertNice(message) {
 }
 
       function saveState() {
-  try {
-    localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify({
-        items: state.items,
-        lists: state.lists,
-        listsUi: state.listsUi,
-        filters: state.filters,
-        favouriteGenres: state.favouriteGenres,
-        sortBy: state.sortBy,
-        minRating: state.minRating,
-        theme: state.theme,
-        country: state.country,
-        ui: state.ui
-      })
-    );
-  } catch (e) {
-    console.warn("Failed to save ReelQuest state", e);
-  }
-}
+        try {
+          localStorage.setItem(
+            STORAGE_KEY,
+            JSON.stringify({
+              items: state.items,
+              lists: state.lists,
+              listsUi: state.listsUi,
+              filters: state.filters,
+              favouriteGenres: state.favouriteGenres,
+              sortBy: state.sortBy,
+              minRating: state.minRating,
+              theme: state.theme,
+            country: state.country,
+              ui: state.ui,
+              country: state.country,
+              ui: state.ui
+            })
+          );
+        } catch (e) {
+          console.warn("Failed to save ReelQuest state", e);
+        }
+      }
 
 
 function cacheSet(key, value) {
@@ -1575,14 +1564,10 @@ function cacheGet(key, maxAgeMs) {
       if (Date.now() - parsed.ts > maxAgeMs) return null;
     }
     return parsed.value;
-  } catch (e) {
-    return null;
-  }
+  } catch (e) { return null; }
 }
 
-function isOffline() {
-  return typeof navigator !== "undefined" && navigator.onLine === false;
-}
+function isOffline() { return typeof navigator !== "undefined" && navigator.onLine === false; }
 
 function isBulkSelectableTab() {
   return state.activeTab === "watchlist" || state.activeTab === "watched" || state.activeTab === "rewatch" ||
@@ -1617,10 +1602,7 @@ function toggleSelectedTmdbId(id) {
   let found = false;
   for (let i = 0; i < state.ui.selectedTmdbIds.length; i++) {
     const v = state.ui.selectedTmdbIds[i];
-    if (v === id) {
-      found = true;
-      continue;
-    }
+    if (v === id) { found = true; continue; }
     next.push(v);
   }
   if (!found) next.push(id);
@@ -1675,93 +1657,6 @@ function openModalSheet(opts) {
   return { close: close, body: body };
 }
 
-function openBulkAddToListPicker(selectedViews) {
-  const manualLists = [];
-  for (let i = 0; i < state.lists.length; i++) {
-    const l = state.lists[i];
-    if (l && l.type !== "smart") manualLists.push(l);
-  }
-
-  const modal = openModalSheet({
-    title: "Add to a list",
-    render: function (body, close) {
-      const copy = document.createElement("p");
-      copy.className = "settings-copy";
-      copy.style.margin = "0";
-      copy.textContent = "Choose a list to add the selected films to.";
-      body.appendChild(copy);
-
-      const listWrap = document.createElement("div");
-      listWrap.className = "modal-list";
-      body.appendChild(listWrap);
-
-      if (!manualLists.length) {
-        const empty = document.createElement("div");
-        empty.className = "settings-copy";
-        empty.style.margin = "0";
-        empty.textContent = "You don’t have any lists yet. Create one below.";
-        listWrap.appendChild(empty);
-      } else {
-        for (let i = 0; i < manualLists.length; i++) {
-          const l = manualLists[i];
-          const row = document.createElement("div");
-          row.className = "modal-row";
-
-          const left = document.createElement("div");
-          const name = document.createElement("strong");
-          name.textContent = l.name || "Untitled list";
-          const meta = document.createElement("small");
-          const count = Array.isArray(l.entries) ? l.entries.length : 0;
-          meta.textContent = count + " films";
-          left.appendChild(name);
-          left.appendChild(document.createElement("br"));
-          left.appendChild(meta);
-
-          const addBtn = document.createElement("button");
-          addBtn.type = "button";
-          addBtn.className = "pill-btn";
-          addBtn.textContent = "Add";
-          addBtn.addEventListener("click", function () {
-            bulkAddSelectedViewsToList(selectedViews, l.id);
-            close();
-            clearSelection();
-          });
-
-          row.appendChild(left);
-          row.appendChild(addBtn);
-          listWrap.appendChild(row);
-        }
-      }
-
-      const actions = document.createElement("div");
-      actions.className = "modal-actions";
-
-      const createBtn = document.createElement("button");
-      createBtn.type = "button";
-      createBtn.className = "pill-btn";
-      createBtn.textContent = "Create a new list";
-      createBtn.addEventListener("click", function () {
-        const name = prompt("List name");
-        if (!name) return;
-        const newId = createList(name);
-        toast("List created.", {
-          actionText: "Add selected",
-          onAction: function () {
-            bulkAddSelectedViewsToList(selectedViews, newId);
-            clearSelection();
-          }
-        });
-        close();
-      });
-
-      actions.appendChild(createBtn);
-      body.appendChild(actions);
-    }
-  });
-
-  return modal;
-}
-
 function getSelectedViewsForCurrentTab() {
   const views = getViewItemsForCurrentTab();
   const picked = [];
@@ -1772,13 +1667,101 @@ function getSelectedViewsForCurrentTab() {
   return picked;
 }
 
+function bulkMoveSelectedToWatched(views) {
+  let changed = 0;
+  for (let i = 0; i < views.length; i++) {
+    const v = views[i];
+    let item = null;
+    if (v.mode === "local" && v.item) item = v.item;
+    if (v.mode === "remote" && v.tmdbMovie) item = ensureItemFromTmdb(v.tmdbMovie);
+    if (!item) continue;
+
+    if (!item.watched) {
+      item.watched = true;
+      item.inWatchlist = false;
+      if (!item.watchedAt) item.watchedAt = Date.now();
+      changed++;
+    } else if (item.inWatchlist) {
+      item.inWatchlist = false;
+      changed++;
+    }
+  }
+  if (changed) {
+    saveState();
+    render();
+    toast("Moved " + changed + " film" + (changed === 1 ? "" : "s") + " to watched.");
+  } else {
+    toast("Nothing to move.");
+  }
+}
+
+function bulkRemoveSelectedFromContext(views) {
+  let changed = 0;
+
+  // Lists detail removal
+  if (state.activeTab === "lists" && state.listsUi && state.listsUi.mode === "detail") {
+    const list = getListById(state.listsUi.activeListId);
+    if (!list || list.type !== "manual") { toast("Nothing to remove."); return; }
+
+    const ids = [];
+    for (let i = 0; i < views.length; i++) {
+      const id = getTmdbIdFromView(views[i]);
+      if (id) ids.push(id);
+    }
+
+    const next = [];
+    for (let i = 0; i < list.entries.length; i++) {
+      const e = list.entries[i];
+      if (e && ids.indexOf(e.tmdbId) !== -1) { changed++; continue; }
+      next.push(e);
+    }
+    list.entries = next;
+
+    ensureCustomOrder(list);
+    const nextOrder = [];
+    for (let i = 0; i < list.customOrder.length; i++) {
+      if (ids.indexOf(list.customOrder[i]) === -1) nextOrder.push(list.customOrder[i]);
+    }
+    list.customOrder = nextOrder;
+
+    saveState();
+    render();
+
+    if (changed) toast("Removed " + changed + " film" + (changed === 1 ? "" : "s") + " from the list.");
+    else toast("Nothing to remove.");
+    return;
+  }
+
+  for (let i = 0; i < views.length; i++) {
+    const v = views[i];
+    let item = null;
+    if (v.mode === "local" && v.item) item = v.item;
+    if (v.mode === "remote" && v.tmdbMovie) item = ensureItemFromTmdb(v.tmdbMovie);
+    if (!item) continue;
+
+    if (state.activeTab === "watchlist") {
+      if (item.inWatchlist) { item.inWatchlist = false; changed++; }
+    } else if (state.activeTab === "watched") {
+      if (item.watched) { item.watched = false; item.rewatch = false; changed++; }
+    } else if (state.activeTab === "rewatch") {
+      if (item.rewatch) { item.rewatch = false; changed++; }
+    }
+  }
+
+  if (changed) {
+    saveState();
+    render();
+    toast("Removed " + changed + " film" + (changed === 1 ? "" : "s") + ".");
+  } else {
+    toast("Nothing to remove.");
+  }
+}
+
 function bulkAddSelectedViewsToList(views, listId) {
   const list = getListById(listId);
   if (!list || list.type !== "manual") return;
 
   let added = 0;
-
-  // Build a fast lookup for existing TMDB IDs in the list
   const exists = {};
   for (let i = 0; i < list.entries.length; i++) {
     const e = list.entries[i];
@@ -1800,8 +1783,6 @@ function bulkAddSelectedViewsToList(views, listId) {
       year = v.tmdbMovie.release_date ? v.tmdbMovie.release_date.slice(0, 4) : "";
       posterPath = v.tmdbMovie.poster_path || null;
       rating = typeof v.tmdbMovie.vote_average === "number" ? v.tmdbMovie.vote_average : null;
-
-      // Also ensure the item exists in the global store so it’s available elsewhere
       ensureItemFromTmdb(v.tmdbMovie);
     } else if (v.mode === "local" && v.item) {
       title = v.item.title || "Untitled";
@@ -1810,15 +1791,7 @@ function bulkAddSelectedViewsToList(views, listId) {
       rating = typeof v.item.rating === "number" ? v.item.rating : null;
     }
 
-    list.entries.push({
-      tmdbId: tmdbId,
-      title: title,
-      year: year,
-      posterPath: posterPath,
-      rating: rating,
-      addedAt: Date.now()
-    });
-
+    list.entries.push({ tmdbId: tmdbId, title: title, year: year, posterPath: posterPath, rating: rating, addedAt: Date.now() });
     ensureCustomOrder(list);
     if (list.customOrder.indexOf(tmdbId) === -1) list.customOrder.push(tmdbId);
 
@@ -1834,6 +1807,76 @@ function bulkAddSelectedViewsToList(views, listId) {
     toast("Nothing new to add.");
   }
 }
+
+function openBulkAddToListPicker(selectedViews) {
+  const manualLists = [];
+  for (let i = 0; i < state.lists.length; i++) {
+    const l = state.lists[i];
+    if (l && l.type === "manual") manualLists.push(l);
+  }
+
+  openModalSheet({
+    title: "Add to a list",
+    render: function (body, close) {
+      const copy = document.createElement("p");
+      copy.className = "settings-copy";
+      copy.style.margin = "0";
+      copy.textContent = "Choose a list to add the selected films to.";
+      body.appendChild(copy);
+
+      const listWrap = document.createElement("div");
+      listWrap.className = "modal-list";
+      body.appendChild(listWrap);
+
+      if (!manualLists.length) {
+        const empty = document.createElement("div");
+        empty.className = "settings-copy";
+        empty.style.margin = "0";
+        empty.textContent = "You don’t have any lists yet. Create one first.";
+        listWrap.appendChild(empty);
+      } else {
+        for (let i = 0; i < manualLists.length; i++) {
+          const l = manualLists[i];
+          const row = document.createElement("div");
+          row.className = "modal-row";
+
+          const left = document.createElement("div");
+          const name = document.createElement("strong");
+          name.textContent = l.name || "Untitled list";
+          const meta = document.createElement("small");
+          meta.textContent = (l.entries ? l.entries.length : 0) + " films";
+          left.appendChild(name);
+          left.appendChild(document.createElement("br"));
+          left.appendChild(meta);
+
+          const addBtn = document.createElement("button");
+          addBtn.type = "button";
+          addBtn.className = "pill-btn";
+          addBtn.textContent = "Add";
+          addBtn.addEventListener("click", function () {
+            bulkAddSelectedViewsToList(selectedViews, l.id);
+            close();
+            clearSelection();
+          });
+
+          row.appendChild(left);
+          row.appendChild(addBtn);
+          listWrap.appendChild(row);
+        }
+      }
+    }
+  });
+}
+
+      function applyTheme() {
+        if (state.theme === "light") {
+          document.body.classList.add("theme-light");
+          if (els.themeToggle) els.themeToggle.textContent = "☀︎";
+        } else {
+          document.body.classList.remove("theme-light");
+          if (els.themeToggle) els.themeToggle.textContent = "☾";
+        }
+      }
 
       function toggleTheme() {
         state.theme = state.theme === "dark" ? "light" : "dark";
@@ -1940,16 +1983,12 @@ async function loadBecauseYouLiked(tmdbId, seedTitle) {
           state.discoverResults = Array.isArray(data.results)
             ? data.results
             : [];
+          cacheSet("rq_cache_discover", { results: state.discoverResults, meta: { country: state.country } });
         } catch (err) {
           const cached = cacheGet("rq_cache_discover", 1000 * 60 * 60 * 24 * 21);
           if (cached && Array.isArray(cached.results) && cached.results.length) {
-            const results = cached.results;
-            if ("rq_cache_discover".indexOf("forYou") !== -1) { state.forYouResults = results; state.forYouLoaded = true; }
-            else if ("rq_cache_discover".indexOf("discover") !== -1) { state.discoverResults = results; }
-            else if ("rq_cache_discover".indexOf("radar") !== -1) { state.radarResults = results; }
-            els.message.style.display = "block";
-            els.message.textContent = "Offline — showing the last saved Discover results.";
-            state.forYouLoading = false;
+            state.discoverResults = cached.results;
+            if (els && els.message) { els.message.style.display = "block"; els.message.textContent = "Offline — showing the last saved Discover results."; }
             render();
             return;
           }
@@ -1978,13 +2017,8 @@ async function loadBecauseYouLiked(tmdbId, seedTitle) {
         } catch (err) {
           const cached = cacheGet("rq_cache_radar", 1000 * 60 * 60 * 24 * 21);
           if (cached && Array.isArray(cached.results) && cached.results.length) {
-            const results = cached.results;
-            if ("rq_cache_radar".indexOf("forYou") !== -1) { state.forYouResults = results; state.forYouLoaded = true; }
-            else if ("rq_cache_radar".indexOf("discover") !== -1) { state.discoverResults = results; }
-            else if ("rq_cache_radar".indexOf("radar") !== -1) { state.radarResults = results; }
-            els.message.style.display = "block";
-            els.message.textContent = "Offline — showing the last saved Radar results.";
-            state.forYouLoading = false;
+            state.radarResults = cached.results;
+            if (els && els.message) { els.message.style.display = "block"; els.message.textContent = "Offline — showing the last saved Radar results."; }
             render();
             return;
           }
@@ -2061,18 +2095,7 @@ async function loadBecauseYouLiked(tmdbId, seedTitle) {
           const data = await tmdbFetch(url);
           state.forYouResults = Array.isArray(data.results) ? data.results : [];
           state.forYouLoaded = true;
-          cacheSet("rq_cache_forYou_fallback", { results: state.forYouResults, meta: { country: state.country } });
         } catch (err) {
-          const cached = cacheGet("rq_cache_forYou_fallback", 1000 * 60 * 60 * 24 * 21);
-          if (cached && Array.isArray(cached.results) && cached.results.length) {
-            state.forYouResults = cached.results;
-            state.forYouLoaded = true;
-            els.message.style.display = "block";
-            els.message.textContent = "Offline — showing the last saved For You results.";
-            state.forYouLoading = false;
-            render();
-            return;
-          }
           console.error(err);
           state.forYouResults = [];
           state.forYouLoaded = false;
@@ -2138,7 +2161,7 @@ async function loadBecauseYouLiked(tmdbId, seedTitle) {
             ? data.results
             : [];
           state.forYouLoaded = true;
-          cacheSet("rq_cache_forYou", { results: state.forYouResults, meta: { country: state.country, favouriteGenres: state.favouriteGenres, minYear: state.filters ? state.filters.minYear : 0, excludedGenres: state.filters ? state.filters.excludedGenres : [] } });
+          cacheSet("rq_cache_forYou", { results: state.forYouResults, meta: { country: state.country, favouriteGenres: state.favouriteGenres } });
         } catch (err) {
           const cached = cacheGet("rq_cache_forYou", 1000 * 60 * 60 * 24 * 21);
           if (cached && Array.isArray(cached.results) && cached.results.length) {
@@ -2635,7 +2658,7 @@ async function pickFromWatchlist() {
         panel.appendChild(heading);
         panel.appendChild(copy);
 
-// App install/offline
+// App
 const appHeading = document.createElement("div");
 appHeading.className = "settings-subheading";
 appHeading.style.marginTop = "14px";
@@ -2656,50 +2679,31 @@ installBtn.type = "button";
 installBtn.className = "pill-btn";
 installBtn.textContent = "Install ReelQuest";
 installBtn.addEventListener("click", function () {
-  triggerInstallPrompt();
+  showInstallHint();
 });
-
-        const offlineRow = document.createElement("div");
-        offlineRow.style.display = "flex";
-        offlineRow.style.flexWrap = "wrap";
-        offlineRow.style.gap = "10px";
-        offlineRow.style.alignItems = "center";
-
-        const updateSwBtn = document.createElement("button");
-        updateSwBtn.type = "button";
-        updateSwBtn.className = "pill-btn";
-        updateSwBtn.textContent = "Update offline support";
-        updateSwBtn.addEventListener("click", function () { updateOfflineSupport(); });
-
-        const removeSwBtn = document.createElement("button");
-        removeSwBtn.type = "button";
-        removeSwBtn.className = "pill-btn";
-        removeSwBtn.textContent = "Remove offline support";
-        removeSwBtn.addEventListener("click", function () { removeOfflineSupport(); });
-
-        offlineRow.appendChild(updateSwBtn);
-        offlineRow.appendChild(removeSwBtn);
-
 
 const offlineNote = document.createElement("span");
 offlineNote.style.fontSize = "12px";
 offlineNote.style.color = "var(--text-muted)";
 offlineNote.textContent = (isOffline() ? "Status: Offline" : "Status: Online");
 
+const clearOfflineBtn = document.createElement("button");
+clearOfflineBtn.type = "button";
+clearOfflineBtn.className = "pill-btn";
+clearOfflineBtn.textContent = "Remove offline support";
+clearOfflineBtn.addEventListener("click", function () {
+  unregisterServiceWorkersAndClearCaches();
+  toast("Offline support removed. Reloading…");
+  setTimeout(function(){ location.href = location.pathname + "?v=26"; }, 600);
+});
+
 appRow.appendChild(installBtn);
 appRow.appendChild(offlineNote);
+appRow.appendChild(clearOfflineBtn);
 
 panel.appendChild(appHeading);
 panel.appendChild(appCopy);
 panel.appendChild(appRow);
-
-        if (isIos() && !isStandalone()) {
-  const iosHint = document.createElement("p");
-  iosHint.className = "settings-copy";
-  iosHint.style.margin = "8px 0 0 0";
-  iosHint.textContent = "On iPhone/iPad: use Share → Add to Home Screen.";
-  panel.appendChild(iosHint);
-}
 
         const countryHeading = document.createElement("div");
         countryHeading.className = "settings-subheading";
@@ -3188,7 +3192,7 @@ function moveEntryInList(listId, tmdbId, direction) {
   const clean = (name || "").trim();
   if (!clean) {
     alertNice("Please enter a list name.");
-    return null;
+    return;
   }
   const list = {
     id: safeId(),
@@ -3205,7 +3209,6 @@ function moveEntryInList(listId, tmdbId, direction) {
   state.listsUi = { mode: "detail", activeListId: list.id, reorderMode: false };
   saveState();
   render();
-  return list.id;
 }
 
       function renameList(listId) {
@@ -4046,7 +4049,6 @@ if (item.notes && String(item.notes).trim()) {
 
         card.addEventListener("click", function (e) {
           if (bulkSelectable && state.ui.selectionMode) {
-            // Avoid double-toggling when clicking buttons
             const t = e.target;
             if (t && (t.closest(".card-btn") || t.closest(".pill-btn") || t.closest("a"))) return;
             if (tmdbIdForSelect) toggleSelectedTmdbId(tmdbIdForSelect);
@@ -4062,8 +4064,6 @@ if (item.notes && String(item.notes).trim()) {
 
         // Bulk selection controls
         if (isBulkSelectableTab()) {
-          if (!state.ui) state.ui = { selectionMode: false, selectedTmdbIds: [] };
-
           const selectBtn = document.createElement("button");
           selectBtn.type = "button";
           selectBtn.className = "pill-btn";
@@ -4119,6 +4119,7 @@ if (item.notes && String(item.notes).trim()) {
             moveBtn.textContent = "Move to watched";
             moveBtn.addEventListener("click", function () {
               const views = getSelectedViewsForCurrentTab();
+              if (!views.length) { toast("Select at least one film first."); return; }
               bulkMoveSelectedToWatched(views);
               clearSelection();
             });
@@ -4208,8 +4209,8 @@ container.appendChild(pickBtn);
           btn.classList.toggle("active", btn.dataset.tab === state.activeTab);
         }
 
-        els.sortSelect.value = state.sortBy;
-        els.ratingFilterSelect.value = String(state.minRating);
+        if (els.sortSelect) els.sortSelect.value = state.sortBy;
+        if (els.ratingFilterSelect) els.ratingFilterSelect.value = String(state.minRating);
 
         if (state.activeTab === "settings") {
           els.searchForm.style.display = "none";
@@ -5269,121 +5270,57 @@ els.detailActions.appendChild(orgWrap);
         reader.readAsText(file);
       }
 
-      // PWA: manifest + install prompt + offline support
-let deferredInstallPrompt = null;
-
-function setupPwaManifest() {
-  const link = document.getElementById("manifest-link");
-  if (!link) return;
-
-  const base = "./";
-  const manifest = {
-    name: "ReelQuest",
-    short_name: "ReelQuest",
-    start_url: base + "?source=pwa",
-    scope: base,
-    display: "standalone",
-    background_color: "#0b1220",
-    theme_color: "#0b1220",
-    description: "A minimal movie watchlist with recommendations, lists and offline-friendly caching.",
-    icons: [
-      { src: base + "icon-192.png", sizes: "192x192", type: "image/png" },
-      { src: base + "icon-512.png", sizes: "512x512", type: "image/png" }
-    ]
-  };
-
-  const href = "data:application/manifest+json," + encodeURIComponent(JSON.stringify(manifest));
-  link.setAttribute("href", href);
-}
-
-function setupInstallPrompt() {
-  window.addEventListener("beforeinstallprompt", function (e) {
-    e.preventDefault();
-    deferredInstallPrompt = e;
-
-    // Only nudge occasionally
-    const seen = cacheGet("rq_seen_install_toast", 1000 * 60 * 60 * 24 * 30);
-    if (!seen) {
-      cacheSet("rq_seen_install_toast", true);
-      toast("Install ReelQuest for quicker access.", {
-        actionText: "Install",
-        onAction: function () { triggerInstallPrompt(); }
-      });
-    }
-  });
-}
-
-async function triggerInstallPrompt() {
-  const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent || "");
-  const isStandalone = (window.navigator && window.navigator.standalone) ? true : false;
-
-  if (isIOS && !isStandalone) {
-    toast("On iPhone: tap Share, then ‘Add to Home Screen’.");
-    return;
-  }
-
-  if (!deferredInstallPrompt) {
-    toast("Install isn’t available on this browser right now.");
-    return;
-  }
-
-  deferredInstallPrompt.prompt();
-  try { await deferredInstallPrompt.userChoice; } catch (e) {}
-  deferredInstallPrompt = null;
-}
-
+      // PWA (optional): service worker + install hint
 async function registerServiceWorker() {
   try {
     if (!("serviceWorker" in navigator)) return;
     if (location.protocol !== "https:" && location.hostname !== "localhost") return;
-    // Query string helps bust caches when you update sw.js
-    await navigator.serviceWorker.register("./sw.js?v=2");
-  } catch (e) {
-    console.warn("Service worker registration failed", e);
-  }
+    await navigator.serviceWorker.register("./sw.js");
+  } catch (e) {}
 }
 
-async function removeOfflineSupport() {
+async function unregisterServiceWorkersAndClearCaches() {
   try {
-    if (!("serviceWorker" in navigator)) return;
-    const reg = await navigator.serviceWorker.getRegistration();
-    if (reg) await reg.unregister();
-  } catch (e) {}
-
-  try {
+    if ("serviceWorker" in navigator) {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      for (let i = 0; i < regs.length; i++) {
+        try { await regs[i].unregister(); } catch (e) {}
+      }
+    }
     if (typeof caches !== "undefined" && caches.keys) {
       const keys = await caches.keys();
-      await Promise.all(keys.map(function (k) { return caches.delete(k); }));
+      for (let i = 0; i < keys.length; i++) {
+        try { await caches.delete(keys[i]); } catch (e) {}
+      }
     }
   } catch (e) {}
-
-  toast("Offline support removed. Refresh the page.");
 }
 
-async function updateOfflineSupport() {
-  try {
-    if (!("serviceWorker" in navigator)) { toast("Offline support isn’t available here."); return; }
-    const reg = await navigator.serviceWorker.getRegistration();
-    if (reg) {
-      await reg.update();
-      toast("Offline support updated.");
-    } else {
-      await registerServiceWorker();
-      toast("Offline support enabled.");
-    }
-  } catch (e) {
-    toast("Couldn’t update offline support.");
+function isIos() {
+  return /iPhone|iPad|iPod/i.test(navigator.userAgent || "");
+}
+
+function isStandalone() {
+  return (window.navigator && window.navigator.standalone) ? true : (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches);
+}
+
+function showInstallHint() {
+  if (isIos() && !isStandalone()) {
+    toast("On iPhone: tap Share, then ‘Add to Home Screen’.");
+  } else {
+    toast("Install isn’t available on this browser right now.");
   }
 }
 
 function init() {
         try {
-          setupPwaManifest();
-          setupInstallPrompt();
           const qs = new URLSearchParams(location.search || "");
-          if (qs.get("nosw") !== "1") registerServiceWorker();
+          if (qs.get("nosw") === "1") {
+            unregisterServiceWorkersAndClearCaches();
+          } else {
+            registerServiceWorker();
+          }
         } catch (e) {}
-
         els = {
           tabButtons: document.querySelectorAll(".tab-btn"),
           sectionTitle: document.getElementById("section-title"),
@@ -5420,6 +5357,15 @@ function init() {
         applyTheme();
         render();
 
+        // Initial load for the starting tab
+        if (state.activeTab === "discover") {
+          loadPopularForDiscover();
+        } else if (state.activeTab === "for-you") {
+          loadForYouRecommendations();
+        } else if (state.activeTab === "radar") {
+          loadRadarUpcoming();
+        }
+
         if (state.activeTab === "for-you" && state.favouriteGenres.length) {
           loadForYouRecommendations();
         }
@@ -5428,10 +5374,10 @@ function init() {
           els.tabButtons[i].addEventListener("click", handleTabClick);
         }
 
-        els.searchInput.addEventListener("input", handleSearchInput);
-        els.searchForm.addEventListener("submit", handleSearchSubmit);
-        els.sortSelect.addEventListener("change", handleSortChange);
-        els.ratingFilterSelect.addEventListener("change", handleRatingFilterChange);
+        if (els.searchInput) els.searchInput.addEventListener("input", handleSearchInput);
+        if (els.searchForm) els.searchForm.addEventListener("submit", handleSearchSubmit);
+        if (els.sortSelect) els.sortSelect.addEventListener("change", handleSortChange);
+        if (els.ratingFilterSelect) els.ratingFilterSelect.addEventListener("change", handleRatingFilterChange);
 
         if (els.importInput) {
           els.importInput.addEventListener("change", function (e) {
@@ -5495,7 +5441,8 @@ function init() {
 
       document.addEventListener("DOMContentLoaded", init);
     })();
-  </script>
+  
+</script>
   <div id="toast-host" aria-live="polite" aria-atomic="true"></div>
 </body>
 </html>
