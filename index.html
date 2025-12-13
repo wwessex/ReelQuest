@@ -3219,6 +3219,33 @@ tvBtn.addEventListener("click", function () {
         exportBtn.textContent = "Export data";
         exportBtn.addEventListener("click", exportDataToFile);
 
+
+const importMergeBtn = document.createElement("button");
+importMergeBtn.type = "button";
+importMergeBtn.className = "pill-btn";
+importMergeBtn.textContent = "Import data (merge)";
+importMergeBtn.addEventListener("click", function () {
+  const temp = document.createElement("input");
+  temp.type = "file";
+  temp.accept = "application/json";
+  temp.style.position = "fixed";
+  temp.style.left = "-9999px";
+  temp.style.top = "-9999px";
+  temp.style.width = "1px";
+  temp.style.height = "1px";
+  temp.style.opacity = "0";
+  document.body.appendChild(temp);
+
+  temp.addEventListener("change", function () {
+    const files = temp.files;
+    if (files && files[0]) {
+      handleImportFile(files[0], "merge");
+    }
+    document.body.removeChild(temp);
+  });
+
+  temp.click();
+});
         const importBtn = document.createElement("button");
         importBtn.type = "button";
         importBtn.className = "pill-btn";
@@ -3248,8 +3275,40 @@ tvBtn.addEventListener("click", function () {
           temp.click();
         });
 
+
+
+const importMergeBtn = document.createElement("button");
+importMergeBtn.type = "button";
+importMergeBtn.className = "pill-btn";
+importMergeBtn.textContent = "Import (merge)";
+importMergeBtn.addEventListener("click", function () {
+  const temp = document.createElement("input");
+  temp.type = "file";
+  temp.accept = "application/json";
+  temp.style.position = "fixed";
+  temp.style.left = "-9999px";
+  temp.style.top = "-9999px";
+  temp.style.width = "1px";
+  temp.style.height = "1px";
+  temp.style.opacity = "0";
+  document.body.appendChild(temp);
+
+  temp.addEventListener("change", function () {
+    const files = temp.files;
+    if (files && files[0]) {
+      handleImportFile(files[0], "merge");
+    }
+    document.body.removeChild(temp);
+  });
+
+  temp.click();
+});
+
+
         toolsRow.appendChild(exportBtn);
         toolsRow.appendChild(importBtn);
+
+        toolsRow.appendChild(importMergeBtn);
 
         panel.appendChild(toolsHeading);
         panel.appendChild(toolsCopy);
@@ -3682,8 +3741,44 @@ function moveEntryInList(listId, entryKeyValue, direction) {
       createSmartListPreset();
     });
 
+
+
+const importListBtn = document.createElement("button");
+importListBtn.type = "button";
+importListBtn.className = "pill-btn";
+importListBtn.textContent = "Import list";
+importListBtn.addEventListener("click", function () {
+  const merge = window.confirm(
+    "Merge into an existing list with the same name (if found)?\n\nOK: Merge\nCancel: Add as new list"
+  );
+
+  const temp = document.createElement("input");
+  temp.type = "file";
+  temp.accept = "application/json";
+  temp.style.position = "fixed";
+  temp.style.left = "-9999px";
+  temp.style.top = "-9999px";
+  temp.style.width = "1px";
+  temp.style.height = "1px";
+  temp.style.opacity = "0";
+  document.body.appendChild(temp);
+
+  temp.addEventListener("change", function () {
+    const files = temp.files;
+    if (files && files[0]) {
+      handleImportListFile(files[0], merge);
+    }
+    document.body.removeChild(temp);
+  });
+
+  temp.click();
+});
+
+
     tools.appendChild(createManualBtn);
     tools.appendChild(createSmartBtn);
+
+    tools.appendChild(importListBtn);
     panel.appendChild(tools);
 
     const listHeading = document.createElement("div");
@@ -3906,6 +4001,25 @@ function moveEntryInList(listId, entryKeyValue, direction) {
 
   right.appendChild(pinBtn);
   right.appendChild(descBtn);
+
+const shareBtn = document.createElement("button");
+shareBtn.type = "button";
+shareBtn.className = "pill-btn";
+shareBtn.textContent = "Share";
+shareBtn.addEventListener("click", function () {
+  shareList(list.id);
+});
+
+const exportListBtn = document.createElement("button");
+exportListBtn.type = "button";
+exportListBtn.className = "pill-btn";
+exportListBtn.textContent = "Export list";
+exportListBtn.addEventListener("click", function () {
+  exportSingleListToFile(list.id);
+});
+
+right.appendChild(shareBtn);
+right.appendChild(exportListBtn);
   right.appendChild(deleteBtn);
 
   topRow.appendChild(backBtn);
@@ -5377,6 +5491,567 @@ els.detailActions.appendChild(orgWrap);
         return payload;
       }
 
+function base64UrlEncode(str) {
+  try {
+    const bytes = new TextEncoder().encode(String(str));
+    let bin = "";
+    for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+    return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+  } catch (e) {
+    console.error(e);
+    return "";
+  }
+}
+
+function base64UrlDecode(b64url) {
+  try {
+    let b64 = String(b64url || "").replace(/-/g, "+").replace(/_/g, "/");
+    while (b64.length % 4) b64 += "=";
+    const bin = atob(b64);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return new TextDecoder().decode(bytes);
+  } catch (e) {
+    console.error(e);
+    return "";
+  }
+}
+
+function safeFileName(name) {
+  return String(name || "list")
+    .trim()
+    .replace(/\s+/g, "-")
+    .replace(/[^a-zA-Z0-9\-_.]/g, "")
+    .slice(0, 60) || "list";
+}
+
+function listExportEntries(list) {
+  if (!list) return [];
+  if (list.type === "manual") {
+    return Array.isArray(list.entries) ? list.entries.slice(0, 400) : [];
+  }
+  // smart: prefer cached TMDB results if available
+  if (Array.isArray(list.cachedResults) && list.cachedResults.length) {
+    const out = [];
+    for (let i = 0; i < list.cachedResults.length; i++) {
+      const m = list.cachedResults[i];
+      if (!m || !m.id) continue;
+      out.push({
+        tmdbId: m.id,
+        mediaType: normaliseMediaType(m.media_type || "movie"),
+        title: titleFromTmdb(m),
+        year: yearFromTmdb(m),
+        posterPath: m.poster_path || null,
+        rating: typeof m.vote_average === "number" ? m.vote_average : null,
+        addedAt: Date.now()
+      });
+    }
+    return out.slice(0, 120);
+  }
+  if (Array.isArray(list.entries) && list.entries.length) {
+    return list.entries.slice(0, 120);
+  }
+  return [];
+}
+
+function buildSingleListPayload(list) {
+  if (!list) return null;
+
+  const payload = {
+    app: "ReelQuest",
+    version: "v1",
+    type: "list",
+    exportedAt: new Date().toISOString(),
+    list: {
+      id: String(list.id || safeId()),
+      type: list.type === "smart" ? "smart" : "manual",
+      name: String(list.name || "Untitled").trim() || "Untitled",
+      description: String(list.description || "").trim(),
+      pinned: !!list.pinned,
+      createdAt: typeof list.createdAt === "number" ? list.createdAt : Date.now()
+    }
+  };
+
+  if (payload.list.type === "smart") {
+    payload.list.smartRules = list.smartRules && typeof list.smartRules === "object" ? list.smartRules : {};
+    // include a small snapshot for nicer shares/offline viewing
+    payload.list.entries = listExportEntries(list);
+  } else {
+    payload.list.sortMode = String(list.sortMode || "custom");
+    payload.list.customOrder = Array.isArray(list.customOrder) ? list.customOrder : [];
+    payload.list.entries = listExportEntries(list);
+  }
+
+  return payload;
+}
+
+function makeShareUrlForPayload(payload) {
+  const base = window.location.origin + window.location.pathname;
+  const encoded = base64UrlEncode(JSON.stringify(payload));
+  if (!encoded) return base;
+  return base + "?share=" + encoded;
+}
+
+function buildListShareText(list) {
+  if (!list) return "Shared from ReelQuest.";
+  const entries = listExportEntries(list);
+
+  const title = String(list.name || "Untitled").trim() || "Untitled";
+  const desc = String(list.description || "").trim();
+
+  const max = Math.min(entries.length, 30);
+  const rows = [];
+
+  rows.push("ReelQuest · " + title);
+  if (desc) rows.push(desc);
+  rows.push(entries.length + " title" + (entries.length === 1 ? "" : "s"));
+
+  rows.push("");
+  for (let i = 0; i < max; i++) {
+    const e = entries[i];
+    const n = i + 1;
+    const year = e.year ? " (" + e.year + ")" : "";
+    const tv = normaliseMediaType(e.mediaType || "movie") === "tv" ? " · TV" : "";
+    rows.push(n + ". " + (e.title || "Untitled") + year + tv);
+  }
+  if (entries.length > max) rows.push("…and " + (entries.length - max) + " more.");
+
+  // Turn it into a tidy "text card"
+  const content = rows.slice();
+  const width = Math.min(
+    64,
+    content.reduce(function (m, s) { return Math.max(m, String(s || "").length); }, 0)
+  );
+
+  function padRight(s) {
+    const str = String(s || "");
+    if (str.length >= width) return str.slice(0, width);
+    return str + " ".repeat(width - str.length);
+  }
+
+  const lines = [];
+  lines.push("┌" + "─".repeat(width + 2) + "┐");
+  for (let i = 0; i < content.length; i++) {
+    const line = content[i] === "" ? "" : content[i];
+    lines.push("│ " + padRight(line) + " │");
+  }
+  lines.push("└" + "─".repeat(width + 2) + "┘");
+  lines.push("Shared from ReelQuest.");
+
+  return lines.join("\n");
+}
+
+function upsertItemFromListEntry(entry) {
+  if (!entry || !entry.tmdbId) return;
+  const mt = normaliseMediaType(entry.mediaType || "movie");
+  let existing = findItemByTmdbId(entry.tmdbId, mt);
+  if (existing) return existing;
+
+  const now = Date.now();
+  const item = {
+    id: safeId(),
+    tmdbId: entry.tmdbId,
+    mediaType: mt,
+    title: entry.title || "Untitled",
+    year: entry.year || "",
+    posterPath: entry.posterPath || null,
+    rating: typeof entry.rating === "number" ? entry.rating : null,
+
+    inWatchlist: false,
+    watched: false,
+    watchedAt: null,
+    userRating: null,
+    rewatch: false,
+    priority: "medium",
+    tags: [],
+    notes: "",
+
+    createdAt: now,
+    addedAt: now
+  };
+
+  state.items.push(item);
+  return item;
+}
+
+function mergeEntriesIntoList(targetList, incomingEntries) {
+  if (!targetList || targetList.type !== "manual") return;
+  if (!Array.isArray(targetList.entries)) targetList.entries = [];
+  const seen = {};
+  for (let i = 0; i < targetList.entries.length; i++) {
+    const e = targetList.entries[i];
+    if (!e || !e.tmdbId) continue;
+    seen[entryKey(e.mediaType || "movie", e.tmdbId)] = true;
+  }
+
+  for (let i = 0; i < incomingEntries.length; i++) {
+    const e = incomingEntries[i];
+    if (!e || !e.tmdbId) continue;
+    const key = entryKey(e.mediaType || "movie", e.tmdbId);
+    if (seen[key]) continue;
+    targetList.entries.push(e);
+    seen[key] = true;
+  }
+
+  ensureCustomOrder(targetList);
+}
+
+function importSingleListPayload(payload, merge) {
+  if (!payload) return null;
+  const obj = payload.list ? payload.list : payload;
+  if (!obj || typeof obj !== "object") return null;
+
+  const normalised = normaliseImportedLists([obj]);
+  if (!normalised.length) return null;
+  const incoming = normalised[0];
+
+  // If it's a smart list import, keep it smart but ensure entries exist as snapshot for sharing
+  if (incoming.type === "smart") {
+    if (!Array.isArray(incoming.entries)) incoming.entries = [];
+    // If there is a name clash, create a new name
+    let name = incoming.name || "Untitled";
+    for (let i = 0; i < state.lists.length; i++) {
+      if (String(state.lists[i].name || "").trim().toLowerCase() === String(name).trim().toLowerCase()) {
+        name = name + " (imported)";
+        break;
+      }
+    }
+    incoming.name = name;
+    incoming.id = safeId();
+    state.lists.push(incoming);
+
+    // add basic items so detail actions work nicely
+    for (let i = 0; i < incoming.entries.length; i++) upsertItemFromListEntry(incoming.entries[i]);
+
+    return incoming.id;
+  }
+
+  // Manual list
+  if (merge) {
+    for (let i = 0; i < state.lists.length; i++) {
+      const existing = state.lists[i];
+      if (existing && existing.type === "manual") {
+        const a = String(existing.name || "").trim().toLowerCase();
+        const b = String(incoming.name || "").trim().toLowerCase();
+        if (a && b && a === b) {
+          if (!existing.description && incoming.description) existing.description = incoming.description;
+          existing.pinned = !!(existing.pinned || incoming.pinned);
+          mergeEntriesIntoList(existing, Array.isArray(incoming.entries) ? incoming.entries : []);
+          // items for new entries
+          for (let j = 0; j < incoming.entries.length; j++) upsertItemFromListEntry(incoming.entries[j]);
+          saveState();
+          return existing.id;
+        }
+      }
+    }
+  }
+
+  // add as a new list
+  let baseName = incoming.name || "Untitled";
+  let name = baseName;
+  let suffix = 2;
+  while (true) {
+    let clash = false;
+    for (let i = 0; i < state.lists.length; i++) {
+      if (String(state.lists[i].name || "").trim().toLowerCase() === String(name).trim().toLowerCase()) {
+        clash = true; break;
+      }
+    }
+    if (!clash) break;
+    name = baseName + " (" + suffix + ")";
+    suffix++;
+  }
+  incoming.name = name;
+  incoming.id = safeId();
+  state.lists.push(incoming);
+  for (let i = 0; i < incoming.entries.length; i++) upsertItemFromListEntry(incoming.entries[i]);
+  saveState();
+  return incoming.id;
+}
+
+function exportSingleListToFile(listId) {
+  const list = getListById(listId);
+  if (!list) return;
+
+  const payload = buildSingleListPayload(list);
+  if (!payload) return;
+
+  const json = JSON.stringify(payload, null, 2);
+  const blob = new Blob([json], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "reelquest-list-" + safeFileName(payload.list.name) + ".json";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  alertNice("List exported to your device.");
+}
+
+function handleShareLinkImport() {
+  // Supports links created by makeShareUrlForPayload(): ?share=<base64url(json)>
+  try {
+    const qs = new URLSearchParams(location.search || "");
+    const encoded = qs.get("share");
+    if (!encoded) return false;
+
+    // Clean the URL early (prevents repeat prompts on refresh / back)
+    qs.delete("share");
+    const clean = location.pathname + (qs.toString() ? ("?" + qs.toString()) : "") + location.hash;
+    try { history.replaceState({}, "", clean); } catch (e) {}
+
+    const raw = base64UrlDecode(encoded);
+    if (!raw) return false;
+
+    let payload = null;
+    try { payload = JSON.parse(raw); } catch (e) { payload = null; }
+    if (!payload || typeof payload !== "object") return false;
+
+    // Single list share
+    if (payload.type === "list" || payload.list) {
+      const listObj = payload.list ? payload.list : payload;
+      const name = String(listObj.name || "Untitled").trim() || "Untitled";
+
+      const ok = window.confirm(
+        "Import shared list “" + name + "” into ReelQuest?\n\nOK: Import\nCancel: Ignore"
+      );
+      if (!ok) return true;
+
+      const merge = window.confirm(
+        "Merge into an existing list with the same name (if found)?\n\nOK: Merge\nCancel: Add as new list"
+      );
+      const id = importSingleListPayload(payload, merge);
+      if (id) {
+        state.activeTab = "lists";
+        state.listsUi = { mode: "detail", activeListId: id, reorderMode: false };
+        saveState();
+        alertNice("List imported.");
+      } else {
+        alertNice("Sorry — we couldn’t import that shared list.");
+      }
+      return true;
+    }
+
+    return false;
+  } catch (e) {
+    console.error(e);
+    return false;
+  }
+}
+
+function shareList(listId) {
+  const list = getListById(listId);
+  if (!list) return;
+
+  const payload = buildSingleListPayload(list);
+  const shareUrl = payload ? makeShareUrlForPayload(payload) : (window.location.origin + window.location.pathname);
+  const text = buildListShareText(list);
+
+  if (navigator.share) {
+    navigator.share({
+      title: "ReelQuest — " + (list.name || "List"),
+      text: text,
+      url: shareUrl
+    }).catch(function () {});
+  } else if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text + "\n\n" + shareUrl).then(function () {
+      alertNice("List copied to the clipboard.");
+    }).catch(function () {
+      alertNice("Copy failed — your browser may not allow clipboard access.");
+    });
+  } else {
+    window.prompt("Copy this list", text + "\n\n" + shareUrl);
+  }
+}
+
+function handleImportListFile(file, merge) {
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function () {
+    try {
+      const txt = String(reader.result || "");
+      const parsed = JSON.parse(txt);
+      const isList = parsed && typeof parsed === "object" && (parsed.type === "list" || parsed.list);
+      if (!isList) {
+        alertNice("That file doesn’t look like a ReelQuest list export.");
+        return;
+      }
+
+      const newId = importSingleListPayload(parsed, !!merge);
+      if (newId) {
+        saveState();
+        state.listsUi = { mode: "detail", activeListId: newId, reorderMode: false };
+        saveState();
+        render();
+        alertNice("List imported.");
+      }
+    } catch (e) {
+      console.error(e);
+      alertNice("Sorry — we couldn’t import that list file.");
+    }
+  };
+  reader.onerror = function () {
+    alertNice("Sorry — we couldn’t read that file.");
+  };
+  reader.readAsText(file);
+}
+
+function mergeImportedData(imported) {
+  const data = imported && imported.data ? imported.data : imported;
+
+  const incomingItems = normaliseImportedItems(data && data.items ? data.items : []);
+  const incomingLists = normaliseImportedLists(data && data.lists ? data.lists : []);
+  const incomingFilters = data && data.filters && typeof data.filters === "object" ? data.filters : null;
+
+  // Merge items (by TMDB id + media type)
+  for (let i = 0; i < incomingItems.length; i++) {
+    const inc = incomingItems[i];
+    const mt = normaliseMediaType(inc.mediaType || "movie");
+    const ex = findItemByTmdbId(inc.tmdbId, mt);
+    if (!ex) {
+      state.items.push(inc);
+      continue;
+    }
+
+    ex.inWatchlist = !!(ex.inWatchlist || inc.inWatchlist);
+    ex.watched = !!(ex.watched || inc.watched);
+    if (!ex.watchedAt && inc.watchedAt) ex.watchedAt = inc.watchedAt;
+    if (ex.userRating == null && inc.userRating != null) ex.userRating = inc.userRating;
+    ex.rewatch = !!(ex.rewatch || inc.rewatch);
+
+    // tags union
+    const tags = {};
+    const next = [];
+    const a = Array.isArray(ex.tags) ? ex.tags : [];
+    const b = Array.isArray(inc.tags) ? inc.tags : [];
+    for (let t = 0; t < a.length; t++) {
+      const v = String(a[t] || "").trim();
+      if (!v) continue;
+      const k = v.toLowerCase();
+      if (tags[k]) continue;
+      tags[k] = true;
+      next.push(v);
+    }
+    for (let t = 0; t < b.length; t++) {
+      const v = String(b[t] || "").trim();
+      if (!v) continue;
+      const k = v.toLowerCase();
+      if (tags[k]) continue;
+      tags[k] = true;
+      next.push(v);
+    }
+    ex.tags = next;
+
+    if (!ex.notes && inc.notes) ex.notes = inc.notes;
+
+    if (typeof inc.addedAt === "number" && typeof ex.addedAt === "number") ex.addedAt = Math.min(ex.addedAt, inc.addedAt);
+    if (typeof inc.createdAt === "number" && typeof ex.createdAt === "number") ex.createdAt = Math.min(ex.createdAt, inc.createdAt);
+  }
+
+  // Merge lists
+  for (let i = 0; i < incomingLists.length; i++) {
+    const incList = incomingLists[i];
+    if (!incList || !incList.name) continue;
+
+    if (incList.type === "manual") {
+      let merged = false;
+      for (let j = 0; j < state.lists.length; j++) {
+        const existing = state.lists[j];
+        if (existing && existing.type === "manual") {
+          const a = String(existing.name || "").trim().toLowerCase();
+          const b = String(incList.name || "").trim().toLowerCase();
+          if (a && b && a === b) {
+            if (!existing.description && incList.description) existing.description = incList.description;
+            existing.pinned = !!(existing.pinned || incList.pinned);
+            mergeEntriesIntoList(existing, Array.isArray(incList.entries) ? incList.entries : []);
+            merged = true;
+            break;
+          }
+        }
+      }
+      if (!merged) {
+        incList.id = safeId();
+        state.lists.push(incList);
+      }
+    } else {
+      // smart lists: add as new if name clash
+      let name = incList.name;
+      let clash = false;
+      for (let j = 0; j < state.lists.length; j++) {
+        if (String(state.lists[j].name || "").trim().toLowerCase() === String(name).trim().toLowerCase()) {
+          clash = true; break;
+        }
+      }
+      if (clash) incList.name = name + " (imported)";
+      incList.id = safeId();
+      state.lists.push(incList);
+    }
+
+    // upsert minimal items for list entries
+    if (Array.isArray(incList.entries)) {
+      for (let k = 0; k < incList.entries.length; k++) upsertItemFromListEntry(incList.entries[k]);
+    }
+  }
+
+  // Merge preference arrays (keep existing scalar settings)
+  const fav = Array.isArray(data && data.favouriteGenres) ? data.favouriteGenres : [];
+  for (let i = 0; i < fav.length; i++) {
+    const g = String(fav[i] || "").trim();
+    if (!g) continue;
+    if (state.favouriteGenres.indexOf(g) === -1) state.favouriteGenres.push(g);
+  }
+
+  if (incomingFilters && Array.isArray(incomingFilters.excludedGenres)) {
+    const ex = incomingFilters.excludedGenres;
+    const existing = state.filters && Array.isArray(state.filters.excludedGenres) ? state.filters.excludedGenres : [];
+    for (let i = 0; i < ex.length; i++) {
+      const g = String(ex[i] || "").trim();
+      if (!g) continue;
+      if (existing.indexOf(g) === -1) existing.push(g);
+    }
+    state.filters.excludedGenres = existing;
+  }
+
+  // Clear caches that could be stale
+  state.detailsCache = {};
+  saveState();
+  applyTheme();
+  render();
+}
+
+function checkForSharedListImport() {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get("share");
+    if (!token) return;
+    const decoded = base64UrlDecode(token);
+    if (!decoded) return;
+    const parsed = JSON.parse(decoded);
+    const listObj = parsed && (parsed.type === "list" || parsed.list) ? parsed : null;
+    if (!listObj) return;
+
+    const name = (listObj.list && listObj.list.name) ? listObj.list.name : "this list";
+    const merge = window.confirm(
+      "Import shared list \"" + name + "\"?\n\nOK: Merge into an existing list with the same name (if found).\nCancel: Add as a new list."
+    );
+
+    const newId = importSingleListPayload(listObj, !!merge);
+    if (newId) {
+      state.listsUi = { mode: "detail", activeListId: newId, reorderMode: false };
+      saveState();
+      render();
+      alertNice("List imported.");
+    }
+
+    // remove share param so it doesn't keep importing on refresh
+    const clean = window.location.origin + window.location.pathname;
+    window.history.replaceState({}, "", clean);
+  } catch (e) {
+    console.error(e);
+  }
+}
+
       function exportDataToFile() {
         try {
           const payload = buildExportPayload();
@@ -5577,48 +6252,89 @@ els.detailActions.appendChild(orgWrap);
         }
       }
 
-      function handleImportFile(file) {
-        if (!file) return;
-        const reader = new FileReader();
-        reader.onload = function () {
-          try {
-            const text = String(reader.result || "");
-            const parsed = JSON.parse(text);
+      function handleImportFile(file, mode) {
+  if (!file) return;
+  const importMode = mode === "merge" ? "merge" : "replace";
+  const reader = new FileReader();
+  reader.onload = function () {
+    try {
+      const text = String(reader.result || "");
+      const parsed = JSON.parse(text);
 
-            const looksLikeReelQuest =
-              parsed && typeof parsed === "object" &&
-              (parsed.app === "ReelQuest" || parsed.version || parsed.data);
+      const looksLikeReelQuest =
+        parsed && typeof parsed === "object" &&
+        (parsed.app === "ReelQuest" || parsed.version || parsed.data);
 
-            if (!looksLikeReelQuest) {
-              const ok = window.confirm(
-                "This file doesn’t look like a ReelQuest backup. Try importing anyway?"
-              );
-              if (!ok) return;
-            }
-
-            const confirmReplace = window.confirm(
-              "Importing will replace your current watchlist, watched list and preferences on this device. Continue?"
-            );
-            if (!confirmReplace) return;
-
-            applyImportedData(parsed);
-            const data = parsed && parsed.data ? parsed.data : parsed;
-            const listCount = data && Array.isArray(data.lists) ? data.lists.length : 0;
-            const filmCount = data && Array.isArray(data.items) ? data.items.length : 0;
-            alertNice("Import complete. Restored " + filmCount + " film record(s) and " + listCount + " list(s).");
-          } catch (e) {
-            console.error(e);
-            alertNice("Sorry — we couldn’t import that file. Please check it’s a valid ReelQuest backup.");
-          } finally {
-            if (els.importInput) els.importInput.value = "";
-          }
-        };
-        reader.onerror = function () {
-          alertNice("Sorry — we couldn’t read that file.");
-          if (els.importInput) els.importInput.value = "";
-        };
-        reader.readAsText(file);
+      if (!looksLikeReelQuest) {
+        const ok = window.confirm(
+          "This file doesn’t look like a ReelQuest backup. Try importing anyway?"
+        );
+        if (!ok) return;
       }
+
+
+// Single list payloads can be imported here too
+if (parsed && typeof parsed === "object" && (parsed.type === "list" || parsed.list)) {
+  const name = String((parsed.list && parsed.list.name) ? parsed.list.name : (parsed.name || "Untitled")).trim() || "Untitled";
+  const ok = window.confirm(
+    "Import list “" + name + "” into ReelQuest?\n\nOK: Import\nCancel: Stop"
+  );
+  if (!ok) return;
+
+  const mergeList = (importMode === "merge")
+    ? true
+    : window.confirm("Merge into an existing list with the same name (if found)?\n\nOK: Merge\nCancel: Add as new list");
+
+  const id = importSingleListPayload(parsed, mergeList);
+  if (id) {
+    state.activeTab = "lists";
+    state.listsUi = { mode: "detail", activeListId: id, reorderMode: false };
+    saveState();
+    render();
+    alertNice("List imported.");
+  } else {
+    alertNice("Sorry — we couldn’t import that list.");
+  }
+  return;
+}
+      if (importMode === "replace") {
+        const confirmReplace = window.confirm(
+          "Importing will replace your current watchlist, watched list and preferences on this device. Continue?"
+        );
+        if (!confirmReplace) return;
+
+        applyImportedData(parsed);
+        const data = parsed && parsed.data ? parsed.data : parsed;
+        const listCount = data && Array.isArray(data.lists) ? data.lists.length : 0;
+        const filmCount = data && Array.isArray(data.items) ? data.items.length : 0;
+        alertNice("Import complete. Restored " + filmCount + " title record(s) and " + listCount + " list(s).");
+        return;
+      }
+
+      // Merge mode
+      const confirmMerge = window.confirm(
+        "Importing will add titles and lists to your existing data. It won’t delete anything. Continue?"
+      );
+      if (!confirmMerge) return;
+
+      mergeImportedData(parsed);
+      const data2 = parsed && parsed.data ? parsed.data : parsed;
+      const listCount2 = data2 && Array.isArray(data2.lists) ? data2.lists.length : 0;
+      const filmCount2 = data2 && Array.isArray(data2.items) ? data2.items.length : 0;
+      alertNice("Merge complete. Added data from " + filmCount2 + " title record(s) and " + listCount2 + " list(s).");
+    } catch (e) {
+      console.error(e);
+      alertNice("Sorry — we couldn’t import that file. Please check it’s a valid ReelQuest backup.");
+    } finally {
+      if (els.importInput) els.importInput.value = "";
+    }
+  };
+  reader.onerror = function () {
+    alertNice("Sorry — we couldn’t read that file.");
+    if (els.importInput) els.importInput.value = "";
+  };
+  reader.readAsText(file);
+}
 
       // PWA (optional): service worker + install hint
 async function registerServiceWorker() {
@@ -5706,6 +6422,7 @@ function init() {
         loadState();
         migrateItemsMediaType();
         applyTheme();
+        handleShareLinkImport();
         render();
 
         // Initial load for the starting tab
@@ -5788,6 +6505,8 @@ function init() {
         }
 
         updateDebug("ReelQuest ready (JS initialised)");
+
+        checkForSharedListImport();
       }
 
       document.addEventListener("DOMContentLoaded", init);
