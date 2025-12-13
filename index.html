@@ -1184,7 +1184,23 @@
 .modal-row strong { font-size: 13px; }
 .modal-row small { color: var(--text-muted); font-size: 12px; }
 .modal-actions { display: flex; gap: 10px; flex-wrap: wrap; }
-  </style>
+  
+.type-pill {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  border: 1px solid var(--border-subtle);
+  background: rgba(20,22,28,0.78);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  z-index: 2;
+}
+</style>
   <link rel="manifest" href="./manifest.webmanifest">
   <meta name="theme-color" content="#0b1220">
   <link rel="apple-touch-icon" href="./icon-192.png">
@@ -1328,8 +1344,7 @@
   </div>
 
   <script>
-
-    (function () {
+(function () {
       const TMDB_API_KEY = "b24323f85318cb1b12fd1ea0a94420de";
 
       const GENRES = [
@@ -1352,6 +1367,59 @@
         { id: 37, name: "Western" }
       ];
 
+
+// TV genre mapping (TMDB uses different IDs for TV vs films)
+const TV_GENRE_IDS_BY_NAME = {
+  "Action": 10759, // Action & Adventure
+  "Adventure": 10759,
+  "Animation": 16,
+  "Comedy": 35,
+  "Crime": 80,
+  "Documentary": 99,
+  "Drama": 18,
+  "Family": 10751,
+  "Fantasy": 10765, // Sci-Fi & Fantasy (closest to Fantasy)
+  "History": 10768, // War & Politics (closest)
+  "Horror": 9648, // closest: Mystery/Thriller genres on TV are different; best-effort
+  "Music": 10767, // Talk
+  "Mystery": 9648,
+  "Romance": 10749,
+  "Science Fiction": 10765,
+  "Thriller": 9648,
+  "War": 10768,
+  "Western": 37
+};
+
+function normaliseMediaType(mt) {
+  return mt === "tv" ? "tv" : "movie";
+}
+
+function entryKey(mediaType, tmdbId) {
+  const mt = normaliseMediaType(mediaType);
+  return (mt === "tv" ? "t" : "m") + String(tmdbId);
+}
+
+function parseEntryKey(key) {
+  if (typeof key === "number") return { mediaType: "movie", tmdbId: key };
+  if (typeof key !== "string" || !key.length) return { mediaType: "movie", tmdbId: null };
+  const first = key.charAt(0);
+  const rest = key.slice(1);
+  const id = parseInt(rest, 10);
+  if (first === "t") return { mediaType: "tv", tmdbId: Number.isFinite(id) ? id : null };
+  if (first === "m") return { mediaType: "movie", tmdbId: Number.isFinite(id) ? id : null };
+  const id2 = parseInt(key, 10);
+  return { mediaType: "movie", tmdbId: Number.isFinite(id2) ? id2 : null };
+}
+
+function titleFromTmdb(obj) {
+  return (obj && (obj.title || obj.name)) ? (obj.title || obj.name) : "Untitled";
+}
+
+function yearFromTmdb(obj) {
+  const d = obj ? (obj.release_date || obj.first_air_date || "") : "";
+  return d ? String(d).slice(0, 4) : "";
+}
+
       const STORAGE_KEY = "reelquest-state-v7";
 
       let els = {};
@@ -1368,6 +1436,7 @@
         discoverSeedTitle: "",
         filters: { minYear: 0, hideWatched: false, hideWatchlist: false, excludedGenres: [] },
         country: "GB",
+        includeTv: true,
         items: [],
         lists: [],
         listsUi: { mode: "index", activeListId: null, reorderMode: false },
@@ -1376,7 +1445,7 @@
         minRating: 0,
         theme: "dark",
         detailsCache: {},
-        ui: { selectionMode: false, selectedTmdbIds: [] },
+        ui: { selectionMode: false, selectedKeys: [] },
         lastTmdbStatus: ""
       };
 
@@ -1441,11 +1510,15 @@ function formatDateUK(ts) {
             state.country = parsed.country.toUpperCase();
           }
 
+          if (typeof parsed.includeTv === "boolean") {
+            state.includeTv = parsed.includeTv;
+          }
+
 if (parsed.ui && typeof parsed.ui === "object") {
   state.ui = {
     selectionMode: !!parsed.ui.selectionMode,
-    selectedTmdbIds: Array.isArray(parsed.ui.selectedTmdbIds)
-      ? parsed.ui.selectedTmdbIds.filter(function (n) { return typeof n === "number"; })
+    selectedKeys: Array.isArray(parsed.ui.selectedKeys)
+      ? parsed.ui.selectedKeys.filter(function (n) { return typeof n === "string" && n.length; })
       : []
   };
 }
@@ -1457,6 +1530,20 @@ if (parsed.ui && typeof parsed.ui === "object") {
           console.warn("Failed to load ReelQuest state", e);
         }
       }
+
+function migrateItemsMediaType() {
+  // Backwards compatibility: older saves had films only and no mediaType.
+  for (let i = 0; i < state.items.length; i++) {
+    if (!state.items[i].mediaType) state.items[i].mediaType = "movie";
+  }
+  for (let i = 0; i < state.lists.length; i++) {
+    const l = state.lists[i];
+    if (!l || !Array.isArray(l.entries)) continue;
+    for (let j = 0; j < l.entries.length; j++) {
+      if (!l.entries[j].mediaType) l.entries[j].mediaType = "movie";
+    }
+  }
+}
 
 
 function toast(message, options) {
@@ -1535,8 +1622,10 @@ function alertNice(message) {
               minRating: state.minRating,
               theme: state.theme,
             country: state.country,
+              includeTv: state.includeTv,
               ui: state.ui,
               country: state.country,
+              includeTv: state.includeTv,
               ui: state.ui
             })
           );
@@ -1576,37 +1665,37 @@ function isBulkSelectableTab() {
 
 function clearSelection() {
   state.ui.selectionMode = false;
-  state.ui.selectedTmdbIds = [];
+  state.ui.selectedKeys = [];
   saveState();
   render();
 }
 
-function getTmdbIdFromView(view) {
+function getKeyFromView(view) {
   if (!view) return null;
-  if (view.mode === "local" && view.item && typeof view.item.tmdbId === "number") return view.item.tmdbId;
-  if (view.mode === "remote" && view.tmdbMovie && typeof view.tmdbMovie.id === "number") return view.tmdbMovie.id;
+  if (view.mode === "local" && view.item && typeof view.item.tmdbId === "number") return entryKey(view.item.mediaType || "movie", view.item.tmdbId);
+  if (view.mode === "remote" && view.tmdbMovie && typeof view.tmdbMovie.id === "number") return entryKey(view.mediaType || view.tmdbMovie.media_type || "movie", view.tmdbMovie.id);
   return null;
 }
 
-function isSelectedTmdbId(id) {
+function isSelectedKey(id) {
   if (typeof id !== "number") return false;
-  for (let i = 0; i < state.ui.selectedTmdbIds.length; i++) {
-    if (state.ui.selectedTmdbIds[i] === id) return true;
+  for (let i = 0; i < state.ui.selectedKeys.length; i++) {
+    if (state.ui.selectedKeys[i] === id) return true;
   }
   return false;
 }
 
-function toggleSelectedTmdbId(id) {
+function toggleSelectedKey(id) {
   if (typeof id !== "number") return;
   const next = [];
   let found = false;
-  for (let i = 0; i < state.ui.selectedTmdbIds.length; i++) {
-    const v = state.ui.selectedTmdbIds[i];
+  for (let i = 0; i < state.ui.selectedKeys.length; i++) {
+    const v = state.ui.selectedKeys[i];
     if (v === id) { found = true; continue; }
     next.push(v);
   }
   if (!found) next.push(id);
-  state.ui.selectedTmdbIds = next;
+  state.ui.selectedKeys = next;
   saveState();
   render();
 }
@@ -1661,8 +1750,8 @@ function getSelectedViewsForCurrentTab() {
   const views = getViewItemsForCurrentTab();
   const picked = [];
   for (let i = 0; i < views.length; i++) {
-    const id = getTmdbIdFromView(views[i]);
-    if (id && isSelectedTmdbId(id)) picked.push(views[i]);
+    const id = getKeyFromView(views[i]);
+    if (id && isSelectedKey(id)) picked.push(views[i]);
   }
   return picked;
 }
@@ -1705,7 +1794,7 @@ function bulkRemoveSelectedFromContext(views) {
 
     const ids = [];
     for (let i = 0; i < views.length; i++) {
-      const id = getTmdbIdFromView(views[i]);
+      const id = getKeyFromView(views[i]);
       if (id) ids.push(id);
     }
 
@@ -1770,7 +1859,7 @@ function bulkAddSelectedViewsToList(views, listId) {
 
   for (let i = 0; i < views.length; i++) {
     const v = views[i];
-    const tmdbId = getTmdbIdFromView(v);
+    const tmdbId = getKeyFromView(v);
     if (!tmdbId || exists[tmdbId]) continue;
 
     let title = "Untitled";
@@ -1905,16 +1994,42 @@ function openBulkAddToListPicker(selectedViews) {
       }
 
       async function searchTmdb(query) {
-        const url = new URL("https://api.themoviedb.org/3/search/movie");
-        url.searchParams.set("api_key", TMDB_API_KEY);
-        url.searchParams.set("query", query);
-        url.searchParams.set("include_adult", "false");
-        url.searchParams.set("language", "en-GB");
-        url.searchParams.set("page", "1");
+  // Combined search (films + TV). TV can be hidden via Settings.
+  const q = String(query || "").trim();
+  if (!q) return [];
 
-        const data = await tmdbFetch(url);
-        return Array.isArray(data.results) ? data.results : [];
-      }
+  const movieUrl = new URL("https://api.themoviedb.org/3/search/movie");
+  movieUrl.searchParams.set("api_key", TMDB_API_KEY);
+  movieUrl.searchParams.set("query", q);
+  movieUrl.searchParams.set("include_adult", "false");
+  movieUrl.searchParams.set("language", "en-GB");
+  movieUrl.searchParams.set("page", "1");
+
+  if (!state.includeTv) {
+    const data = await tmdbFetch(movieUrl);
+    const res = Array.isArray(data.results) ? data.results : [];
+    for (let i = 0; i < res.length; i++) res[i].media_type = "movie";
+    return res;
+  }
+
+  const tvUrl = new URL("https://api.themoviedb.org/3/search/tv");
+  tvUrl.searchParams.set("api_key", TMDB_API_KEY);
+  tvUrl.searchParams.set("query", q);
+  tvUrl.searchParams.set("include_adult", "false");
+  tvUrl.searchParams.set("language", "en-GB");
+  tvUrl.searchParams.set("page", "1");
+
+  const pair = await Promise.all([tmdbFetch(movieUrl), tmdbFetch(tvUrl)]);
+  const movies = Array.isArray(pair[0].results) ? pair[0].results : [];
+  const tv = Array.isArray(pair[1].results) ? pair[1].results : [];
+
+  for (let i = 0; i < movies.length; i++) movies[i].media_type = "movie";
+  for (let i = 0; i < tv.length; i++) tv[i].media_type = "tv";
+
+  const merged = movies.concat(tv);
+  merged.sort(function (a, b) { return (b.popularity || 0) - (a.popularity || 0); });
+  return merged.slice(0, 40);
+}
 
       function renderSkeletonGrid(count) {
   const n = typeof count === "number" ? count : 10;
@@ -1970,66 +2085,127 @@ async function loadBecauseYouLiked(tmdbId, seedTitle) {
       }
 
       async function loadPopularForDiscover() {
-        if (!els.message || !els.grid) return;
+  if (!els.message || !els.grid) return;
+  els.message.style.display = "block";
+  els.message.textContent = state.includeTv ? "Loading popular titles…" : "Loading popular films…";
+  renderSkeletonGrid(12);
+
+  try {
+    const movieUrl = new URL("https://api.themoviedb.org/3/movie/popular");
+    movieUrl.searchParams.set("api_key", TMDB_API_KEY);
+    movieUrl.searchParams.set("language", "en-GB");
+    movieUrl.searchParams.set("page", "1");
+
+    if (!state.includeTv) {
+      const data = await tmdbFetch(movieUrl);
+      const res = Array.isArray(data.results) ? data.results : [];
+      for (let i = 0; i < res.length; i++) res[i].media_type = "movie";
+      state.discoverResults = res;
+      cacheSet("rq_cache_discover", { results: state.discoverResults, meta: { country: state.country, includeTv: state.includeTv } });
+      render();
+      return;
+    }
+
+    const tvUrl = new URL("https://api.themoviedb.org/3/tv/popular");
+    tvUrl.searchParams.set("api_key", TMDB_API_KEY);
+    tvUrl.searchParams.set("language", "en-GB");
+    tvUrl.searchParams.set("page", "1");
+
+    const pair = await Promise.all([tmdbFetch(movieUrl), tmdbFetch(tvUrl)]);
+    const movies = Array.isArray(pair[0].results) ? pair[0].results : [];
+    const tv = Array.isArray(pair[1].results) ? pair[1].results : [];
+
+    for (let i = 0; i < movies.length; i++) movies[i].media_type = "movie";
+    for (let i = 0; i < tv.length; i++) tv[i].media_type = "tv";
+
+    const merged = movies.concat(tv);
+    merged.sort(function (a, b) { return (b.popularity || 0) - (a.popularity || 0); });
+
+    state.discoverResults = merged.slice(0, 40);
+    cacheSet("rq_cache_discover", { results: state.discoverResults, meta: { country: state.country, includeTv: state.includeTv } });
+  } catch (err) {
+    const cached = cacheGet("rq_cache_discover", 1000 * 60 * 60 * 24 * 21);
+    if (cached && Array.isArray(cached.results) && cached.results.length) {
+      state.discoverResults = cached.results;
+      if (els && els.message) {
         els.message.style.display = "block";
-        els.message.textContent = "Loading popular films…";
-        renderSkeletonGrid(12);
-        try {
-          const url = new URL("https://api.themoviedb.org/3/movie/popular");
-          url.searchParams.set("api_key", TMDB_API_KEY);
-          url.searchParams.set("language", "en-GB");
-          url.searchParams.set("page", "1");
-          const data = await tmdbFetch(url);
-          state.discoverResults = Array.isArray(data.results)
-            ? data.results
-            : [];
-          cacheSet("rq_cache_discover", { results: state.discoverResults, meta: { country: state.country } });
-        } catch (err) {
-          const cached = cacheGet("rq_cache_discover", 1000 * 60 * 60 * 24 * 21);
-          if (cached && Array.isArray(cached.results) && cached.results.length) {
-            state.discoverResults = cached.results;
-            if (els && els.message) { els.message.style.display = "block"; els.message.textContent = "Offline — showing the last saved Discover results."; }
-            render();
-            return;
-          }
-          console.error(err);
-          state.discoverResults = [];
-          els.message.textContent =
-            "TMDB popular films failed. Please check your connection.";
-        } finally {
-          render();
-        }
+        els.message.textContent = "Offline — showing the last saved Discover results.";
       }
+      render();
+      return;
+    }
+    console.error(err);
+    state.discoverResults = [];
+    els.message.textContent = "We couldn’t load popular titles. Please check your connection.";
+  } finally {
+    render();
+  }
+}
 
       async function loadRadarUpcoming() {
-        els.message.style.display = "block";
-        els.message.textContent = "Loading upcoming releases…";
-        renderSkeletonGrid(12);
-        try {
-          const url = new URL("https://api.themoviedb.org/3/movie/upcoming");
-          url.searchParams.set("api_key", TMDB_API_KEY);
-          url.searchParams.set("language", "en-GB");
-          url.searchParams.set("region", (state.country || "GB"));
-          url.searchParams.set("page", "1");
+  els.message.style.display = "block";
+  els.message.textContent = state.includeTv ? "Loading upcoming and on-air titles…" : "Loading upcoming releases…";
+  renderSkeletonGrid(12);
 
-          const data = await tmdbFetch(url);
-          state.radarResults = Array.isArray(data.results) ? data.results : [];
-        } catch (err) {
-          const cached = cacheGet("rq_cache_radar", 1000 * 60 * 60 * 24 * 21);
-          if (cached && Array.isArray(cached.results) && cached.results.length) {
-            state.radarResults = cached.results;
-            if (els && els.message) { els.message.style.display = "block"; els.message.textContent = "Offline — showing the last saved Radar results."; }
-            render();
-            return;
-          }
-          console.error(err);
-          state.radarResults = [];
-          els.message.textContent =
-            "We couldn’t load upcoming releases. Please check your connection.";
-        } finally {
-          render();
-        }
+  try {
+    const movieUrl = new URL("https://api.themoviedb.org/3/movie/upcoming");
+    movieUrl.searchParams.set("api_key", TMDB_API_KEY);
+    movieUrl.searchParams.set("language", "en-GB");
+    movieUrl.searchParams.set("region", (state.country || "GB"));
+    movieUrl.searchParams.set("page", "1");
+
+    if (!state.includeTv) {
+      const data = await tmdbFetch(movieUrl);
+      const res = Array.isArray(data.results) ? data.results : [];
+      for (let i = 0; i < res.length; i++) res[i].media_type = "movie";
+      state.radarResults = res;
+      cacheSet("rq_cache_radar", { results: state.radarResults, meta: { country: state.country, includeTv: state.includeTv } });
+      render();
+      return;
+    }
+
+    const tvUrl = new URL("https://api.themoviedb.org/3/tv/on_the_air");
+    tvUrl.searchParams.set("api_key", TMDB_API_KEY);
+    tvUrl.searchParams.set("language", "en-GB");
+    tvUrl.searchParams.set("page", "1");
+
+    const pair = await Promise.all([tmdbFetch(movieUrl), tmdbFetch(tvUrl)]);
+    const movies = Array.isArray(pair[0].results) ? pair[0].results : [];
+    const tv = Array.isArray(pair[1].results) ? pair[1].results : [];
+
+    for (let i = 0; i < movies.length; i++) movies[i].media_type = "movie";
+    for (let i = 0; i < tv.length; i++) tv[i].media_type = "tv";
+
+    const merged = movies.concat(tv);
+    merged.sort(function (a, b) {
+      const da = Date.parse((a.release_date || a.first_air_date || "") + "T00:00:00Z");
+      const db = Date.parse((b.release_date || b.first_air_date || "") + "T00:00:00Z");
+      const na = Number.isFinite(da) ? da : 0;
+      const nb = Number.isFinite(db) ? db : 0;
+      if (na && nb) return na - nb;
+      return (b.popularity || 0) - (a.popularity || 0);
+    });
+
+    state.radarResults = merged.slice(0, 40);
+    cacheSet("rq_cache_radar", { results: state.radarResults, meta: { country: state.country, includeTv: state.includeTv } });
+  } catch (err) {
+    const cached = cacheGet("rq_cache_radar", 1000 * 60 * 60 * 24 * 21);
+    if (cached && Array.isArray(cached.results) && cached.results.length) {
+      state.radarResults = cached.results;
+      if (els && els.message) {
+        els.message.style.display = "block";
+        els.message.textContent = "Offline — showing the last saved Radar results.";
       }
+      render();
+      return;
+    }
+    console.error(err);
+    state.radarResults = [];
+    els.message.textContent = "We couldn’t load Radar titles. Please check your connection.";
+  } finally {
+    render();
+  }
+}
 
       function downloadIcsReminder(title, dateIso) {
         // dateIso expected yyyy-mm-dd
@@ -2055,23 +2231,41 @@ async function loadBecauseYouLiked(tmdbId, seedTitle) {
         const summary = (title || "Film release") + " (Release)";
 
         const ics =
-          "BEGIN:VCALENDAR\r\n" +
-          "VERSION:2.0\r\n" +
-          "PRODID:-//ReelQuest//EN\r\n" +
-          "CALSCALE:GREGORIAN\r\n" +
-          "BEGIN:VEVENT\r\n" +
-          "UID:" + uid + "\r\n" +
-          "DTSTAMP:" + new Date().toISOString().replace(/[-:]/g, "").split(".")[0] + "Z\r\n" +
-          "SUMMARY:" + summary.replace(/\n/g, " ") + "\r\n" +
-          "DTSTART;VALUE=DATE:" + ymd + "\r\n" +
-          "DTEND;VALUE=DATE:" + ymdEnd + "\r\n" +
-          "BEGIN:VALARM\r\n" +
-          "TRIGGER:-P1D\r\n" +
-          "ACTION:DISPLAY\r\n" +
-          "DESCRIPTION:ReelQuest reminder\r\n" +
-          "END:VALARM\r\n" +
-          "END:VEVENT\r\n" +
-          "END:VCALENDAR\r\n";
+          "BEGIN:VCALENDAR
+" +
+          "VERSION:2.0
+" +
+          "PRODID:-//ReelQuest//EN
+" +
+          "CALSCALE:GREGORIAN
+" +
+          "BEGIN:VEVENT
+" +
+          "UID:" + uid + "
+" +
+          "DTSTAMP:" + new Date().toISOString().replace(/[-:]/g, "").split(".")[0] + "Z
+" +
+          "SUMMARY:" + summary.replace(/
+/g, " ") + "
+" +
+          "DTSTART;VALUE=DATE:" + ymd + "
+" +
+          "DTEND;VALUE=DATE:" + ymdEnd + "
+" +
+          "BEGIN:VALARM
+" +
+          "TRIGGER:-P1D
+" +
+          "ACTION:DISPLAY
+" +
+          "DESCRIPTION:ReelQuest reminder
+" +
+          "END:VALARM
+" +
+          "END:VEVENT
+" +
+          "END:VCALENDAR
+";
 
         const blob = new Blob([ics], { type: "text/calendar" });
         const url = URL.createObjectURL(blob);
@@ -2085,27 +2279,55 @@ async function loadBecauseYouLiked(tmdbId, seedTitle) {
       }
 
       async function loadForYouFallbackPopular() {
-        els.message.style.display = "block";
-        els.message.textContent = "Loading popular films for you…";
-        els.grid.innerHTML = "";
-        try {
-          const url = new URL("https://api.themoviedb.org/3/trending/movie/week");
-          url.searchParams.set("api_key", TMDB_API_KEY);
-          url.searchParams.set("language", "en-GB");
-          const data = await tmdbFetch(url);
-          state.forYouResults = Array.isArray(data.results) ? data.results : [];
-          state.forYouLoaded = true;
-        } catch (err) {
-          console.error(err);
-          state.forYouResults = [];
-          state.forYouLoaded = false;
-          els.message.textContent =
-            "We couldn’t load popular films right now. Please check your connection.";
-        } finally {
-          state.forYouLoading = false;
-          render();
-        }
-      }
+  els.message.style.display = "block";
+  els.message.textContent = state.includeTv ? "Loading popular titles…" : "Loading popular films…";
+  renderSkeletonGrid(12);
+
+  try {
+    const movieUrl = new URL("https://api.themoviedb.org/3/movie/popular");
+    movieUrl.searchParams.set("api_key", TMDB_API_KEY);
+    movieUrl.searchParams.set("language", "en-GB");
+    movieUrl.searchParams.set("page", "1");
+
+    if (!state.includeTv) {
+      const data = await tmdbFetch(movieUrl);
+      const res = Array.isArray(data.results) ? data.results : [];
+      for (let i = 0; i < res.length; i++) res[i].media_type = "movie";
+      state.forYouResults = res;
+      state.forYouLoaded = true;
+      cacheSet("rq_cache_forYou", { results: state.forYouResults, meta: { country: state.country, favouriteGenres: state.favouriteGenres, includeTv: state.includeTv } });
+      render();
+      return;
+    }
+
+    const tvUrl = new URL("https://api.themoviedb.org/3/tv/popular");
+    tvUrl.searchParams.set("api_key", TMDB_API_KEY);
+    tvUrl.searchParams.set("language", "en-GB");
+    tvUrl.searchParams.set("page", "1");
+
+    const pair = await Promise.all([tmdbFetch(movieUrl), tmdbFetch(tvUrl)]);
+    const movies = Array.isArray(pair[0].results) ? pair[0].results : [];
+    const tv = Array.isArray(pair[1].results) ? pair[1].results : [];
+
+    for (let i = 0; i < movies.length; i++) movies[i].media_type = "movie";
+    for (let i = 0; i < tv.length; i++) tv[i].media_type = "tv";
+
+    const merged = movies.concat(tv);
+    merged.sort(function (a, b) { return (b.popularity || 0) - (a.popularity || 0); });
+
+    state.forYouResults = merged.slice(0, 40);
+    state.forYouLoaded = true;
+    cacheSet("rq_cache_forYou", { results: state.forYouResults, meta: { country: state.country, favouriteGenres: state.favouriteGenres, includeTv: state.includeTv } });
+  } catch (err) {
+    console.error(err);
+    state.forYouResults = [];
+    state.forYouLoaded = false;
+    els.message.textContent = "We couldn’t load popular titles. Please check your connection.";
+  } finally {
+    state.forYouLoading = false;
+    render();
+  }
+}
 
       async function performDiscoverSearch() {
         const query = state.searchTerm ? state.searchTerm.trim() : "";
@@ -2130,79 +2352,124 @@ async function loadBecauseYouLiked(tmdbId, seedTitle) {
       }
 
       async function loadForYouRecommendations() {
-        if (!state.favouriteGenres.length) {
-          // Fallback: show popular films so the page never feels empty
-          state.forYouLoading = true;
-          state.forYouLoaded = false;
-          loadForYouFallbackPopular();
-          return;
-        }
+  if (!state.favouriteGenres.length) {
+    state.forYouLoading = true;
+    state.forYouLoaded = false;
+    loadForYouFallbackPopular();
+    return;
+  }
 
-        state.forYouLoading = true;
-        state.forYouLoaded = false;
-        els.message.style.display = "block";
-        els.message.textContent =
-          "Fetching recommendations based on your favourite genres…";
-        els.grid.innerHTML = "";
+  state.forYouLoading = true;
+  state.forYouLoaded = false;
+  els.message.style.display = "block";
+  els.message.textContent =
+    "Fetching recommendations based on your favourite genres…";
+  els.grid.innerHTML = "";
 
-        const genreCsv = state.favouriteGenres.join(",");
-
-        try {
-          const url = new URL("https://api.themoviedb.org/3/discover/movie");
-          url.searchParams.set("api_key", TMDB_API_KEY);
-          url.searchParams.set("include_adult", "false");
-          url.searchParams.set("language", "en-GB");
-          url.searchParams.set("sort_by", "popularity.desc");
-          url.searchParams.set("with_genres", genreCsv);
-          url.searchParams.set("page", "1");
-
-          const data = await tmdbFetch(url);
-          state.forYouResults = Array.isArray(data.results)
-            ? data.results
-            : [];
-          state.forYouLoaded = true;
-          cacheSet("rq_cache_forYou", { results: state.forYouResults, meta: { country: state.country, favouriteGenres: state.favouriteGenres } });
-        } catch (err) {
-          const cached = cacheGet("rq_cache_forYou", 1000 * 60 * 60 * 24 * 21);
-          if (cached && Array.isArray(cached.results) && cached.results.length) {
-            state.forYouResults = cached.results;
-            state.forYouLoaded = true;
-            els.message.style.display = "block";
-            els.message.textContent = "Offline — showing your last saved recommendations.";
-            state.forYouLoading = false;
-            render();
-            return;
-          }
-          console.error(err);
-          state.forYouResults = [];
-          state.forYouLoaded = false;
-          els.message.textContent =
-            "We couldn’t load your recommendations. Please check your connection.";
-        } finally {
-          state.forYouLoading = false;
-          render();
-        }
+  try {
+    // Movie genre IDs
+    const ids = [];
+    for (let i = 0; i < MOVIE_GENRES.length; i++) {
+      if (state.favouriteGenres.indexOf(MOVIE_GENRES[i].name) !== -1) {
+        ids.push(MOVIE_GENRES[i].id);
       }
+    }
+    const genreCsv = ids.join(",");
 
-      function findItemByTmdbId(tmdbId) {
-        for (let i = 0; i < state.items.length; i++) {
-          if (state.items[i].tmdbId === tmdbId) return state.items[i];
-        }
-        return null;
-      }
+    const movieUrl = new URL("https://api.themoviedb.org/3/discover/movie");
+    movieUrl.searchParams.set("api_key", TMDB_API_KEY);
+    movieUrl.searchParams.set("include_adult", "false");
+    movieUrl.searchParams.set("language", "en-GB");
+    movieUrl.searchParams.set("sort_by", "popularity.desc");
+    movieUrl.searchParams.set("with_genres", genreCsv);
+    movieUrl.searchParams.set("page", "1");
 
-      function ensureItemFromTmdb(tmdbMovie) {
-  const existing = findItemByTmdbId(tmdbMovie.id);
+    if (!state.includeTv) {
+      const data = await tmdbFetch(movieUrl);
+      const res = Array.isArray(data.results) ? data.results : [];
+      for (let i = 0; i < res.length; i++) res[i].media_type = "movie";
+      state.forYouResults = res;
+      state.forYouLoaded = true;
+      cacheSet("rq_cache_forYou", { results: state.forYouResults, meta: { country: state.country, favouriteGenres: state.favouriteGenres, includeTv: state.includeTv } });
+      render();
+      return;
+    }
+
+    // Map selected genre names to TV genre IDs (best-effort)
+    const tvIds = [];
+    for (let i = 0; i < state.favouriteGenres.length; i++) {
+      const name = state.favouriteGenres[i];
+      if (TV_GENRE_IDS_BY_NAME[name]) tvIds.push(TV_GENRE_IDS_BY_NAME[name]);
+    }
+    const tvCsv = tvIds.join(",");
+
+    const tvUrl = new URL("https://api.themoviedb.org/3/discover/tv");
+    tvUrl.searchParams.set("api_key", TMDB_API_KEY);
+    tvUrl.searchParams.set("language", "en-GB");
+    tvUrl.searchParams.set("sort_by", "popularity.desc");
+    if (tvCsv) tvUrl.searchParams.set("with_genres", tvCsv);
+    tvUrl.searchParams.set("page", "1");
+
+    const pair = await Promise.all([tmdbFetch(movieUrl), tmdbFetch(tvUrl)]);
+    const movies = Array.isArray(pair[0].results) ? pair[0].results : [];
+    const tv = Array.isArray(pair[1].results) ? pair[1].results : [];
+
+    for (let i = 0; i < movies.length; i++) movies[i].media_type = "movie";
+    for (let i = 0; i < tv.length; i++) tv[i].media_type = "tv";
+
+    const merged = movies.concat(tv);
+    merged.sort(function (a, b) { return (b.popularity || 0) - (a.popularity || 0); });
+
+    state.forYouResults = merged.slice(0, 40);
+    state.forYouLoaded = true;
+    cacheSet("rq_cache_forYou", { results: state.forYouResults, meta: { country: state.country, favouriteGenres: state.favouriteGenres, includeTv: state.includeTv } });
+  } catch (err) {
+    const cached = cacheGet("rq_cache_forYou", 1000 * 60 * 60 * 24 * 21);
+    if (cached && Array.isArray(cached.results) && cached.results.length) {
+      state.forYouResults = cached.results;
+      state.forYouLoaded = true;
+      els.message.style.display = "block";
+      els.message.textContent = "Offline — showing your last saved recommendations.";
+      state.forYouLoading = false;
+      render();
+      return;
+    }
+    console.error(err);
+    state.forYouResults = [];
+    state.forYouLoaded = false;
+    els.message.textContent =
+      "We couldn’t load your recommendations. Please check your connection.";
+  } finally {
+    state.forYouLoading = false;
+    render();
+  }
+}
+
+      function findItemByTmdbId(tmdbId, mediaType) {
+  const mt = normaliseMediaType(mediaType);
+  for (let i = 0; i < state.items.length; i++) {
+    const it = state.items[i];
+    const itType = normaliseMediaType(it.mediaType || "movie");
+    if (it.tmdbId === tmdbId && itType === mt) return it;
+  }
+  return null;
+}
+
+
+      function ensureItemFromTmdb(tmdbObj, mediaType) {
+  const mt = normaliseMediaType(mediaType || (tmdbObj && tmdbObj.media_type));
+  const existing = findItemByTmdbId(tmdbObj.id, mt);
   if (existing) return existing;
 
   const now = Date.now();
   const item = {
     id: safeId(),
-    tmdbId: tmdbMovie.id,
-    title: tmdbMovie.title,
-    year: tmdbMovie.release_date ? tmdbMovie.release_date.slice(0, 4) : "",
-    posterPath: tmdbMovie.poster_path || null,
-    rating: typeof tmdbMovie.vote_average === "number" ? tmdbMovie.vote_average : null,
+    tmdbId: tmdbObj.id,
+    mediaType: mt,
+    title: titleFromTmdb(tmdbObj),
+    year: yearFromTmdb(tmdbObj),
+    posterPath: tmdbObj.poster_path || null,
+    rating: typeof tmdbObj.vote_average === "number" ? tmdbObj.vote_average : null,
 
     // Lists/workflow
     inWatchlist: false,
@@ -2223,7 +2490,7 @@ async function loadBecauseYouLiked(tmdbId, seedTitle) {
   return item;
 }
 
-      function toggleWatchlistForItem(item) {
+function toggleWatchlistForItem(item) {(item) {
   const was = !!item.inWatchlist;
   item.inWatchlist = !item.inWatchlist;
   if (item.inWatchlist) {
@@ -2294,11 +2561,17 @@ async function loadBecauseYouLiked(tmdbId, seedTitle) {
         }
 
         const text =
-          "My ReelQuest watchlist:\n\n" +
-          lines.join("\n") +
-          "\n\nShared from ReelQuest.";
+          "My ReelQuest watchlist:
 
-        const finalText = text.replace(/\\n/g, "\n");
+" +
+          lines.join("
+") +
+          "
+
+Shared from ReelQuest.";
+
+        const finalText = text.replace(/\n/g, "
+");
 
         if (navigator.share) {
           navigator
@@ -2315,7 +2588,9 @@ async function loadBecauseYouLiked(tmdbId, seedTitle) {
             })
             .catch(function () {
               alertNice(
-                "Couldn’t access the clipboard, but here’s your list:\n\n" +
+                "Couldn’t access the clipboard, but here’s your list:
+
+" +
                   finalText
               );
             });
@@ -2503,7 +2778,7 @@ async function pickFromWatchlist() {
             const filtered = [];
             for (let i = 0; i < raw.length; i++) {
               const m = raw[i];
-              const t = (m.title || "").toLowerCase();
+              const t = (titleFromTmdb(m) || "").toLowerCase();
               if (t.indexOf(term) !== -1) filtered.push(m);
             }
             raw = filtered;
@@ -2511,8 +2786,8 @@ async function pickFromWatchlist() {
           const views = [];
           for (let i = 0; i < raw.length; i++) {
             const m = raw[i];
-            const linked = findItemByTmdbId(m.id);
-            views.push({ mode: "remote", tmdbMovie: m, item: linked });
+            const linked = findItemByTmdbId(m.id, normaliseMediaType(m.media_type || "movie"));
+            views.push({ mode: "remote", tmdbMovie: m, item: linked, mediaType: normaliseMediaType(m.media_type || "movie") });
           }
           return applyFiltersAndSort(views);
         }
@@ -2523,7 +2798,7 @@ async function pickFromWatchlist() {
             const filtered = [];
             for (let i = 0; i < raw.length; i++) {
               const m = raw[i];
-              const t = (m.title || "").toLowerCase();
+              const t = (titleFromTmdb(m) || "").toLowerCase();
               if (t.indexOf(term) !== -1) filtered.push(m);
             }
             raw = filtered;
@@ -2531,8 +2806,8 @@ async function pickFromWatchlist() {
           const views = [];
           for (let i = 0; i < raw.length; i++) {
             const m = raw[i];
-            const linked = findItemByTmdbId(m.id);
-            views.push({ mode: "remote", tmdbMovie: m, item: linked });
+            const linked = findItemByTmdbId(m.id, normaliseMediaType(m.media_type || "movie"));
+            views.push({ mode: "remote", tmdbMovie: m, item: linked, mediaType: normaliseMediaType(m.media_type || "movie") });
           }
           return applyFiltersAndSort(views);
         }
@@ -2543,7 +2818,7 @@ async function pickFromWatchlist() {
             const filtered = [];
             for (let i = 0; i < base.length; i++) {
               const m = base[i];
-              const t = (m.title || "").toLowerCase();
+              const t = (titleFromTmdb(m) || "").toLowerCase();
               if (t.indexOf(term) !== -1) filtered.push(m);
             }
             base = filtered;
@@ -2551,8 +2826,8 @@ async function pickFromWatchlist() {
           const views = [];
           for (let i = 0; i < base.length; i++) {
             const m = base[i];
-            const linked = findItemByTmdbId(m.id);
-            views.push({ mode: "remote", tmdbMovie: m, item: linked });
+            const linked = findItemByTmdbId(m.id, normaliseMediaType(m.media_type || "movie"));
+            views.push({ mode: "remote", tmdbMovie: m, item: linked, mediaType: normaliseMediaType(m.media_type || "movie") });
           }
           return applyFiltersAndSort(views);
         }
@@ -2835,6 +3110,22 @@ panel.appendChild(appRow);
         minYearWrap.appendChild(minYearText);
         minYearWrap.appendChild(minYearSelect);
 
+// TV series toggle
+const tvBtn = document.createElement("button");
+tvBtn.type = "button";
+tvBtn.className = "pill-btn";
+tvBtn.textContent = state.includeTv ? "TV series: Shown" : "TV series: Hidden";
+tvBtn.addEventListener("click", function () {
+  state.includeTv = !state.includeTv;
+  tvBtn.textContent = state.includeTv ? "TV series: Shown" : "TV series: Hidden";
+  saveState();
+  if (state.activeTab === "for-you") loadForYouRecommendations();
+  else if (state.activeTab === "discover") loadPopularForDiscover();
+  else if (state.activeTab === "radar") loadRadarUpcoming();
+  else render();
+});
+
+
         // Hide watched
         const hideWatchedBtn = document.createElement("button");
         hideWatchedBtn.type = "button";
@@ -3038,21 +3329,33 @@ function setListSortMode(listId, mode) {
 function ensureCustomOrder(list) {
   if (!list || list.type !== "manual") return;
   if (!Array.isArray(list.customOrder)) list.customOrder = [];
+
+  // Upgrade legacy numeric IDs to entry keys (movie)
+  for (let i = 0; i < list.customOrder.length; i++) {
+    if (typeof list.customOrder[i] === "number") {
+      list.customOrder[i] = entryKey("movie", list.customOrder[i]);
+    }
+  }
+
   const present = {};
   for (let i = 0; i < list.customOrder.length; i++) present[list.customOrder[i]] = true;
+
   for (let i = 0; i < list.entries.length; i++) {
-    const id = list.entries[i].tmdbId;
-    if (!present[id]) list.customOrder.push(id);
+    const e = list.entries[i];
+    const key = entryKey(e.mediaType || "movie", e.tmdbId);
+    if (!present[key]) list.customOrder.push(key);
   }
-  // remove ids no longer present
+
   const next = [];
   for (let i = 0; i < list.customOrder.length; i++) {
-    const id = list.customOrder[i];
+    const key = list.customOrder[i];
+    const p = parseEntryKey(key);
     let exists = false;
     for (let j = 0; j < list.entries.length; j++) {
-      if (list.entries[j].tmdbId === id) { exists = true; break; }
+      const e = list.entries[j];
+      if (e.tmdbId === p.tmdbId && normaliseMediaType(e.mediaType || "movie") === p.mediaType) { exists = true; break; }
     }
-    if (exists) next.push(id);
+    if (exists) next.push(key);
   }
   list.customOrder = next;
 }
@@ -3110,7 +3413,10 @@ function createSmartListPreset() {
   }
 
   const choice = window.prompt(
-    "Choose a preset:\n1) Horror 80s\n2) Top rated (your favourite genres)\n3) Custom",
+    "Choose a preset:
+1) Horror 80s
+2) Top rated (your favourite genres)
+3) Custom",
     "1"
   );
   if (choice === null) return;
@@ -3172,11 +3478,16 @@ function createSmartListPreset() {
   refreshSmartList(list.id);
 }
 
-function moveEntryInList(listId, tmdbId, direction) {
+function moveEntryInList(listId, entryKeyValue, direction) {
   const list = getListById(listId);
   if (!list || list.type !== "manual") return;
   ensureCustomOrder(list);
-  const idx = list.customOrder.indexOf(tmdbId);
+
+  const key = typeof entryKeyValue === "string"
+    ? entryKeyValue
+    : entryKey("movie", entryKeyValue);
+
+  const idx = list.customOrder.indexOf(key);
   if (idx === -1) return;
   const nextIdx = idx + direction;
   if (nextIdx < 0 || nextIdx >= list.customOrder.length) return;
@@ -3242,26 +3553,31 @@ function moveEntryInList(listId, tmdbId, direction) {
         render();
       }
 
-      function addTmdbToList(listId, detailsOrMovie) {
+      function addTmdbToList(listId, detailsOrMovie, mediaType) {
   const list = getListById(listId);
   if (!list) return;
 
   const tmdbId = detailsOrMovie.id;
-  // avoid duplicates
+  const mt = normaliseMediaType(mediaType || detailsOrMovie.media_type || "movie");
+  const key = entryKey(mt, tmdbId);
+
   if (list.type === "manual") {
     for (let i = 0; i < list.entries.length; i++) {
-      if (list.entries[i].tmdbId === tmdbId) return;
+      const e = list.entries[i];
+      if (e.tmdbId === tmdbId && normaliseMediaType(e.mediaType || "movie") === mt) return;
     }
   } else if (list.type === "smart") {
-    // smart lists are auto-generated; do not add manually
     alertNice("This is a smart list. You can’t add items manually.");
     return;
   }
 
-  const year = detailsOrMovie.release_date ? detailsOrMovie.release_date.slice(0, 4) : "";
+  const title = titleFromTmdb(detailsOrMovie);
+  const year = yearFromTmdb(detailsOrMovie);
+
   list.entries.push({
     tmdbId: tmdbId,
-    title: detailsOrMovie.title || "Untitled",
+    mediaType: mt,
+    title: title,
     year: year,
     posterPath: detailsOrMovie.poster_path || null,
     rating: typeof detailsOrMovie.vote_average === "number" ? detailsOrMovie.vote_average : null,
@@ -3269,28 +3585,33 @@ function moveEntryInList(listId, tmdbId, direction) {
   });
 
   ensureCustomOrder(list);
-  list.customOrder.push(tmdbId);
+  if (list.customOrder.indexOf(key) === -1) list.customOrder.push(key);
 
   saveState();
   render();
 }
 
-      function removeTmdbFromList(listId, tmdbId) {
+      function removeTmdbFromList(listId, tmdbId, mediaType) {
   const list = getListById(listId);
   if (!list || list.type !== "manual") return;
 
+  const mt = normaliseMediaType(mediaType || "movie");
+
   const next = [];
   for (let i = 0; i < list.entries.length; i++) {
-    if (list.entries[i].tmdbId !== tmdbId) next.push(list.entries[i]);
+    const e = list.entries[i];
+    if (e.tmdbId === tmdbId && normaliseMediaType(e.mediaType || "movie") === mt) continue;
+    next.push(e);
   }
   list.entries = next;
 
   ensureCustomOrder(list);
-  const nextOrder = [];
+  const key = entryKey(mt, tmdbId);
+  const orderNext = [];
   for (let i = 0; i < list.customOrder.length; i++) {
-    if (list.customOrder[i] !== tmdbId) nextOrder.push(list.customOrder[i]);
+    if (list.customOrder[i] !== key) orderNext.push(list.customOrder[i]);
   }
-  list.customOrder = nextOrder;
+  list.customOrder = orderNext;
 
   saveState();
   render();
@@ -3619,9 +3940,12 @@ function moveEntryInList(listId, tmdbId, direction) {
     listBox.className = "reorder-list";
 
     // Build title lookup
-    function titleFor(id) {
+    function titleFor(key) {
+      const p = parseEntryKey(key);
       for (let i = 0; i < list.entries.length; i++) {
-        if (list.entries[i].tmdbId === id) return list.entries[i].title || "Untitled";
+        const e = list.entries[i];
+        const mt = normaliseMediaType(e.mediaType || "movie");
+        if (e.tmdbId === p.tmdbId && mt === p.mediaType) return (e.title || "Untitled") + (p.mediaType === "tv" ? " (TV)" : "");
       }
       return "Untitled";
     }
@@ -3872,10 +4196,10 @@ function moveEntryInList(listId, tmdbId, direction) {
           } else {
             title = item.title;
           }
-        } else if (tmdbMovie && tmdbMovie.release_date) {
-          title = tmdbMovie.title + " (" + tmdbMovie.release_date.slice(0, 4) + ")";
         } else if (tmdbMovie) {
-          title = tmdbMovie.title;
+          const y = yearFromTmdb(tmdbMovie);
+          const baseTitle = titleFromTmdb(tmdbMovie);
+          title = y ? (baseTitle + " (" + y + ")") : baseTitle;
         } else {
           title = "";
         }
@@ -3918,6 +4242,16 @@ function moveEntryInList(listId, tmdbId, direction) {
           placeholder.className = "poster-fallback";
           placeholder.textContent = "🎬";
           posterWrapper.appendChild(placeholder);
+        }
+
+        const mt = isLocal
+          ? normaliseMediaType(item.mediaType || "movie")
+          : normaliseMediaType((tmdbMovie && tmdbMovie.media_type) || view.mediaType || "movie");
+        if (mt === "tv") {
+          const tp = document.createElement("div");
+          tp.className = "type-pill";
+          tp.textContent = "TV";
+          posterWrapper.appendChild(tp);
         }
 
         if (rating && !Number.isNaN(rating)) {
@@ -4051,7 +4385,7 @@ if (item.notes && String(item.notes).trim()) {
           if (bulkSelectable && state.ui.selectionMode) {
             const t = e.target;
             if (t && (t.closest(".card-btn") || t.closest(".pill-btn") || t.closest("a"))) return;
-            if (tmdbIdForSelect) toggleSelectedTmdbId(tmdbIdForSelect);
+            if (tmdbIdForSelect) toggleSelectedKey(tmdbIdForSelect);
           }
         });
 
@@ -4070,7 +4404,7 @@ if (item.notes && String(item.notes).trim()) {
           selectBtn.textContent = state.ui.selectionMode ? "Done selecting" : "Select";
           selectBtn.addEventListener("click", function () {
             state.ui.selectionMode = !state.ui.selectionMode;
-            if (!state.ui.selectionMode) state.ui.selectedTmdbIds = [];
+            if (!state.ui.selectionMode) state.ui.selectedKeys = [];
             saveState();
             render();
           });
@@ -4082,7 +4416,7 @@ if (item.notes && String(item.notes).trim()) {
 
             const count = document.createElement("span");
             count.className = "bulk-count";
-            count.textContent = (state.ui.selectedTmdbIds.length || 0) + " selected";
+            count.textContent = (state.ui.selectedKeys.length || 0) + " selected";
             bar.appendChild(count);
 
             const selectAllBtn = document.createElement("button");
@@ -4093,10 +4427,10 @@ if (item.notes && String(item.notes).trim()) {
               const views = getViewItemsForCurrentTab();
               const ids = [];
               for (let i = 0; i < views.length; i++) {
-                const id = getTmdbIdFromView(views[i]);
+                const id = getKeyFromView(views[i]);
                 if (id) ids.push(id);
               }
-              state.ui.selectedTmdbIds = ids;
+              state.ui.selectedKeys = ids;
               saveState();
               render();
             });
@@ -4107,7 +4441,7 @@ if (item.notes && String(item.notes).trim()) {
             clearBtn.className = "pill-btn";
             clearBtn.textContent = "Clear";
             clearBtn.addEventListener("click", function () {
-              state.ui.selectedTmdbIds = [];
+              state.ui.selectedKeys = [];
               saveState();
               render();
             });
@@ -4376,26 +4710,29 @@ container.appendChild(pickBtn);
         render();
       }
 
-      async function fetchWatchProviders(tmdbId) {
-        const url = new URL("https://api.themoviedb.org/3/movie/" + tmdbId + "/watch/providers");
-        url.searchParams.set("api_key", TMDB_API_KEY);
-        const data = await tmdbFetch(url);
-        return data && data.results ? data.results : {};
-      }
+      async function fetchWatchProviders(tmdbId, mediaType) {
+  const mt = normaliseMediaType(mediaType);
+  const url = new URL("https://api.themoviedb.org/3/" + (mt === "tv" ? "tv" : "movie") + "/" + tmdbId + "/watch/providers");
+  url.searchParams.set("api_key", TMDB_API_KEY);
+  const data = await tmdbFetch(url);
+  return data && data.results ? data.results : {};
+}
 
-      async function fetchDetails(tmdbId) {
-        if (!tmdbId) throw new Error("No TMDB id");
-        if (state.detailsCache[tmdbId]) return state.detailsCache[tmdbId];
+      async function fetchDetails(tmdbId, mediaType) {
+  if (!tmdbId) throw new Error("No TMDB id");
+  const mt = normaliseMediaType(mediaType);
+  const cacheKey = mt + ":" + tmdbId;
+  if (state.detailsCache[cacheKey]) return state.detailsCache[cacheKey];
 
-        const url = new URL("https://api.themoviedb.org/3/movie/" + tmdbId);
-        url.searchParams.set("api_key", TMDB_API_KEY);
-        url.searchParams.set("language", "en-GB");
-        url.searchParams.set("append_to_response", "videos");
+  const url = new URL("https://api.themoviedb.org/3/" + (mt === "tv" ? "tv" : "movie") + "/" + tmdbId);
+  url.searchParams.set("api_key", TMDB_API_KEY);
+  url.searchParams.set("language", "en-GB");
+  url.searchParams.set("append_to_response", "videos");
 
-        const data = await tmdbFetch(url);
-        state.detailsCache[tmdbId] = data;
-        return data;
-      }
+  const data = await tmdbFetch(url);
+  state.detailsCache[cacheKey] = data;
+  return data;
+}
 
       function closeDetail() {
         els.detailOverlay.classList.add("hidden");
@@ -4404,10 +4741,13 @@ container.appendChild(pickBtn);
 
       async function openDetailForView(view) {
         let tmdbId = null;
+        let mediaType = "movie";
         if (view.mode === "local") {
           tmdbId = view.item.tmdbId;
+          mediaType = normaliseMediaType(view.item.mediaType || "movie");
         } else if (view.tmdbMovie) {
           tmdbId = view.tmdbMovie.id;
+          mediaType = normaliseMediaType(view.mediaType || view.tmdbMovie.media_type || "movie");
         }
 
         if (!tmdbId) {
@@ -4426,10 +4766,10 @@ container.appendChild(pickBtn);
         els.detailOverlay.setAttribute("aria-hidden", "false");
 
         try {
-          const details = await fetchDetails(tmdbId);
+          const details = await fetchDetails(tmdbId, mediaType);
 
-          const year = details.release_date
-            ? details.release_date.slice(0, 4)
+          const year = (details.release_date || details.first_air_date)
+            ? String(details.release_date || details.first_air_date).slice(0, 4)
             : "";
           let title = "";
           if (details.title) {
@@ -4575,7 +4915,7 @@ container.appendChild(pickBtn);
             addBtn.textContent = "Add to list";
             addBtn.addEventListener("click", function () {
               const listId = select.value;
-              addTmdbToList(listId, details);
+              addTmdbToList(listId, details, mediaType);
               alertNice("Added to your list.");
             });
 
@@ -5030,7 +5370,8 @@ els.detailActions.appendChild(orgWrap);
             sortBy: state.sortBy,
             minRating: state.minRating,
             theme: state.theme,
-            country: state.country
+            country: state.country,
+            includeTv: state.includeTv
           }
         };
         return payload;
@@ -5081,6 +5422,8 @@ els.detailActions.appendChild(orgWrap);
     const posterPath = typeof it.posterPath === "string" ? it.posterPath : null;
     const rating = typeof it.rating === "number" ? it.rating : null;
 
+    const mediaType = (it.mediaType === "tv" || it.mediaType === "movie") ? it.mediaType : "movie";
+
     const inWatchlist = !!it.inWatchlist;
     const watched = !!it.watched;
 
@@ -5097,6 +5440,7 @@ els.detailActions.appendChild(orgWrap);
     clean.push({
       id: typeof it.id === "string" ? it.id : safeId(),
       tmdbId: tmdbId,
+      mediaType: mediaType,
       title: title,
       year: year,
       posterPath: posterPath,
@@ -5136,7 +5480,9 @@ els.detailActions.appendChild(orgWrap);
         ? l.sortMode
         : "custom";
 
-    const customOrder = Array.isArray(l.customOrder) ? l.customOrder.filter(function (x) { return typeof x === "number"; }) : [];
+    const customOrder = Array.isArray(l.customOrder)
+      ? l.customOrder.filter(function (x) { return typeof x === "number" || typeof x === "string"; })
+      : [];
 
     const smartRules = l.smartRules && typeof l.smartRules === "object" ? l.smartRules : null;
     const cachedResults = Array.isArray(l.cachedResults) ? l.cachedResults : [];
@@ -5150,8 +5496,10 @@ els.detailActions.appendChild(orgWrap);
       const tmdbId = typeof e.tmdbId === "number" ? e.tmdbId : null;
       const title = typeof e.title === "string" ? e.title : "";
       if (!tmdbId || !title) continue;
+      const mediaType = (e.mediaType === "tv" || e.mediaType === "movie") ? e.mediaType : "movie";
       entries.push({
         tmdbId: tmdbId,
+        mediaType: mediaType,
         title: title,
         year: typeof e.year === "string" ? e.year : "",
         posterPath: typeof e.posterPath === "string" ? e.posterPath : null,
@@ -5190,6 +5538,7 @@ els.detailActions.appendChild(orgWrap);
         const sortBy = data && typeof data.sortBy === "string" ? data.sortBy : state.sortBy;
         const minRating = data && typeof data.minRating === "number" ? data.minRating : state.minRating;
         const theme = data && (data.theme === "light" || data.theme === "dark") ? data.theme : state.theme;
+        const includeTv = data && typeof data.includeTv === "boolean" ? data.includeTv : state.includeTv;
 
         state.items = items;
         state.lists = lists;
@@ -5210,6 +5559,7 @@ els.detailActions.appendChild(orgWrap);
         state.sortBy = sortBy;
         state.minRating = minRating;
         state.theme = theme;
+        state.includeTv = includeTv;
 
         // Clear caches that could be stale
         state.detailsCache = {};
@@ -5354,6 +5704,7 @@ function init() {
         };
 
         loadState();
+        migrateItemsMediaType();
         applyTheme();
         render();
 
@@ -5441,7 +5792,6 @@ function init() {
 
       document.addEventListener("DOMContentLoaded", init);
     })();
-  
 </script>
   <div id="toast-host" aria-live="polite" aria-atomic="true"></div>
 </body>
