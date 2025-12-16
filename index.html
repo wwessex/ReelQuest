@@ -1281,6 +1281,18 @@
               <option value="8">8.0+</option>
             </select>
           </label>
+
+<label class="controls-label">
+  <span>Mood</span>
+  <select id="mood-select" class="controls-select">
+    <option value="any">Any</option>
+    <option value="cosy">Cosy</option>
+    <option value="gory">Gory</option>
+    <option value="mindbendy">Mind-bendy</option>
+    <option value="feelgood">Feel-good</option>
+    <option value="darkhumour">Dark humour</option>
+  </select>
+</label>
         </div>
         <div class="list-actions" id="list-actions"></div>
       </div>
@@ -1420,6 +1432,100 @@ function yearFromTmdb(obj) {
   return d ? String(d).slice(0, 4) : "";
 }
 
+
+const MOODS = {
+  any: { label: "Any", keywords: [] },
+
+  cosy: {
+    label: "Cosy",
+    movie: { include: [10751, 35, 16, 10749], exclude: [27, 53, 80], keywords: ["christmas", "holiday", "small town", "friendship"] },
+    tv:    { include: [10751, 35, 16],        exclude: [80],        keywords: ["christmas", "holiday", "friendship"] }
+  },
+
+  gory: {
+    label: "Gory",
+    movie: { include: [27, 53], exclude: [10751, 10402], keywords: ["slasher", "splatter", "gore", "body horror", "zombie"] },
+    tv:    { include: [80, 9648], exclude: [10751], keywords: ["slasher", "gore", "zombie"] }
+  },
+
+  mindbendy: {
+    label: "Mind-bendy",
+    movie: { include: [878, 9648, 53], exclude: [10751], keywords: ["time travel", "parallel universe", "twist ending", "psychological thriller"] },
+    tv:    { include: [10765, 9648, 18], exclude: [10751], keywords: ["time travel", "parallel universe", "mystery"] }
+  },
+
+  feelgood: {
+    label: "Feel-good",
+    movie: { include: [35, 10751, 10749, 10402], exclude: [27], keywords: ["inspirational", "heartwarming", "friendship"] },
+    tv:    { include: [35, 10751, 18], exclude: [80], keywords: ["heartwarming", "friendship"] }
+  },
+
+  darkhumour: {
+    label: "Dark humour",
+    movie: { include: [35, 80], exclude: [10751], keywords: ["dark comedy", "black comedy", "satire"] },
+    tv:    { include: [35, 80], exclude: [10751], keywords: ["dark comedy", "satire"] }
+  }
+};
+
+const keywordIdCache = {};
+
+async function resolveKeywordId(query) {
+  const q = String(query || "").trim().toLowerCase();
+  if (!q) return null;
+  if (keywordIdCache[q] !== undefined) return keywordIdCache[q];
+
+  const url = new URL("https://api.themoviedb.org/3/search/keyword");
+  url.searchParams.set("api_key", TMDB_API_KEY);
+  url.searchParams.set("query", q);
+
+  try {
+    const data = await tmdbFetch(url);
+    const results = data && Array.isArray(data.results) ? data.results : [];
+    if (results.length && typeof results[0].id === "number") {
+      keywordIdCache[q] = results[0].id;
+      return keywordIdCache[q];
+    }
+  } catch (e) {}
+
+  keywordIdCache[q] = null;
+  return null;
+}
+
+function getMoodConfig(mediaType) {
+  const key = state.mood && MOODS[state.mood] ? state.mood : "any";
+  const m = MOODS[key];
+  if (!m || key === "any") return null;
+  const mt = normaliseMediaType(mediaType);
+  return mt === "tv" ? m.tv : m.movie;
+}
+
+function moodMatchesView(view) {
+  if (!state.mood || state.mood === "any") return true;
+  if (!view || view.mode !== "remote" || !view.tmdbMovie) return true;
+
+  const mt = normaliseMediaType((view.tmdbMovie && view.tmdbMovie.media_type) || view.mediaType || "movie");
+  const cfg = getMoodConfig(mt);
+  if (!cfg) return true;
+
+  const ids = Array.isArray(view.tmdbMovie.genre_ids) ? view.tmdbMovie.genre_ids : [];
+
+  if (Array.isArray(cfg.include) && cfg.include.length) {
+    let ok = false;
+    for (let i = 0; i < cfg.include.length; i++) {
+      if (ids.indexOf(cfg.include[i]) !== -1) { ok = true; break; }
+    }
+    if (!ok) return false;
+  }
+
+  if (Array.isArray(cfg.exclude) && cfg.exclude.length) {
+    for (let i = 0; i < cfg.exclude.length; i++) {
+      if (ids.indexOf(cfg.exclude[i]) !== -1) return false;
+    }
+  }
+
+  return true;
+}
+
       const STORAGE_KEY = "reelquest-state-v7";
 
       let els = {};
@@ -1437,6 +1543,7 @@ function yearFromTmdb(obj) {
         filters: { minYear: 0, hideWatched: false, hideWatchlist: false, excludedGenres: [] },
         country: "GB",
         includeTv: true,
+        mood: "any",
         items: [],
         lists: [],
         listsUi: { mode: "index", activeListId: null, reorderMode: false },
@@ -1512,6 +1619,10 @@ function formatDateUK(ts) {
 
           if (typeof parsed.includeTv === "boolean") {
             state.includeTv = parsed.includeTv;
+          }
+
+          if (typeof parsed.mood === "string" && MOODS[parsed.mood]) {
+            state.mood = parsed.mood;
           }
 
 if (parsed.ui && typeof parsed.ui === "object") {
@@ -2077,7 +2188,107 @@ async function loadBecauseYouLiked(tmdbId, seedTitle) {
         }
       }
 
-      async function loadPopularForDiscover() {
+      
+async function loadMoodForDiscover() {
+  if (!els.message || !els.grid) return;
+
+  const moodKey = state.mood && MOODS[state.mood] ? state.mood : "any";
+  if (moodKey === "any") {
+    await loadPopularForDiscover();
+    return;
+  }
+
+  els.message.style.display = "block";
+  els.message.textContent = "Loading " + MOODS[moodKey].label.toLowerCase() + " picks…";
+  renderSkeletonGrid(12);
+
+  try {
+    const results = [];
+
+    // Movies
+    const movieCfg = getMoodConfig("movie");
+    const movieUrl = new URL("https://api.themoviedb.org/3/discover/movie");
+    movieUrl.searchParams.set("api_key", TMDB_API_KEY);
+    movieUrl.searchParams.set("language", "en-GB");
+    movieUrl.searchParams.set("include_adult", "false");
+    movieUrl.searchParams.set("sort_by", "popularity.desc");
+    movieUrl.searchParams.set("page", "1");
+    if (movieCfg && movieCfg.include && movieCfg.include.length) movieUrl.searchParams.set("with_genres", movieCfg.include.join(","));
+    if (movieCfg && movieCfg.exclude && movieCfg.exclude.length) movieUrl.searchParams.set("without_genres", movieCfg.exclude.join(","));
+
+    if (movieCfg && movieCfg.keywords && movieCfg.keywords.length) {
+      const ids = [];
+      for (let i = 0; i < movieCfg.keywords.length; i++) {
+        const id = await resolveKeywordId(movieCfg.keywords[i]);
+        if (id) ids.push(id);
+        if (ids.length >= 4) break;
+      }
+      if (ids.length) movieUrl.searchParams.set("with_keywords", ids.join("|"));
+    }
+
+    const movieData = await tmdbFetch(movieUrl);
+    const movies = movieData && Array.isArray(movieData.results) ? movieData.results : [];
+    for (let i = 0; i < movies.length; i++) {
+      movies[i].media_type = "movie";
+      results.push(movies[i]);
+    }
+
+    // TV (optional)
+    if (state.includeTv) {
+      const tvCfg = getMoodConfig("tv");
+      const tvUrl = new URL("https://api.themoviedb.org/3/discover/tv");
+      tvUrl.searchParams.set("api_key", TMDB_API_KEY);
+      tvUrl.searchParams.set("language", "en-GB");
+      tvUrl.searchParams.set("sort_by", "popularity.desc");
+      tvUrl.searchParams.set("page", "1");
+      if (tvCfg && tvCfg.include && tvCfg.include.length) tvUrl.searchParams.set("with_genres", tvCfg.include.join(","));
+      if (tvCfg && tvCfg.exclude && tvCfg.exclude.length) tvUrl.searchParams.set("without_genres", tvCfg.exclude.join(","));
+
+      // Some TMDB configs may not support with_keywords on TV; best-effort
+      if (tvCfg && tvCfg.keywords && tvCfg.keywords.length) {
+        const ids = [];
+        for (let i = 0; i < tvCfg.keywords.length; i++) {
+          const id = await resolveKeywordId(tvCfg.keywords[i]);
+          if (id) ids.push(id);
+          if (ids.length >= 4) break;
+        }
+        if (ids.length) tvUrl.searchParams.set("with_keywords", ids.join("|"));
+      }
+
+      let tvData = null;
+      try {
+        tvData = await tmdbFetch(tvUrl);
+      } catch (e) {
+        // Retry without keywords if needed
+        tvUrl.searchParams.delete("with_keywords");
+        tvData = await tmdbFetch(tvUrl);
+      }
+
+      const tv = tvData && Array.isArray(tvData.results) ? tvData.results : [];
+      for (let i = 0; i < tv.length; i++) {
+        tv[i].media_type = "tv";
+        results.push(tv[i]);
+      }
+    }
+
+    results.sort(function (a, b) { return (b.popularity || 0) - (a.popularity || 0); });
+    state.discoverResults = results.slice(0, 40);
+    cacheSet("rq_cache_discover", { results: state.discoverResults, meta: { country: state.country, includeTv: state.includeTv, mood: state.mood } });
+  } catch (err) {
+    console.error(err);
+    const cached = cacheGet("rq_cache_discover", 1000 * 60 * 60 * 24 * 21);
+    if (cached && Array.isArray(cached.results) && cached.results.length) {
+      state.discoverResults = cached.results;
+      els.message.style.display = "block";
+      els.message.textContent = "Offline — showing the last saved Discover results.";
+    } else {
+      state.discoverResults = [];
+      els.message.textContent = "We couldn’t load Discover picks. Please check your connection.";
+    }
+  } finally {
+    render();
+  }
+}async function loadPopularForDiscover() {
   if (!els.message || !els.grid) return;
   els.message.style.display = "block";
   els.message.textContent = state.includeTv ? "Loading popular titles…" : "Loading popular films…";
@@ -2224,23 +2435,41 @@ async function loadBecauseYouLiked(tmdbId, seedTitle) {
         const summary = (title || "Film release") + " (Release)";
 
         const ics =
-          "BEGIN:VCALENDAR\r\n" +
-          "VERSION:2.0\r\n" +
-          "PRODID:-//ReelQuest//EN\r\n" +
-          "CALSCALE:GREGORIAN\r\n" +
-          "BEGIN:VEVENT\r\n" +
-          "UID:" + uid + "\r\n" +
-          "DTSTAMP:" + new Date().toISOString().replace(/[-:]/g, "").split(".")[0] + "Z\r\n" +
-          "SUMMARY:" + summary.replace(/\n/g, " ") + "\r\n" +
-          "DTSTART;VALUE=DATE:" + ymd + "\r\n" +
-          "DTEND;VALUE=DATE:" + ymdEnd + "\r\n" +
-          "BEGIN:VALARM\r\n" +
-          "TRIGGER:-P1D\r\n" +
-          "ACTION:DISPLAY\r\n" +
-          "DESCRIPTION:ReelQuest reminder\r\n" +
-          "END:VALARM\r\n" +
-          "END:VEVENT\r\n" +
-          "END:VCALENDAR\r\n";
+          "BEGIN:VCALENDAR
+" +
+          "VERSION:2.0
+" +
+          "PRODID:-//ReelQuest//EN
+" +
+          "CALSCALE:GREGORIAN
+" +
+          "BEGIN:VEVENT
+" +
+          "UID:" + uid + "
+" +
+          "DTSTAMP:" + new Date().toISOString().replace(/[-:]/g, "").split(".")[0] + "Z
+" +
+          "SUMMARY:" + summary.replace(/
+/g, " ") + "
+" +
+          "DTSTART;VALUE=DATE:" + ymd + "
+" +
+          "DTEND;VALUE=DATE:" + ymdEnd + "
+" +
+          "BEGIN:VALARM
+" +
+          "TRIGGER:-P1D
+" +
+          "ACTION:DISPLAY
+" +
+          "DESCRIPTION:ReelQuest reminder
+" +
+          "END:VALARM
+" +
+          "END:VEVENT
+" +
+          "END:VCALENDAR
+";
 
         const blob = new Blob([ics], { type: "text/calendar" });
         const url = URL.createObjectURL(blob);
@@ -2536,11 +2765,18 @@ function toggleWatchlistForItem(item) {
         }
 
         const text =
-          "My ReelQuest watchlist:\n\n" +
-          lines.join("\n") +
-          "\n\nShared from ReelQuest.";
+          "My ReelQuest watchlist:
 
-        const finalText = text.replace(/\\n/g, "\n");
+" +
+          lines.join("
+") +
+          "
+
+Shared from ReelQuest.";
+
+        const finalText = text.replace(/
+/g, "
+");
 
         if (navigator.share) {
           navigator
@@ -2557,7 +2793,9 @@ function toggleWatchlistForItem(item) {
             })
             .catch(function () {
               alertNice(
-                "Couldn’t access the clipboard, but here’s your list:\n\n" +
+                "Couldn’t access the clipboard, but here’s your list:
+
+" +
                   finalText
               );
             });
@@ -2754,7 +2992,10 @@ function pickAndImportSingleList() {
     const file = files[0];
 
     const wantMerge = window.confirm(
-      "Merge this list into an existing list if it matches?\n\nOK = Merge\nCancel = Add as a new list"
+      "Merge this list into an existing list if it matches?
+
+OK = Merge
+Cancel = Add as a new list"
     );
 
     const reader = new FileReader();
@@ -2795,9 +3036,17 @@ function buildListShareText(list) {
   }
 
   const header = "ReelQuest — " + (list.name || "List");
-  const desc = list.description ? ("\n" + list.description.trim()) : "";
-  const body = lines.length ? ("\n\n" + lines.join("\n")) : "\n\n(Empty list)";
-  return header + desc + body + "\n\nShared from ReelQuest.";
+  const desc = list.description ? ("
+" + list.description.trim()) : "";
+  const body = lines.length ? ("
+
+" + lines.join("
+")) : "
+
+(Empty list)";
+  return header + desc + body + "
+
+Shared from ReelQuest.";
 }
 
 function buildListShareLink(list) {
@@ -2838,7 +3087,10 @@ async function shareList(listId) {
   if (!list) return;
 
   const wantLink = window.confirm(
-    "Share a link that opens this list in ReelQuest?\n\nOK = Share link\nCancel = Share text card"
+    "Share a link that opens this list in ReelQuest?
+
+OK = Share link
+Cancel = Share text card"
   );
 
   if (wantLink) {
@@ -2880,7 +3132,10 @@ function handleIncomingSharedList() {
     const parsed = JSON.parse(decoded);
 
     const ok = window.confirm(
-      "This link contains a shared ReelQuest list. Do you want to import it?\n\nOK = Import\nCancel = Ignore"
+      "This link contains a shared ReelQuest list. Do you want to import it?
+
+OK = Import
+Cancel = Ignore"
     );
     if (!ok) {
       url.searchParams.delete("share");
@@ -2889,7 +3144,10 @@ function handleIncomingSharedList() {
     }
 
     const wantMerge = window.confirm(
-      "Merge into an existing list if it matches?\n\nOK = Merge\nCancel = Add as a new list"
+      "Merge into an existing list if it matches?
+
+OK = Merge
+Cancel = Add as a new list"
     );
 
     importSingleListObject(parsed, wantMerge ? "merge" : "add");
@@ -3719,7 +3977,10 @@ function createSmartListPreset() {
   }
 
   const choice = window.prompt(
-    "Choose a preset:\n1) Horror 80s\n2) Top rated (your favourite genres)\n3) Custom",
+    "Choose a preset:
+1) Horror 80s
+2) Top rated (your favourite genres)
+3) Custom",
     "1"
   );
   if (choice === null) return;
@@ -5705,7 +5966,8 @@ els.detailActions.appendChild(orgWrap);
             minRating: state.minRating,
             theme: state.theme,
             country: state.country,
-            includeTv: state.includeTv
+            includeTv: state.includeTv,
+            mood: state.mood
           }
         };
         return payload;
@@ -5873,6 +6135,7 @@ els.detailActions.appendChild(orgWrap);
         const minRating = data && typeof data.minRating === "number" ? data.minRating : state.minRating;
         const theme = data && (data.theme === "light" || data.theme === "dark") ? data.theme : state.theme;
         const includeTv = data && typeof data.includeTv === "boolean" ? data.includeTv : state.includeTv;
+        const mood = data && typeof data.mood === "string" && MOODS[data.mood] ? data.mood : state.mood;
 
         state.items = items;
         state.lists = lists;
@@ -5894,6 +6157,7 @@ els.detailActions.appendChild(orgWrap);
         state.minRating = minRating;
         state.theme = theme;
         state.includeTv = includeTv;
+        state.mood = mood;
 
         // Clear caches that could be stale
         state.detailsCache = {};
@@ -5960,7 +6224,10 @@ function mergeImportedData(imported) {
     const en = (existing.notes || "").trim();
     const inN = (inc.notes || "").trim();
     if (!en && inN) existing.notes = inN;
-    else if (en && inN && en !== inN) existing.notes = en + "\n\n— Imported note —\n" + inN;
+    else if (en && inN && en !== inN) existing.notes = en + "
+
+— Imported note —
+" + inN;
 
     // Keep basic metadata if missing
     if (!existing.title && inc.title) existing.title = inc.title;
@@ -6070,7 +6337,10 @@ function mergeImportedData(imported) {
       }
 
       const wantMerge = window.confirm(
-        "How do you want to import this backup?\n\nOK = Merge into your existing data\nCancel = Replace everything"
+        "How do you want to import this backup?
+
+OK = Merge into your existing data
+Cancel = Replace everything"
       );
 
       if (wantMerge) {
@@ -6138,7 +6408,9 @@ function showInstallHint() {
 }
 
 function init() {
-        try {
+        
+        const moodSelect = document.getElementById("mood-select");
+try {
           const qs = new URLSearchParams(location.search || "");
           if (qs.get("nosw") === "1") {
             unregisterServiceWorkersAndClearCaches();
@@ -6266,6 +6538,20 @@ function init() {
 
         updateDebug("ReelQuest ready (JS initialised)");
       }
+
+
+if (moodSelect) {
+  moodSelect.addEventListener("change", function () {
+    const v = String(moodSelect.value || "any");
+    state.mood = MOODS[v] ? v : "any";
+    saveState();
+    if (state.activeTab === "discover") loadPopularForDiscover();
+    else if (state.activeTab === "for-you") loadForYouRecommendations();
+    else if (state.activeTab === "radar") loadRadarUpcoming();
+    else render();
+  });
+}
+
 
       document.addEventListener("DOMContentLoaded", init);
     })();
