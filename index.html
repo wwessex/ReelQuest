@@ -1434,7 +1434,7 @@ function yearFromTmdb(obj) {
 
 
 const MOODS = {
-  any: { label: "Any", keywords: [] },
+  any: { label: "Any" },
 
   cosy: {
     label: "Cosy",
@@ -1491,23 +1491,25 @@ async function resolveKeywordId(query) {
   return null;
 }
 
-function getMoodConfig(mediaType) {
-  const key = state.mood && MOODS[state.mood] ? state.mood : "any";
-  const m = MOODS[key];
-  if (!m || key === "any") return null;
-  const mt = normaliseMediaType(mediaType);
-  return mt === "tv" ? m.tv : m.movie;
+function getMoodKey() {
+  return state.mood && MOODS[state.mood] ? state.mood : "any";
 }
 
-function moodMatchesView(view) {
-  if (!state.mood || state.mood === "any") return true;
-  if (!view || view.mode !== "remote" || !view.tmdbMovie) return true;
+function getMoodConfig(mediaType) {
+  const key = getMoodKey();
+  if (key === "any") return null;
+  const mt = normaliseMediaType(mediaType);
+  return mt === "tv" ? MOODS[key].tv : MOODS[key].movie;
+}
 
-  const mt = normaliseMediaType((view.tmdbMovie && view.tmdbMovie.media_type) || view.mediaType || "movie");
-  const cfg = getMoodConfig(mt);
+function moodMatchesTmdb(tmdbObj) {
+  const key = getMoodKey();
+  if (key === "any") return true;
+  if (!tmdbObj) return true;
+
+  const ids = Array.isArray(tmdbObj.genre_ids) ? tmdbObj.genre_ids : [];
+  const cfg = getMoodConfig(normaliseMediaType(tmdbObj.media_type || "movie"));
   if (!cfg) return true;
-
-  const ids = Array.isArray(view.tmdbMovie.genre_ids) ? view.tmdbMovie.genre_ids : [];
 
   if (Array.isArray(cfg.include) && cfg.include.length) {
     let ok = false;
@@ -1620,7 +1622,6 @@ function formatDateUK(ts) {
           if (typeof parsed.includeTv === "boolean") {
             state.includeTv = parsed.includeTv;
           }
-
           if (typeof parsed.mood === "string" && MOODS[parsed.mood]) {
             state.mood = parsed.mood;
           }
@@ -2192,7 +2193,7 @@ async function loadBecauseYouLiked(tmdbId, seedTitle) {
 async function loadMoodForDiscover() {
   if (!els.message || !els.grid) return;
 
-  const moodKey = state.mood && MOODS[state.mood] ? state.mood : "any";
+  const moodKey = getMoodKey();
   if (moodKey === "any") {
     await loadPopularForDiscover();
     return;
@@ -2205,7 +2206,6 @@ async function loadMoodForDiscover() {
   try {
     const results = [];
 
-    // Movies
     const movieCfg = getMoodConfig("movie");
     const movieUrl = new URL("https://api.themoviedb.org/3/discover/movie");
     movieUrl.searchParams.set("api_key", TMDB_API_KEY);
@@ -2215,7 +2215,6 @@ async function loadMoodForDiscover() {
     movieUrl.searchParams.set("page", "1");
     if (movieCfg && movieCfg.include && movieCfg.include.length) movieUrl.searchParams.set("with_genres", movieCfg.include.join(","));
     if (movieCfg && movieCfg.exclude && movieCfg.exclude.length) movieUrl.searchParams.set("without_genres", movieCfg.exclude.join(","));
-
     if (movieCfg && movieCfg.keywords && movieCfg.keywords.length) {
       const ids = [];
       for (let i = 0; i < movieCfg.keywords.length; i++) {
@@ -2233,7 +2232,6 @@ async function loadMoodForDiscover() {
       results.push(movies[i]);
     }
 
-    // TV (optional)
     if (state.includeTv) {
       const tvCfg = getMoodConfig("tv");
       const tvUrl = new URL("https://api.themoviedb.org/3/discover/tv");
@@ -2243,8 +2241,6 @@ async function loadMoodForDiscover() {
       tvUrl.searchParams.set("page", "1");
       if (tvCfg && tvCfg.include && tvCfg.include.length) tvUrl.searchParams.set("with_genres", tvCfg.include.join(","));
       if (tvCfg && tvCfg.exclude && tvCfg.exclude.length) tvUrl.searchParams.set("without_genres", tvCfg.exclude.join(","));
-
-      // Some TMDB configs may not support with_keywords on TV; best-effort
       if (tvCfg && tvCfg.keywords && tvCfg.keywords.length) {
         const ids = [];
         for (let i = 0; i < tvCfg.keywords.length; i++) {
@@ -2259,7 +2255,6 @@ async function loadMoodForDiscover() {
       try {
         tvData = await tmdbFetch(tvUrl);
       } catch (e) {
-        // Retry without keywords if needed
         tvUrl.searchParams.delete("with_keywords");
         tvData = await tmdbFetch(tvUrl);
       }
@@ -2292,6 +2287,11 @@ async function loadMoodForDiscover() {
   if (!els.message || !els.grid) return;
   els.message.style.display = "block";
   els.message.textContent = state.includeTv ? "Loading popular titles…" : "Loading popular films…";
+
+        if (state.mood && state.mood !== "any") {
+          await loadMoodForDiscover();
+          return;
+        }
   renderSkeletonGrid(12);
 
   try {
@@ -2519,6 +2519,14 @@ async function loadMoodForDiscover() {
     const merged = movies.concat(tv);
     merged.sort(function (a, b) { return (b.popularity || 0) - (a.popularity || 0); });
 
+          if (state.mood && state.mood !== "any") {
+            const mf = [];
+            for (let i = 0; i < merged.length; i++) {
+              if (moodMatchesTmdb(merged[i])) mf.push(merged[i]);
+            }
+            merged = mf;
+          }
+
     state.forYouResults = merged.slice(0, 40);
     state.forYouLoaded = true;
     cacheSet("rq_cache_forYou", { results: state.forYouResults, meta: { country: state.country, favouriteGenres: state.favouriteGenres, includeTv: state.includeTv } });
@@ -2623,6 +2631,14 @@ async function loadMoodForDiscover() {
 
     const merged = movies.concat(tv);
     merged.sort(function (a, b) { return (b.popularity || 0) - (a.popularity || 0); });
+
+          if (state.mood && state.mood !== "any") {
+            const mf = [];
+            for (let i = 0; i < merged.length; i++) {
+              if (moodMatchesTmdb(merged[i])) mf.push(merged[i]);
+            }
+            merged = mf;
+          }
 
     state.forYouResults = merged.slice(0, 40);
     state.forYouLoaded = true;
@@ -2774,8 +2790,7 @@ function toggleWatchlistForItem(item) {
 
 Shared from ReelQuest.";
 
-        const finalText = text.replace(/
-/g, "
+        const finalText = text.replace(/\n/g, "
 ");
 
         if (navigator.share) {
@@ -5140,6 +5155,7 @@ container.appendChild(pickBtn);
 
         if (els.sortSelect) els.sortSelect.value = state.sortBy;
         if (els.ratingFilterSelect) els.ratingFilterSelect.value = String(state.minRating);
+        if (els.moodSelect) els.moodSelect.value = state.mood || "any";
 
         if (state.activeTab === "settings") {
           els.searchForm.style.display = "none";
@@ -5304,6 +5320,22 @@ container.appendChild(pickBtn);
         saveState();
         render();
       }
+
+function handleMoodChange(e) {
+  const v = String((e && e.target && e.target.value) || "any");
+  state.mood = MOODS[v] ? v : "any";
+  saveState();
+
+  if (state.activeTab === "discover") {
+    loadPopularForDiscover();
+  } else if (state.activeTab === "for-you") {
+    loadForYouRecommendations();
+  } else if (state.activeTab === "radar") {
+    loadRadarUpcoming();
+  } else {
+    render();
+  }
+}
 
       async function fetchWatchProviders(tmdbId, mediaType) {
   const mt = normaliseMediaType(mediaType);
@@ -6408,9 +6440,7 @@ function showInstallHint() {
 }
 
 function init() {
-        
-        const moodSelect = document.getElementById("mood-select");
-try {
+        try {
           const qs = new URLSearchParams(location.search || "");
           if (qs.get("nosw") === "1") {
             unregisterServiceWorkersAndClearCaches();
@@ -6432,6 +6462,7 @@ try {
           controlsBar: document.getElementById("controls-bar"),
           sortSelect: document.getElementById("sort-select"),
           ratingFilterSelect: document.getElementById("rating-filter-select"),
+          moodSelect: document.getElementById("mood-select"),
           listActions: document.getElementById("list-actions"),
           detailOverlay: document.getElementById("detail-overlay"),
           detailClose: document.getElementById("detail-close"),
@@ -6478,6 +6509,7 @@ try {
         if (els.searchForm) els.searchForm.addEventListener("submit", handleSearchSubmit);
         if (els.sortSelect) els.sortSelect.addEventListener("change", handleSortChange);
         if (els.ratingFilterSelect) els.ratingFilterSelect.addEventListener("change", handleRatingFilterChange);
+        if (els.moodSelect) els.moodSelect.addEventListener("change", handleMoodChange);
 
         if (els.importInput) {
           els.importInput.addEventListener("change", function (e) {
@@ -6538,20 +6570,6 @@ try {
 
         updateDebug("ReelQuest ready (JS initialised)");
       }
-
-
-if (moodSelect) {
-  moodSelect.addEventListener("change", function () {
-    const v = String(moodSelect.value || "any");
-    state.mood = MOODS[v] ? v : "any";
-    saveState();
-    if (state.activeTab === "discover") loadPopularForDiscover();
-    else if (state.activeTab === "for-you") loadForYouRecommendations();
-    else if (state.activeTab === "radar") loadRadarUpcoming();
-    else render();
-  });
-}
-
 
       document.addEventListener("DOMContentLoaded", init);
     })();
