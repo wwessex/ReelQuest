@@ -5188,9 +5188,9 @@ container.appendChild(pickBtn);
         const emptyMessage = getEmptyMessageForTab();
 
         if (state.localMoodLoading) {
-          els.message.style.display = \"block\";
-          els.message.textContent = \"Fetching genre info so Mood filtering works on your saved lists…\";
-        } else if (state.activeTab === \"for-you\" && state.forYouLoading) {
+          els.message.style.display = "block";
+          els.message.textContent = "Fetching genre info so Mood filtering works on your saved lists…";
+        } else if (state.activeTab === "for-you" && state.forYouLoading) {
           els.message.style.display = "block";
           els.message.textContent =
             "Fetching recommendations based on your favourite genres…";
