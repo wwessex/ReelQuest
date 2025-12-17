@@ -1423,19 +1423,6 @@ function parseEntryKey(key) {
   return { mediaType: "movie", tmdbId: Number.isFinite(id2) ? id2 : null };
 }
 
-
-
-function toTmdbId(v) {
-  if (typeof v === "number" && Number.isFinite(v)) return v;
-  if (typeof v === "string") {
-    const s = v.trim();
-    if (/^[0-9]+$/.test(s)) {
-      const n = parseInt(s, 10);
-      return Number.isFinite(n) ? n : null;
-    }
-  }
-  return null;
-}
 function titleFromTmdb(obj) {
   return (obj && (obj.title || obj.name)) ? (obj.title || obj.name) : "Untitled";
 }
@@ -1692,46 +1679,6 @@ function migrateItemsMediaType() {
   }
 }
 
-function migrateTmdbIdsToNumbers() {
-  let changed = false;
-
-  for (let i = 0; i < state.items.length; i++) {
-    const it = state.items[i];
-    if (!it) continue;
-    const n = toTmdbId(it.tmdbId);
-    if (n !== null && it.tmdbId !== n) {
-      it.tmdbId = n;
-      changed = true;
-    }
-  }
-
-  for (let i = 0; i < state.lists.length; i++) {
-    const l = state.lists[i];
-    if (!l || !Array.isArray(l.entries)) continue;
-    for (let j = 0; j < l.entries.length; j++) {
-      const e = l.entries[j];
-      if (!e) continue;
-      const n = toTmdbId(e.tmdbId);
-      if (n !== null && e.tmdbId !== n) {
-        e.tmdbId = n;
-        changed = true;
-      }
-    }
-    if (l && Array.isArray(l.customOrder)) {
-      for (let j = 0; j < l.customOrder.length; j++) {
-        const n = toTmdbId(l.customOrder[j]);
-        if (n !== null && l.customOrder[j] !== n) {
-          l.customOrder[j] = n;
-          changed = true;
-        }
-      }
-    }
-  }
-
-  if (changed) saveState();
-}
-
-
 
 function toast(message, options) {
   const host = document.getElementById("toast-host");
@@ -1807,12 +1754,7 @@ function alertNice(message) {
               favouriteGenres: state.favouriteGenres,
               sortBy: state.sortBy,
               minRating: state.minRating,
-              country: state.country,
-              includeTv: state.includeTv,
-              mood: state.mood,
-              ui: state.ui,
-              theme: state.theme
-            })
+              theme: state.theme,})
           );
         } catch (e) {
           console.warn("Failed to save ReelQuest state", e);
@@ -1857,14 +1799,8 @@ function clearSelection() {
 
 function getKeyFromView(view) {
   if (!view) return null;
-  if (view.mode === "local" && view.item) {
-    const id = toTmdbId(view.item.tmdbId);
-    if (id !== null) return entryKey(view.item.mediaType || "movie", id);
-  }
-  if (view.mode === "remote" && view.tmdbMovie) {
-    const id = toTmdbId(view.tmdbMovie.id);
-    if (id !== null) return entryKey(view.mediaType || view.tmdbMovie.media_type || "movie", id);
-  }
+  if (view.mode === "local" && view.item && typeof view.item.tmdbId === "number") return entryKey(view.item.mediaType || "movie", view.item.tmdbId);
+  if (view.mode === "remote" && view.tmdbMovie && typeof view.tmdbMovie.id === "number") return entryKey(view.mediaType || view.tmdbMovie.media_type || "movie", view.tmdbMovie.id);
   return null;
 }
 
@@ -2735,13 +2671,10 @@ async function loadForYouFallbackPopular() {
 
       function findItemByTmdbId(tmdbId, mediaType) {
   const mt = normaliseMediaType(mediaType);
-  const want = toTmdbId(tmdbId);
-  if (want === null) return null;
   for (let i = 0; i < state.items.length; i++) {
     const it = state.items[i];
     const itType = normaliseMediaType(it.mediaType || "movie");
-    const have = toTmdbId(it.tmdbId);
-    if (have !== null && have === want && itType === mt) return it;
+    if (it.tmdbId === tmdbId && itType === mt) return it;
   }
   return null;
 }
@@ -3216,7 +3149,7 @@ async function pickFromWatchlist() {
   } else {
     for (let tries = 0; tries < 10; tries++) {
       const v = candidates[Math.floor(Math.random() * candidates.length)];
-      if (!state.lastPickTmdbId || toTmdbId(v.item.tmdbId) !== state.lastPickTmdbId) {
+      if (!state.lastPickTmdbId || v.item.tmdbId !== state.lastPickTmdbId) {
         pick = v;
         break;
       }
@@ -3224,7 +3157,7 @@ async function pickFromWatchlist() {
     if (!pick) pick = candidates[Math.floor(Math.random() * candidates.length)];
   }
 
-  state.lastPickTmdbId = toTmdbId(pick.item.tmdbId);
+  state.lastPickTmdbId = pick.item.tmdbId;
   saveState();
   openDetailForView(pick);
 }
@@ -3291,17 +3224,14 @@ async function pickFromWatchlist() {
               if (moodMatchesTmdb(v.tmdbMovie)) tmpMood.push(v);
               continue;
             }
-            if (v && v.item) {
-              const id = toTmdbId(v.item.tmdbId);
-              if (id !== null) {
-                const mt = normaliseMediaType(v.item.mediaType || v.mediaType || "movie");
-                const cacheKey = mt + ":" + id;
-                const det = state.detailsCache ? state.detailsCache[cacheKey] : null;
-                if (!det) continue; // no genre info yet — will be populated by ensureDetailsForLocalTab()
-                const obj = Object.assign({ media_type: mt }, det);
-                if (moodMatchesTmdb(obj)) tmpMood.push(v);
-                continue;
-              }
+            if (v && v.item && typeof v.item.tmdbId === "number") {
+              const mt = normaliseMediaType(v.item.mediaType || v.mediaType || "movie");
+              const cacheKey = mt + ":" + v.item.tmdbId;
+              const det = state.detailsCache ? state.detailsCache[cacheKey] : null;
+              if (!det) continue; // no genre info yet — will be populated by ensureDetailsForLocalTab()
+              const obj = Object.assign({ media_type: mt }, det);
+              if (moodMatchesTmdb(obj)) tmpMood.push(v);
+              continue;
             }
             // Fallback: keep the item
             tmpMood.push(v);
@@ -5394,17 +5324,18 @@ function ensureDetailsForLocalTab() {
     const toFetch = [];
     for (let i = 0; i < items.length; i++) {
       const it = items[i];
-      if (!it) continue;
-      const idNum = toTmdbId(it.tmdbId);
-      if (idNum === null) continue;
+      if (!it || typeof it.tmdbId !== "number") continue;
       const mt = normaliseMediaType(it.mediaType || "movie");
-      const cacheKey = mt + ":" + idNum;
+      const cacheKey = mt + ":" + it.tmdbId;
       if (!state.detailsCache || !state.detailsCache[cacheKey]) {
-        toFetch.push({ tmdbId: idNum, mediaType: mt });
+        toFetch.push({ tmdbId: it.tmdbId, mediaType: mt });
       }
     }
-
-    if (!toFetch.length) return;
+    if (!toFetch.length) {
+      // Nothing new to fetch — but we still need to re-render so the mood filter applies.
+      render();
+      return;
+    }
 
     state.localMoodLoading = true;
     render();
@@ -6156,7 +6087,7 @@ els.detailActions.appendChild(orgWrap);
     const it = items[i];
     if (!it || typeof it !== "object") continue;
 
-    const tmdbId = toTmdbId(it.tmdbId);
+    const tmdbId = typeof it.tmdbId === "number" ? it.tmdbId : null;
     const title = typeof it.title === "string" ? it.title : "";
     if (!tmdbId || !title) continue;
 
@@ -6235,7 +6166,7 @@ els.detailActions.appendChild(orgWrap);
     for (let j = 0; j < entriesRaw.length; j++) {
       const e = entriesRaw[j];
       if (!e || typeof e !== "object") continue;
-      const tmdbId = toTmdbId(e.tmdbId);
+      const tmdbId = typeof e.tmdbId === "number" ? e.tmdbId : null;
       const title = typeof e.title === "string" ? e.title : "";
       if (!tmdbId || !title) continue;
       const mediaType = (e.mediaType === "tv" || e.mediaType === "movie") ? e.mediaType : "movie";
@@ -6590,7 +6521,6 @@ function init() {
         loadState();
         migrateItemsMediaType();
         handleIncomingSharedList();
-        migrateTmdbIdsToNumbers();
         migrateItemsMediaType();
         applyTheme();
         render();
