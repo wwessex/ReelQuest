@@ -2435,41 +2435,23 @@ async function loadMoodForDiscover() {
         const summary = (title || "Film release") + " (Release)";
 
         const ics =
-          "BEGIN:VCALENDAR
-" +
-          "VERSION:2.0
-" +
-          "PRODID:-//ReelQuest//EN
-" +
-          "CALSCALE:GREGORIAN
-" +
-          "BEGIN:VEVENT
-" +
-          "UID:" + uid + "
-" +
-          "DTSTAMP:" + new Date().toISOString().replace(/[-:]/g, "").split(".")[0] + "Z
-" +
-          "SUMMARY:" + summary.replace(/
-/g, " ") + "
-" +
-          "DTSTART;VALUE=DATE:" + ymd + "
-" +
-          "DTEND;VALUE=DATE:" + ymdEnd + "
-" +
-          "BEGIN:VALARM
-" +
-          "TRIGGER:-P1D
-" +
-          "ACTION:DISPLAY
-" +
-          "DESCRIPTION:ReelQuest reminder
-" +
-          "END:VALARM
-" +
-          "END:VEVENT
-" +
-          "END:VCALENDAR
-";
+          "BEGIN:VCALENDAR\r\n" +
+          "VERSION:2.0\r\n" +
+          "PRODID:-//ReelQuest//EN\r\n" +
+          "CALSCALE:GREGORIAN\r\n" +
+          "BEGIN:VEVENT\r\n" +
+          "UID:" + uid + "\r\n" +
+          "DTSTAMP:" + new Date().toISOString().replace(/[-:]/g, "").split(".")[0] + "Z\r\n" +
+          "SUMMARY:" + summary.replace(/\n/g, " ") + "\r\n" +
+          "DTSTART;VALUE=DATE:" + ymd + "\r\n" +
+          "DTEND;VALUE=DATE:" + ymdEnd + "\r\n" +
+          "BEGIN:VALARM\r\n" +
+          "TRIGGER:-P1D\r\n" +
+          "ACTION:DISPLAY\r\n" +
+          "DESCRIPTION:ReelQuest reminder\r\n" +
+          "END:VALARM\r\n" +
+          "END:VEVENT\r\n" +
+          "END:VCALENDAR\r\n";
 
         const blob = new Blob([ics], { type: "text/calendar" });
         const url = URL.createObjectURL(blob);
@@ -2482,7 +2464,7 @@ async function loadMoodForDiscover() {
         setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
       }
 
-      async function loadForYouFallbackPopular() {
+async function loadForYouFallbackPopular() {
   els.message.style.display = "block";
   els.message.textContent = state.includeTv ? "Loading popular titles…" : "Loading popular films…";
   renderSkeletonGrid(12);
@@ -2752,9 +2734,7 @@ function toggleWatchlistForItem(item) {
         const watchlist = [];
         for (let i = 0; i < state.items.length; i++) {
           const it = state.items[i];
-          if (it.inWatchlist) {
-            watchlist.push(it);
-          }
+          if (it.inWatchlist) watchlist.push(it);
         }
 
         if (!watchlist.length) {
@@ -2780,46 +2760,20 @@ function toggleWatchlistForItem(item) {
           lines.push(n + ". " + title + year + watched);
         }
 
-        const text =
-          "My ReelQuest watchlist:
-
-" +
-          lines.join("
-") +
-          "
-
-Shared from ReelQuest.";
-
-        const finalText = text.replace(/\n/g, "
-");
+        const finalText = "My ReelQuest watchlist:\n\n" + lines.join("\n") + "\n\nShared from ReelQuest.";
 
         if (navigator.share) {
-          navigator
-            .share({
-              title: "My ReelQuest watchlist",
-              text: finalText
-            })
-            .catch(function () {});
+          navigator.share({ title: "My ReelQuest watchlist", text: finalText }).catch(function () {});
         } else if (navigator.clipboard && navigator.clipboard.writeText) {
-          navigator.clipboard
-            .writeText(finalText)
-            .then(function () {
-              alertNice("Watchlist copied to the clipboard.");
-            })
+          navigator.clipboard.writeText(finalText)
+            .then(function () { alertNice("Watchlist copied to the clipboard."); })
             .catch(function () {
-              alertNice(
-                "Couldn’t access the clipboard, but here’s your list:
-
-" +
-                  finalText
-              );
+              alertNice("Couldn’t access the clipboard, but here’s your list:\n\n" + finalText);
             });
         } else {
           alertNice(finalText);
         }
       }
-
-
 
 function base64UrlEncodeUtf8(str) {
   // UTF-8 -> base64url
@@ -3006,12 +2960,7 @@ function pickAndImportSingleList() {
     }
     const file = files[0];
 
-    const wantMerge = window.confirm(
-      "Merge this list into an existing list if it matches?
-
-OK = Merge
-Cancel = Add as a new list"
-    );
+    const wantMerge = window.confirm("Merge this list into an existing list if it matches?\n\nOK = Merge\nCancel = Add as a new list");
 
     const reader = new FileReader();
     reader.onload = function () {
@@ -3051,17 +3000,9 @@ function buildListShareText(list) {
   }
 
   const header = "ReelQuest — " + (list.name || "List");
-  const desc = list.description ? ("
-" + list.description.trim()) : "";
-  const body = lines.length ? ("
-
-" + lines.join("
-")) : "
-
-(Empty list)";
-  return header + desc + body + "
-
-Shared from ReelQuest.";
+  const desc = list.description ? ("\n" + list.description.trim()) : "";
+  const body = lines.length ? ("\n\n" + lines.join("\n")) : "\n\n(Empty list)";
+  return header + desc + body + "\n\nShared from ReelQuest.";
 }
 
 function buildListShareLink(list) {
@@ -3101,12 +3042,7 @@ async function shareList(listId) {
   const list = getListById(listId);
   if (!list) return;
 
-  const wantLink = window.confirm(
-    "Share a link that opens this list in ReelQuest?
-
-OK = Share link
-Cancel = Share text card"
-  );
+  const wantLink = window.confirm("Share a link that opens this list in ReelQuest?\n\nOK = Share link\nCancel = Share text card");
 
   if (wantLink) {
     const link = buildListShareLink(list);
@@ -3146,24 +3082,14 @@ function handleIncomingSharedList() {
     const decoded = base64UrlDecodeUtf8(param);
     const parsed = JSON.parse(decoded);
 
-    const ok = window.confirm(
-      "This link contains a shared ReelQuest list. Do you want to import it?
-
-OK = Import
-Cancel = Ignore"
-    );
+    const ok = window.confirm("This link contains a shared ReelQuest list. Do you want to import it?\n\nOK = Import\nCancel = Ignore");
     if (!ok) {
       url.searchParams.delete("share");
       window.history.replaceState({}, document.title, url.toString());
       return;
     }
 
-    const wantMerge = window.confirm(
-      "Merge into an existing list if it matches?
-
-OK = Merge
-Cancel = Add as a new list"
-    );
+    const wantMerge = window.confirm("Merge into an existing list if it matches?\n\nOK = Merge\nCancel = Add as a new list");
 
     importSingleListObject(parsed, wantMerge ? "merge" : "add");
 
@@ -3991,13 +3917,7 @@ function createSmartListPreset() {
     return;
   }
 
-  const choice = window.prompt(
-    "Choose a preset:
-1) Horror 80s
-2) Top rated (your favourite genres)
-3) Custom",
-    "1"
-  );
+  const choice = window.prompt("Choose a preset:\n1) Horror 80s\n2) Top rated (your favourite genres)\n3) Custom", "1");
   if (choice === null) return;
 
   let rules = null;
@@ -6256,10 +6176,7 @@ function mergeImportedData(imported) {
     const en = (existing.notes || "").trim();
     const inN = (inc.notes || "").trim();
     if (!en && inN) existing.notes = inN;
-    else if (en && inN && en !== inN) existing.notes = en + "
-
-— Imported note —
-" + inN;
+    else if (en && inN && en !== inN) existing.notes = en + "\n\n— Imported note —\n" + inN;
 
     // Keep basic metadata if missing
     if (!existing.title && inc.title) existing.title = inc.title;
@@ -6368,12 +6285,7 @@ function mergeImportedData(imported) {
         if (!ok) return;
       }
 
-      const wantMerge = window.confirm(
-        "How do you want to import this backup?
-
-OK = Merge into your existing data
-Cancel = Replace everything"
-      );
+      const wantMerge = window.confirm("How do you want to import this backup?\n\nOK = Merge into your existing data\nCancel = Replace everything");
 
       if (wantMerge) {
         mergeImportedData(parsed);
