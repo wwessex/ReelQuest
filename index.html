@@ -660,6 +660,69 @@
       text-decoration: underline;
     }
 
+    /* Detail: More like this */
+
+    .detail-more {
+      margin-top: 10px;
+      padding-top: 10px;
+      border-top: 1px solid var(--border-subtle);
+    }
+
+    .detail-more-heading {
+      font-size: 13px;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+
+    .detail-more-sub {
+      font-size: 12px;
+      color: var(--text-softer);
+      margin: 10px 0 6px;
+    }
+
+    .more-row {
+      display: flex;
+      gap: 12px;
+      overflow-x: auto;
+      padding-bottom: 10px;
+      scroll-snap-type: x mandatory;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    .more-row::-webkit-scrollbar {
+      height: 8px;
+    }
+
+    .more-row .movie-card.mini-card {
+      width: 140px;
+      flex: 0 0 auto;
+      scroll-snap-align: start;
+    }
+
+    .more-row .movie-title-line {
+      font-size: 12px;
+    }
+
+    .more-row .movie-subline {
+      display: none;
+    }
+
+    .more-row .poster-actions {
+      bottom: 6px;
+      gap: 8px;
+    }
+
+    .more-row .card-btn {
+      width: 30px;
+      height: 30px;
+    }
+
+    .detail-more-empty {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-top: 6px;
+    }
+
     @media (max-width: 640px) {
       .detail-body {
         flex-direction: column;
@@ -1331,6 +1394,14 @@
           <div id="detail-chips" class="detail-chips"></div>
           <div id="detail-actions" class="detail-actions"></div>
           <div id="detail-links"></div>
+          <div id="detail-more" class="detail-more" aria-label="More like this">
+            <div class="detail-more-heading">More like this</div>
+            <div class="detail-more-sub">Recommendations</div>
+            <div id="detail-recs-row" class="more-row"></div>
+            <div class="detail-more-sub">Similar</div>
+            <div id="detail-similar-row" class="more-row"></div>
+            <div id="detail-more-empty" class="detail-more-empty"></div>
+          </div>
         </div>
       </div>
     </div>
@@ -1423,6 +1494,19 @@ function parseEntryKey(key) {
   return { mediaType: "movie", tmdbId: Number.isFinite(id2) ? id2 : null };
 }
 
+
+
+function toTmdbId(v) {
+  if (typeof v === "number" && Number.isFinite(v)) return v;
+  if (typeof v === "string") {
+    const s = v.trim();
+    if (/^[0-9]+$/.test(s)) {
+      const n = parseInt(s, 10);
+      return Number.isFinite(n) ? n : null;
+    }
+  }
+  return null;
+}
 function titleFromTmdb(obj) {
   return (obj && (obj.title || obj.name)) ? (obj.title || obj.name) : "Untitled";
 }
@@ -1576,7 +1660,8 @@ function moodMatchesTmdb(tmdbObj) {
         minRating: 0,
         theme: "dark",
         detailsCache: {},
-        ui: { selectionMode: false, selectedKeys: [] },
+        moreLikeCache: {},
+        ui: { selectionMode: false, selectedKeys: [], detailToken: 0 },
         lastTmdbStatus: ""
       };
 
@@ -1679,6 +1764,46 @@ function migrateItemsMediaType() {
   }
 }
 
+function migrateTmdbIdsToNumbers() {
+  let changed = false;
+
+  for (let i = 0; i < state.items.length; i++) {
+    const it = state.items[i];
+    if (!it) continue;
+    const n = toTmdbId(it.tmdbId);
+    if (n !== null && it.tmdbId !== n) {
+      it.tmdbId = n;
+      changed = true;
+    }
+  }
+
+  for (let i = 0; i < state.lists.length; i++) {
+    const l = state.lists[i];
+    if (!l || !Array.isArray(l.entries)) continue;
+    for (let j = 0; j < l.entries.length; j++) {
+      const e = l.entries[j];
+      if (!e) continue;
+      const n = toTmdbId(e.tmdbId);
+      if (n !== null && e.tmdbId !== n) {
+        e.tmdbId = n;
+        changed = true;
+      }
+    }
+    if (l && Array.isArray(l.customOrder)) {
+      for (let j = 0; j < l.customOrder.length; j++) {
+        const n = toTmdbId(l.customOrder[j]);
+        if (n !== null && l.customOrder[j] !== n) {
+          l.customOrder[j] = n;
+          changed = true;
+        }
+      }
+    }
+  }
+
+  if (changed) saveState();
+}
+
+
 
 function toast(message, options) {
   const host = document.getElementById("toast-host");
@@ -1754,7 +1879,12 @@ function alertNice(message) {
               favouriteGenres: state.favouriteGenres,
               sortBy: state.sortBy,
               minRating: state.minRating,
-              theme: state.theme,})
+              country: state.country,
+              includeTv: state.includeTv,
+              mood: state.mood,
+              ui: state.ui,
+              theme: state.theme
+            })
           );
         } catch (e) {
           console.warn("Failed to save ReelQuest state", e);
@@ -1799,8 +1929,14 @@ function clearSelection() {
 
 function getKeyFromView(view) {
   if (!view) return null;
-  if (view.mode === "local" && view.item && typeof view.item.tmdbId === "number") return entryKey(view.item.mediaType || "movie", view.item.tmdbId);
-  if (view.mode === "remote" && view.tmdbMovie && typeof view.tmdbMovie.id === "number") return entryKey(view.mediaType || view.tmdbMovie.media_type || "movie", view.tmdbMovie.id);
+  if (view.mode === "local" && view.item) {
+    const id = toTmdbId(view.item.tmdbId);
+    if (id !== null) return entryKey(view.item.mediaType || "movie", id);
+  }
+  if (view.mode === "remote" && view.tmdbMovie) {
+    const id = toTmdbId(view.tmdbMovie.id);
+    if (id !== null) return entryKey(view.mediaType || view.tmdbMovie.media_type || "movie", id);
+  }
   return null;
 }
 
@@ -2671,10 +2807,13 @@ async function loadForYouFallbackPopular() {
 
       function findItemByTmdbId(tmdbId, mediaType) {
   const mt = normaliseMediaType(mediaType);
+  const want = toTmdbId(tmdbId);
+  if (want === null) return null;
   for (let i = 0; i < state.items.length; i++) {
     const it = state.items[i];
     const itType = normaliseMediaType(it.mediaType || "movie");
-    if (it.tmdbId === tmdbId && itType === mt) return it;
+    const have = toTmdbId(it.tmdbId);
+    if (have !== null && have === want && itType === mt) return it;
   }
   return null;
 }
@@ -3149,7 +3288,7 @@ async function pickFromWatchlist() {
   } else {
     for (let tries = 0; tries < 10; tries++) {
       const v = candidates[Math.floor(Math.random() * candidates.length)];
-      if (!state.lastPickTmdbId || v.item.tmdbId !== state.lastPickTmdbId) {
+      if (!state.lastPickTmdbId || toTmdbId(v.item.tmdbId) !== state.lastPickTmdbId) {
         pick = v;
         break;
       }
@@ -3157,7 +3296,7 @@ async function pickFromWatchlist() {
     if (!pick) pick = candidates[Math.floor(Math.random() * candidates.length)];
   }
 
-  state.lastPickTmdbId = pick.item.tmdbId;
+  state.lastPickTmdbId = toTmdbId(pick.item.tmdbId);
   saveState();
   openDetailForView(pick);
 }
@@ -3224,14 +3363,17 @@ async function pickFromWatchlist() {
               if (moodMatchesTmdb(v.tmdbMovie)) tmpMood.push(v);
               continue;
             }
-            if (v && v.item && typeof v.item.tmdbId === "number") {
-              const mt = normaliseMediaType(v.item.mediaType || v.mediaType || "movie");
-              const cacheKey = mt + ":" + v.item.tmdbId;
-              const det = state.detailsCache ? state.detailsCache[cacheKey] : null;
-              if (!det) continue; // no genre info yet — will be populated by ensureDetailsForLocalTab()
-              const obj = Object.assign({ media_type: mt }, det);
-              if (moodMatchesTmdb(obj)) tmpMood.push(v);
-              continue;
+            if (v && v.item) {
+              const id = toTmdbId(v.item.tmdbId);
+              if (id !== null) {
+                const mt = normaliseMediaType(v.item.mediaType || v.mediaType || "movie");
+                const cacheKey = mt + ":" + id;
+                const det = state.detailsCache ? state.detailsCache[cacheKey] : null;
+                if (!det) continue; // no genre info yet — will be populated by ensureDetailsForLocalTab()
+                const obj = Object.assign({ media_type: mt }, det);
+                if (moodMatchesTmdb(obj)) tmpMood.push(v);
+                continue;
+              }
             }
             // Fallback: keep the item
             tmpMood.push(v);
@@ -5324,18 +5466,17 @@ function ensureDetailsForLocalTab() {
     const toFetch = [];
     for (let i = 0; i < items.length; i++) {
       const it = items[i];
-      if (!it || typeof it.tmdbId !== "number") continue;
+      if (!it) continue;
+      const idNum = toTmdbId(it.tmdbId);
+      if (idNum === null) continue;
       const mt = normaliseMediaType(it.mediaType || "movie");
-      const cacheKey = mt + ":" + it.tmdbId;
+      const cacheKey = mt + ":" + idNum;
       if (!state.detailsCache || !state.detailsCache[cacheKey]) {
-        toFetch.push({ tmdbId: it.tmdbId, mediaType: mt });
+        toFetch.push({ tmdbId: idNum, mediaType: mt });
       }
     }
-    if (!toFetch.length) {
-      // Nothing new to fetch — but we still need to re-render so the mood filter applies.
-      render();
-      return;
-    }
+
+    if (!toFetch.length) return;
 
     state.localMoodLoading = true;
     render();
@@ -5402,9 +5543,126 @@ function handleMoodChange(e) {
   return data;
 }
 
+
+      async function fetchMoreLikeThis(tmdbId, mediaType) {
+  if (!tmdbId) throw new Error("No TMDB id");
+  const mt = normaliseMediaType(mediaType);
+  const cacheKey = mt + ":" + tmdbId;
+
+  const now = Date.now();
+  const cached = state.moreLikeCache ? state.moreLikeCache[cacheKey] : null;
+  if (cached && cached.ts && cached.data && (now - cached.ts) < (1000 * 60 * 60 * 6)) {
+    return cached.data;
+  }
+
+  const base = "https://api.themoviedb.org/3/" + (mt === "tv" ? "tv" : "movie") + "/" + tmdbId;
+
+  const recUrl = new URL(base + "/recommendations");
+  recUrl.searchParams.set("api_key", TMDB_API_KEY);
+  recUrl.searchParams.set("language", "en-GB");
+  recUrl.searchParams.set("page", "1");
+
+  const simUrl = new URL(base + "/similar");
+  simUrl.searchParams.set("api_key", TMDB_API_KEY);
+  simUrl.searchParams.set("language", "en-GB");
+  simUrl.searchParams.set("page", "1");
+
+  const pair = await Promise.all([tmdbFetch(recUrl), tmdbFetch(simUrl)]);
+  const data = {
+    recommendations: (pair[0] && Array.isArray(pair[0].results)) ? pair[0].results : [],
+    similar: (pair[1] && Array.isArray(pair[1].results)) ? pair[1].results : []
+  };
+
+  if (state.moreLikeCache) {
+    state.moreLikeCache[cacheKey] = { ts: now, data: data };
+  }
+  return data;
+}
+
+function clearDetailMoreSection(message) {
+  if (els.detailRecsRow) els.detailRecsRow.innerHTML = "";
+  if (els.detailSimilarRow) els.detailSimilarRow.innerHTML = "";
+  if (els.detailMoreEmpty) els.detailMoreEmpty.textContent = message || "";
+}
+
+async function loadDetailMoreLikeThis(tmdbId, mediaType, token) {
+  try {
+    if (!els.detailMore || !els.detailRecsRow || !els.detailSimilarRow) return;
+
+    if (isOffline()) {
+      clearDetailMoreSection("Offline — can’t load similar titles.");
+      return;
+    }
+
+    const mt = normaliseMediaType(mediaType);
+    const data = await fetchMoreLikeThis(tmdbId, mt);
+
+    // If another title was opened while we were loading, bail.
+    if (state.ui && typeof token === "number" && token !== state.ui.detailToken) return;
+
+    const moodKey = getMoodKey();
+    const seen = new Set();
+
+    function pick(list, limit) {
+      const out = [];
+      const arr = Array.isArray(list) ? list : [];
+      for (let i = 0; i < arr.length; i++) {
+        const m = arr[i];
+        if (!m || !m.id) continue;
+        if (m.id === tmdbId) continue;
+        m.media_type = mt;
+        const k = mt + ":" + m.id;
+        if (seen.has(k)) continue;
+        if (moodKey !== "any" && !moodMatchesTmdb(m)) continue;
+        seen.add(k);
+        out.push(m);
+        if (out.length >= limit) break;
+      }
+      return out;
+    }
+
+    const recs = pick(data.recommendations, 12);
+    const sims = pick(data.similar, 12);
+
+    // Render
+    els.detailRecsRow.innerHTML = "";
+    for (let i = 0; i < recs.length; i++) {
+      const m = recs[i];
+      const linked = findItemByTmdbId(m.id, mt);
+      const view = { mode: "remote", tmdbMovie: m, item: linked, mediaType: mt };
+      const card = createCard(view);
+      card.classList.add("mini-card");
+      els.detailRecsRow.appendChild(card);
+    }
+
+    els.detailSimilarRow.innerHTML = "";
+    for (let i = 0; i < sims.length; i++) {
+      const m = sims[i];
+      const linked = findItemByTmdbId(m.id, mt);
+      const view = { mode: "remote", tmdbMovie: m, item: linked, mediaType: mt };
+      const card = createCard(view);
+      card.classList.add("mini-card");
+      els.detailSimilarRow.appendChild(card);
+    }
+
+    if (!recs.length && !sims.length) {
+      clearDetailMoreSection("No similar titles found.");
+    } else {
+      if (els.detailMoreEmpty) els.detailMoreEmpty.textContent = "";
+    }
+  } catch (e) {
+    console.error(e);
+    clearDetailMoreSection("Couldn’t load similar titles right now.");
+  }
+}
+
       function closeDetail() {
         els.detailOverlay.classList.add("hidden");
         els.detailOverlay.setAttribute("aria-hidden", "true");
+        if (state.ui) state.ui.detailToken = (state.ui.detailToken || 0) + 1;
+        if (els.detailMoreEmpty) els.detailMoreEmpty.textContent = "";
+        if (els.detailRecsRow) els.detailRecsRow.innerHTML = "";
+        if (els.detailSimilarRow) els.detailSimilarRow.innerHTML = "";
       }
 
       async function openDetailForView(view) {
@@ -5430,11 +5688,23 @@ function handleMoodChange(e) {
         els.detailChips.innerHTML = "";
         els.detailActions.innerHTML = "";
         els.detailLinks.innerHTML = "";
+        if (state.ui) state.ui.detailToken = (state.ui.detailToken || 0) + 1;
+        const detailToken = state.ui ? state.ui.detailToken : 0;
+
+        if (els.detailRecsRow) els.detailRecsRow.innerHTML = "";
+        if (els.detailSimilarRow) els.detailSimilarRow.innerHTML = "";
+        if (els.detailMoreEmpty) els.detailMoreEmpty.textContent = isOffline() ? "Offline — can’t load similar titles." : "Loading suggestions…";
         els.detailOverlay.classList.remove("hidden");
         els.detailOverlay.setAttribute("aria-hidden", "false");
 
         try {
           const details = await fetchDetails(tmdbId, mediaType);
+
+          // Kick off "More like this" inside the detail panel (non-blocking)
+          if (!isOffline()) {
+            loadDetailMoreLikeThis(details.id, mediaType, detailToken);
+          }
+
 
           const year = (details.release_date || details.first_air_date)
             ? String(details.release_date || details.first_air_date).slice(0, 4)
@@ -5832,7 +6102,7 @@ els.detailActions.appendChild(orgWrap);
 
           // Where to watch (UK)
           try {
-            const providers = await fetchWatchProviders(details.id);
+            const providers = await fetchWatchProviders(details.id, mediaType);
             const gb = providers && providers[(state.country || "GB")] ? providers[(state.country || "GB")] : null;
             const wrap = document.createElement("div");
             wrap.style.marginTop = "10px";
@@ -6087,7 +6357,7 @@ els.detailActions.appendChild(orgWrap);
     const it = items[i];
     if (!it || typeof it !== "object") continue;
 
-    const tmdbId = typeof it.tmdbId === "number" ? it.tmdbId : null;
+    const tmdbId = toTmdbId(it.tmdbId);
     const title = typeof it.title === "string" ? it.title : "";
     if (!tmdbId || !title) continue;
 
@@ -6166,7 +6436,7 @@ els.detailActions.appendChild(orgWrap);
     for (let j = 0; j < entriesRaw.length; j++) {
       const e = entriesRaw[j];
       if (!e || typeof e !== "object") continue;
-      const tmdbId = typeof e.tmdbId === "number" ? e.tmdbId : null;
+      const tmdbId = toTmdbId(e.tmdbId);
       const title = typeof e.title === "string" ? e.title : "";
       if (!tmdbId || !title) continue;
       const mediaType = (e.mediaType === "tv" || e.mediaType === "movie") ? e.mediaType : "movie";
@@ -6510,6 +6780,10 @@ function init() {
           detailChips: document.getElementById("detail-chips"),
           detailActions: document.getElementById("detail-actions"),
           detailLinks: document.getElementById("detail-links"),
+          detailMore: document.getElementById("detail-more"),
+          detailRecsRow: document.getElementById("detail-recs-row"),
+          detailSimilarRow: document.getElementById("detail-similar-row"),
+          detailMoreEmpty: document.getElementById("detail-more-empty"),
           themeToggle: document.getElementById("theme-toggle"),
           settingsToggle: document.getElementById("settings-toggle"),
           menuToggle: document.getElementById("menu-toggle"),
@@ -6521,6 +6795,7 @@ function init() {
         loadState();
         migrateItemsMediaType();
         handleIncomingSharedList();
+        migrateTmdbIdsToNumbers();
         migrateItemsMediaType();
         applyTheme();
         render();
