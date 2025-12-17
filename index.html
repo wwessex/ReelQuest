@@ -1502,12 +1502,33 @@ function getMoodConfig(mediaType) {
   return mt === "tv" ? MOODS[key].tv : MOODS[key].movie;
 }
 
+function genreIdsFromTmdb(tmdbObj) {
+  if (!tmdbObj) return [];
+  if (Array.isArray(tmdbObj.genre_ids)) {
+    const out = [];
+    for (let i = 0; i < tmdbObj.genre_ids.length; i++) {
+      const v = tmdbObj.genre_ids[i];
+      if (typeof v === "number") out.push(v);
+    }
+    return out;
+  }
+  if (Array.isArray(tmdbObj.genres)) {
+    const out = [];
+    for (let i = 0; i < tmdbObj.genres.length; i++) {
+      const g = tmdbObj.genres[i];
+      if (g && typeof g.id === "number") out.push(g.id);
+    }
+    return out;
+  }
+  return [];
+}
+
 function moodMatchesTmdb(tmdbObj) {
   const key = getMoodKey();
   if (key === "any") return true;
   if (!tmdbObj) return true;
 
-  const ids = Array.isArray(tmdbObj.genre_ids) ? tmdbObj.genre_ids : [];
+  const ids = genreIdsFromTmdb(tmdbObj);
   const cfg = getMoodConfig(normaliseMediaType(tmdbObj.media_type || "movie"));
   if (!cfg) return true;
 
@@ -1546,6 +1567,7 @@ function moodMatchesTmdb(tmdbObj) {
         country: "GB",
         includeTv: true,
         mood: "any",
+        localMoodLoading: false,
         items: [],
         lists: [],
         listsUi: { mode: "index", activeListId: null, reorderMode: false },
@@ -3191,6 +3213,32 @@ async function pickFromWatchlist() {
           filtered = temp;
         }
 
+
+        // Mood filter (works for remote results and local lists; local uses cached TMDB details)
+        const moodKey = getMoodKey();
+        if (moodKey !== "any") {
+          const tmpMood = [];
+          for (let i = 0; i < filtered.length; i++) {
+            const v = filtered[i];
+            if (v && v.tmdbMovie) {
+              if (moodMatchesTmdb(v.tmdbMovie)) tmpMood.push(v);
+              continue;
+            }
+            if (v && v.item && typeof v.item.tmdbId === "number") {
+              const mt = normaliseMediaType(v.item.mediaType || v.mediaType || "movie");
+              const cacheKey = mt + ":" + v.item.tmdbId;
+              const det = state.detailsCache ? state.detailsCache[cacheKey] : null;
+              if (!det) continue; // no genre info yet — will be populated by ensureDetailsForLocalTab()
+              const obj = Object.assign({ media_type: mt }, det);
+              if (moodMatchesTmdb(obj)) tmpMood.push(v);
+              continue;
+            }
+            // Fallback: keep the item
+            tmpMood.push(v);
+          }
+          filtered = tmpMood;
+        }
+
         // Extra filters
         const minYear = state.filters && typeof state.filters.minYear === "number" ? state.filters.minYear : 0;
         const hideWatched = state.filters ? !!state.filters.hideWatched : false;
@@ -3350,9 +3398,11 @@ async function pickFromWatchlist() {
           }
           filteredItems = tmp;
         } else if (state.activeTab === "rewatch") {
-          title = "Rewatch";
-          subtitle = "Films you’ve marked for a rewatch.";
-          placeholder = "Search your rewatch list…";
+          const tmp = [];
+          for (let i = 0; i < base.length; i++) {
+            if (base[i].rewatch) tmp.push(base[i]);
+          }
+          filteredItems = tmp;
         } else if (state.activeTab === "watched") {
           const tmp = [];
           for (let i = 0; i < base.length; i++) {
@@ -5137,7 +5187,10 @@ container.appendChild(pickBtn);
 
         const emptyMessage = getEmptyMessageForTab();
 
-        if (state.activeTab === "for-you" && state.forYouLoading) {
+        if (state.localMoodLoading) {
+          els.message.style.display = \"block\";
+          els.message.textContent = \"Fetching genre info so Mood filtering works on your saved lists…\";
+        } else if (state.activeTab === \"for-you\" && state.forYouLoading) {
           els.message.style.display = "block";
           els.message.textContent =
             "Fetching recommendations based on your favourite genres…";
@@ -5241,6 +5294,67 @@ container.appendChild(pickBtn);
         render();
       }
 
+function localItemsForActiveTab() {
+  const out = [];
+  const tab = state.activeTab;
+  if (tab === "watchlist") {
+    for (let i = 0; i < state.items.length; i++) if (state.items[i] && state.items[i].inWatchlist) out.push(state.items[i]);
+  } else if (tab === "watched") {
+    for (let i = 0; i < state.items.length; i++) if (state.items[i] && state.items[i].watched) out.push(state.items[i]);
+  } else if (tab === "rewatch") {
+    for (let i = 0; i < state.items.length; i++) if (state.items[i] && state.items[i].rewatch) out.push(state.items[i]);
+  } else {
+    return out;
+  }
+  return out;
+}
+
+function ensureDetailsForLocalTab() {
+  try {
+    if (getMoodKey() === "any") return;
+    const tab = state.activeTab;
+    const isLocalTab = (tab === "watchlist" || tab === "watched" || tab === "rewatch");
+    if (!isLocalTab) return;
+    if (isOffline()) {
+      toast("Mood filtering needs a connection to fetch genre info.");
+      return;
+    }
+
+    const items = localItemsForActiveTab();
+    const toFetch = [];
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i];
+      if (!it || typeof it.tmdbId !== "number") continue;
+      const mt = normaliseMediaType(it.mediaType || "movie");
+      const cacheKey = mt + ":" + it.tmdbId;
+      if (!state.detailsCache || !state.detailsCache[cacheKey]) {
+        toFetch.push({ tmdbId: it.tmdbId, mediaType: mt });
+      }
+    }
+
+    if (!toFetch.length) return;
+
+    state.localMoodLoading = true;
+    render();
+
+    (async function () {
+      for (let i = 0; i < toFetch.length; i += 4) {
+        const chunk = toFetch.slice(i, i + 4);
+        await Promise.all(chunk.map(function (t) {
+          return fetchDetails(t.tmdbId, t.mediaType).catch(function () { return null; });
+        }));
+      }
+      state.localMoodLoading = false;
+      render();
+    })();
+  } catch (e) {
+    console.error(e);
+    state.localMoodLoading = false;
+    render();
+  }
+}
+
+
 function handleMoodChange(e) {
   const v = String((e && e.target && e.target.value) || "any");
   state.mood = MOODS[v] ? v : "any";
@@ -5253,7 +5367,11 @@ function handleMoodChange(e) {
   } else if (state.activeTab === "radar") {
     loadRadarUpcoming();
   } else {
-    render();
+    if (getMoodKey() !== "any") {
+      ensureDetailsForLocalTab();
+    } else {
+      render();
+    }
   }
 }
 
@@ -5897,7 +6015,11 @@ els.detailActions.appendChild(orgWrap);
         } else if (tab === "radar") {
           loadRadarUpcoming();
         } else {
-          render();
+          if (getMoodKey() !== "any" && (tab === "watchlist" || tab === "watched" || tab === "rewatch")) {
+            ensureDetailsForLocalTab();
+          } else {
+            render();
+          }
         }
       }
 
