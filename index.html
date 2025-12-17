@@ -660,69 +660,6 @@
       text-decoration: underline;
     }
 
-    /* Detail: More like this */
-
-    .detail-more {
-      margin-top: 10px;
-      padding-top: 10px;
-      border-top: 1px solid var(--border-subtle);
-    }
-
-    .detail-more-heading {
-      font-size: 13px;
-      font-weight: 600;
-      margin-bottom: 8px;
-    }
-
-    .detail-more-sub {
-      font-size: 12px;
-      color: var(--text-softer);
-      margin: 10px 0 6px;
-    }
-
-    .more-row {
-      display: flex;
-      gap: 12px;
-      overflow-x: auto;
-      padding-bottom: 10px;
-      scroll-snap-type: x mandatory;
-      -webkit-overflow-scrolling: touch;
-    }
-
-    .more-row::-webkit-scrollbar {
-      height: 8px;
-    }
-
-    .more-row .movie-card.mini-card {
-      width: 140px;
-      flex: 0 0 auto;
-      scroll-snap-align: start;
-    }
-
-    .more-row .movie-title-line {
-      font-size: 12px;
-    }
-
-    .more-row .movie-subline {
-      display: none;
-    }
-
-    .more-row .poster-actions {
-      bottom: 6px;
-      gap: 8px;
-    }
-
-    .more-row .card-btn {
-      width: 30px;
-      height: 30px;
-    }
-
-    .detail-more-empty {
-      font-size: 12px;
-      color: var(--text-muted);
-      margin-top: 6px;
-    }
-
     @media (max-width: 640px) {
       .detail-body {
         flex-direction: column;
@@ -1332,7 +1269,6 @@
               <option value="year-desc">Year (newest)</option>
               <option value="rating-desc">Rating (highest)</option>
               <option value="popularity-desc">Popularity</option>
-              <option value="streaming-first">Streaming-first</option>
               <option value="priority">Priority (watchlist)</option>
             </select>
           </label>
@@ -1395,14 +1331,6 @@
           <div id="detail-chips" class="detail-chips"></div>
           <div id="detail-actions" class="detail-actions"></div>
           <div id="detail-links"></div>
-          <div id="detail-more" class="detail-more" aria-label="More like this">
-            <div class="detail-more-heading">More like this</div>
-            <div class="detail-more-sub">Recommendations</div>
-            <div id="detail-recs-row" class="more-row"></div>
-            <div class="detail-more-sub">Similar</div>
-            <div id="detail-similar-row" class="more-row"></div>
-            <div id="detail-more-empty" class="detail-more-empty"></div>
-          </div>
         </div>
       </div>
     </div>
@@ -1661,10 +1589,7 @@ function moodMatchesTmdb(tmdbObj) {
         minRating: 0,
         theme: "dark",
         detailsCache: {},
-        providerCache: {},
-        providerInFlight: {},
-        moreLikeCache: {},
-        ui: { selectionMode: false, selectedKeys: [], detailToken: 0 },
+        ui: { selectionMode: false, selectedKeys: [] },
         lastTmdbStatus: ""
       };
 
@@ -2881,7 +2806,57 @@ function toggleWatchlistForItem(item) {
   });
 }
 
-      function clearWatched() {
+
+function toggleWatchedForItem(item) {
+  const was = !!item.watched;
+
+  if (!was) {
+    item.watched = true;
+    // When something is watched, it typically leaves the watchlist
+    item.inWatchlist = false;
+    // Rewatch only makes sense if watched, but default off on first mark
+    item.rewatch = false;
+
+    if (!item.watchedAt) item.watchedAt = Date.now();
+
+    saveState();
+    render();
+    toast("Marked as watched.");
+    return;
+  }
+
+  // Unwatch (with undo)
+  const prev = {
+    watchedAt: (typeof item.watchedAt === "number") ? item.watchedAt : null,
+    userRating: (typeof item.userRating === "number") ? item.userRating : null,
+    inWatchlist: !!item.inWatchlist,
+    rewatch: !!item.rewatch
+  };
+
+  item.watched = false;
+  item.rewatch = false;
+  item.watchedAt = null;
+  item.userRating = null;
+
+  saveState();
+  render();
+
+  toast("Marked as not watched.", {
+    actionText: "Undo",
+    onAction: function () {
+      item.watched = true;
+      item.watchedAt = prev.watchedAt || Date.now();
+      item.userRating = prev.userRating;
+      item.inWatchlist = prev.inWatchlist;
+      item.rewatch = prev.rewatch;
+      saveState();
+      render();
+    }
+  });
+}
+
+
+function clearWatched() {
         if (!window.confirm("Clear everything marked as watched?")) {
           return;
         }
@@ -3341,114 +3316,6 @@ async function pickFromWatchlist() {
         return "";
       }
 
-      
-
-function providerFlagKey(region, mt, id) {
-  const r = String(region || "GB").toUpperCase();
-  const m = normaliseMediaType(mt || "movie");
-  const n = toTmdbId(id);
-  return "rq_providerflag_" + r + "_" + m + "_" + (n === null ? "x" : String(n));
-}
-
-function getFlatrateFlag(region, mt, id) {
-  const r = String(region || "GB").toUpperCase();
-  const m = normaliseMediaType(mt || "movie");
-  const n = toTmdbId(id);
-  if (n === null) return { known: false, flatrate: false };
-  const memKey = r + ":" + m + ":" + n;
-  if (!state.providerCache) state.providerCache = {};
-  if (state.providerCache[memKey]) return state.providerCache[memKey];
-  const cached = cacheGet(providerFlagKey(r, m, n), 1000 * 60 * 60 * 24 * 14);
-  if (cached && typeof cached === "object" && typeof cached.known === "boolean") {
-    state.providerCache[memKey] = cached;
-    return cached;
-  }
-  return { known: false, flatrate: false };
-}
-
-function setFlatrateFlag(region, mt, id, known, flatrate) {
-  const r = String(region || "GB").toUpperCase();
-  const m = normaliseMediaType(mt || "movie");
-  const n = toTmdbId(id);
-  if (n === null) return;
-  const memKey = r + ":" + m + ":" + n;
-  if (!state.providerCache) state.providerCache = {};
-  const v = { known: !!known, flatrate: !!flatrate };
-  state.providerCache[memKey] = v;
-  cacheSet(providerFlagKey(r, m, n), v);
-}
-
-function viewStreamingStatus(view) {
-  if (!view) return { known: false, flatrate: false };
-  let id = null;
-  let mt = "movie";
-  if (view.tmdbMovie) {
-    id = view.tmdbMovie.id;
-    mt = normaliseMediaType(view.mediaType || view.tmdbMovie.media_type || "movie");
-  } else if (view.item) {
-    id = view.item.tmdbId;
-    mt = normaliseMediaType(view.item.mediaType || view.mediaType || "movie");
-  }
-  return getFlatrateFlag(state.country || "GB", mt, id);
-}
-
-let providerPrefetchTimer = null;
-function scheduleProviderPrefetchForViews(views) {
-  if (state.sortBy !== "streaming-first") return;
-  if (isOffline()) return;
-  if (!Array.isArray(views) || !views.length) return;
-
-  const region = String(state.country || "GB").toUpperCase();
-  if (!state.providerInFlight) state.providerInFlight = {};
-
-  const toFetch = [];
-  for (let i = 0; i < views.length && toFetch.length < 16; i++) {
-    const v = views[i];
-    let id = null;
-    let mt = "movie";
-    if (v && v.tmdbMovie) {
-      id = toTmdbId(v.tmdbMovie.id);
-      mt = normaliseMediaType(v.mediaType || v.tmdbMovie.media_type || "movie");
-    } else if (v && v.item) {
-      id = toTmdbId(v.item.tmdbId);
-      mt = normaliseMediaType(v.item.mediaType || v.mediaType || "movie");
-    }
-    if (id === null) continue;
-    const st = getFlatrateFlag(region, mt, id);
-    if (st.known) continue;
-    const inflKey = region + ":" + mt + ":" + id;
-    if (state.providerInFlight[inflKey]) continue;
-    state.providerInFlight[inflKey] = true;
-    toFetch.push({ region, mediaType: mt, tmdbId: id, inflKey });
-  }
-
-  if (!toFetch.length) return;
-  if (providerPrefetchTimer) return;
-
-  providerPrefetchTimer = window.setTimeout(function () {
-    providerPrefetchTimer = null;
-    (async function () {
-      for (let i = 0; i < toFetch.length; i += 4) {
-        const chunk = toFetch.slice(i, i + 4);
-        await Promise.all(chunk.map(async function (t) {
-          try {
-            const providers = await fetchWatchProviders(t.tmdbId, t.mediaType);
-            const rr = providers && providers[t.region] ? providers[t.region] : null;
-            const has = rr && Array.isArray(rr.flatrate) && rr.flatrate.length > 0;
-            setFlatrateFlag(t.region, t.mediaType, t.tmdbId, true, !!has);
-          } catch (e) {
-            // leave unknown; allow retry later
-          } finally {
-            if (state.providerInFlight) delete state.providerInFlight[t.inflKey];
-          }
-        }));
-      }
-      render();
-    })();
-  }, 60);
-}
-
-
       function applyFiltersAndSort(views) {
         const min = state.minRating || 0;
         let filtered = views;
@@ -3526,20 +3393,6 @@ function scheduleProviderPrefetchForViews(views) {
             temp2.push(v);
           }
           filtered = temp2;
-        }
-
-        if (state.sortBy === "streaming-first") {
-          scheduleProviderPrefetchForViews(filtered);
-          const yes = [];
-          const unk = [];
-          const no = [];
-          for (let i = 0; i < filtered.length; i++) {
-            const v = filtered[i];
-            const st = viewStreamingStatus(v);
-            if (!st || !st.known) { unk.push(v); continue; }
-            if (st.flatrate) yes.push(v); else no.push(v);
-          }
-          return yes.concat(unk, no);
         }
 
         if (state.sortBy === "default") {
@@ -5668,126 +5521,9 @@ function handleMoodChange(e) {
   return data;
 }
 
-
-      async function fetchMoreLikeThis(tmdbId, mediaType) {
-  if (!tmdbId) throw new Error("No TMDB id");
-  const mt = normaliseMediaType(mediaType);
-  const cacheKey = mt + ":" + tmdbId;
-
-  const now = Date.now();
-  const cached = state.moreLikeCache ? state.moreLikeCache[cacheKey] : null;
-  if (cached && cached.ts && cached.data && (now - cached.ts) < (1000 * 60 * 60 * 6)) {
-    return cached.data;
-  }
-
-  const base = "https://api.themoviedb.org/3/" + (mt === "tv" ? "tv" : "movie") + "/" + tmdbId;
-
-  const recUrl = new URL(base + "/recommendations");
-  recUrl.searchParams.set("api_key", TMDB_API_KEY);
-  recUrl.searchParams.set("language", "en-GB");
-  recUrl.searchParams.set("page", "1");
-
-  const simUrl = new URL(base + "/similar");
-  simUrl.searchParams.set("api_key", TMDB_API_KEY);
-  simUrl.searchParams.set("language", "en-GB");
-  simUrl.searchParams.set("page", "1");
-
-  const pair = await Promise.all([tmdbFetch(recUrl), tmdbFetch(simUrl)]);
-  const data = {
-    recommendations: (pair[0] && Array.isArray(pair[0].results)) ? pair[0].results : [],
-    similar: (pair[1] && Array.isArray(pair[1].results)) ? pair[1].results : []
-  };
-
-  if (state.moreLikeCache) {
-    state.moreLikeCache[cacheKey] = { ts: now, data: data };
-  }
-  return data;
-}
-
-function clearDetailMoreSection(message) {
-  if (els.detailRecsRow) els.detailRecsRow.innerHTML = "";
-  if (els.detailSimilarRow) els.detailSimilarRow.innerHTML = "";
-  if (els.detailMoreEmpty) els.detailMoreEmpty.textContent = message || "";
-}
-
-async function loadDetailMoreLikeThis(tmdbId, mediaType, token) {
-  try {
-    if (!els.detailMore || !els.detailRecsRow || !els.detailSimilarRow) return;
-
-    if (isOffline()) {
-      clearDetailMoreSection("Offline — can’t load similar titles.");
-      return;
-    }
-
-    const mt = normaliseMediaType(mediaType);
-    const data = await fetchMoreLikeThis(tmdbId, mt);
-
-    // If another title was opened while we were loading, bail.
-    if (state.ui && typeof token === "number" && token !== state.ui.detailToken) return;
-
-    const moodKey = getMoodKey();
-    const seen = new Set();
-
-    function pick(list, limit) {
-      const out = [];
-      const arr = Array.isArray(list) ? list : [];
-      for (let i = 0; i < arr.length; i++) {
-        const m = arr[i];
-        if (!m || !m.id) continue;
-        if (m.id === tmdbId) continue;
-        m.media_type = mt;
-        const k = mt + ":" + m.id;
-        if (seen.has(k)) continue;
-        if (moodKey !== "any" && !moodMatchesTmdb(m)) continue;
-        seen.add(k);
-        out.push(m);
-        if (out.length >= limit) break;
-      }
-      return out;
-    }
-
-    const recs = pick(data.recommendations, 12);
-    const sims = pick(data.similar, 12);
-
-    // Render
-    els.detailRecsRow.innerHTML = "";
-    for (let i = 0; i < recs.length; i++) {
-      const m = recs[i];
-      const linked = findItemByTmdbId(m.id, mt);
-      const view = { mode: "remote", tmdbMovie: m, item: linked, mediaType: mt };
-      const card = createCard(view);
-      card.classList.add("mini-card");
-      els.detailRecsRow.appendChild(card);
-    }
-
-    els.detailSimilarRow.innerHTML = "";
-    for (let i = 0; i < sims.length; i++) {
-      const m = sims[i];
-      const linked = findItemByTmdbId(m.id, mt);
-      const view = { mode: "remote", tmdbMovie: m, item: linked, mediaType: mt };
-      const card = createCard(view);
-      card.classList.add("mini-card");
-      els.detailSimilarRow.appendChild(card);
-    }
-
-    if (!recs.length && !sims.length) {
-      clearDetailMoreSection("No similar titles found.");
-    } else {
-      if (els.detailMoreEmpty) els.detailMoreEmpty.textContent = "";
-    }
-  } catch (e) {
-    console.error(e);
-    clearDetailMoreSection("Couldn’t load similar titles right now.");
-  }
-}
-
       function closeDetail() {
         els.detailOverlay.classList.add("hidden");
         els.detailOverlay.setAttribute("aria-hidden", "true");
-        if (state.ui) state.ui.detailToken = (state.ui.detailToken || 0) + 1;
-        if (els.detailMoreEmpty) els.detailMoreEmpty.textContent = "";
-        if (els.detailRecsRow) els.detailRecsRow.innerHTML = "";
-        if (els.detailSimilarRow) els.detailSimilarRow.innerHTML = "";
       }
 
       async function openDetailForView(view) {
@@ -5813,23 +5549,11 @@ async function loadDetailMoreLikeThis(tmdbId, mediaType, token) {
         els.detailChips.innerHTML = "";
         els.detailActions.innerHTML = "";
         els.detailLinks.innerHTML = "";
-        if (state.ui) state.ui.detailToken = (state.ui.detailToken || 0) + 1;
-        const detailToken = state.ui ? state.ui.detailToken : 0;
-
-        if (els.detailRecsRow) els.detailRecsRow.innerHTML = "";
-        if (els.detailSimilarRow) els.detailSimilarRow.innerHTML = "";
-        if (els.detailMoreEmpty) els.detailMoreEmpty.textContent = isOffline() ? "Offline — can’t load similar titles." : "Loading suggestions…";
         els.detailOverlay.classList.remove("hidden");
         els.detailOverlay.setAttribute("aria-hidden", "false");
 
         try {
           const details = await fetchDetails(tmdbId, mediaType);
-
-          // Kick off "More like this" inside the detail panel (non-blocking)
-          if (!isOffline()) {
-            loadDetailMoreLikeThis(details.id, mediaType, detailToken);
-          }
-
 
           const year = (details.release_date || details.first_air_date)
             ? String(details.release_date || details.first_air_date).slice(0, 4)
@@ -6227,7 +5951,7 @@ els.detailActions.appendChild(orgWrap);
 
           // Where to watch (UK)
           try {
-            const providers = await fetchWatchProviders(details.id, mediaType);
+            const providers = await fetchWatchProviders(details.id);
             const gb = providers && providers[(state.country || "GB")] ? providers[(state.country || "GB")] : null;
             const wrap = document.createElement("div");
             wrap.style.marginTop = "10px";
@@ -6905,10 +6629,6 @@ function init() {
           detailChips: document.getElementById("detail-chips"),
           detailActions: document.getElementById("detail-actions"),
           detailLinks: document.getElementById("detail-links"),
-          detailMore: document.getElementById("detail-more"),
-          detailRecsRow: document.getElementById("detail-recs-row"),
-          detailSimilarRow: document.getElementById("detail-similar-row"),
-          detailMoreEmpty: document.getElementById("detail-more-empty"),
           themeToggle: document.getElementById("theme-toggle"),
           settingsToggle: document.getElementById("settings-toggle"),
           menuToggle: document.getElementById("menu-toggle"),
