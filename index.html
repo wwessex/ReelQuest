@@ -660,6 +660,69 @@
       text-decoration: underline;
     }
 
+    /* Detail: More like this */
+
+    .detail-more {
+      margin-top: 10px;
+      padding-top: 10px;
+      border-top: 1px solid var(--border-subtle);
+    }
+
+    .detail-more-heading {
+      font-size: 13px;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+
+    .detail-more-sub {
+      font-size: 12px;
+      color: var(--text-softer);
+      margin: 10px 0 6px;
+    }
+
+    .more-row {
+      display: flex;
+      gap: 12px;
+      overflow-x: auto;
+      padding-bottom: 10px;
+      scroll-snap-type: x mandatory;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    .more-row::-webkit-scrollbar {
+      height: 8px;
+    }
+
+    .more-row .movie-card.mini-card {
+      width: 140px;
+      flex: 0 0 auto;
+      scroll-snap-align: start;
+    }
+
+    .more-row .movie-title-line {
+      font-size: 12px;
+    }
+
+    .more-row .movie-subline {
+      display: none;
+    }
+
+    .more-row .poster-actions {
+      bottom: 6px;
+      gap: 8px;
+    }
+
+    .more-row .card-btn {
+      width: 30px;
+      height: 30px;
+    }
+
+    .detail-more-empty {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-top: 6px;
+    }
+
     @media (max-width: 640px) {
       .detail-body {
         flex-direction: column;
@@ -1200,6 +1263,23 @@
   -webkit-backdrop-filter: blur(12px);
   z-index: 2;
 }
+
+/* Watch progress status */
+.status-pill {
+  position: absolute;
+  left: 8px;
+  bottom: 52px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  border: 1px solid var(--border-subtle);
+  background: rgba(20,22,28,0.78);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  z-index: 2;
+}
 </style>
   <link rel="manifest" href="./manifest.webmanifest">
   <meta name="theme-color" content="#0b1220">
@@ -1293,16 +1373,6 @@
     <option value="darkhumour">Dark humour</option>
   </select>
 </label>
-
-<label class="controls-label">
-  <span>Streaming</span>
-  <select id="streaming-select" class="controls-select">
-    <option value="any">Any</option>
-    <option value="first">Streaming-first</option>
-    <option value="only">Streaming only</option>
-  </select>
-</label>
-
         </div>
         <div class="list-actions" id="list-actions"></div>
       </div>
@@ -1341,6 +1411,14 @@
           <div id="detail-chips" class="detail-chips"></div>
           <div id="detail-actions" class="detail-actions"></div>
           <div id="detail-links"></div>
+          <div id="detail-more" class="detail-more" aria-label="More like this">
+            <div class="detail-more-heading">More like this</div>
+            <div class="detail-more-sub">Recommendations</div>
+            <div id="detail-recs-row" class="more-row"></div>
+            <div class="detail-more-sub">Similar</div>
+            <div id="detail-similar-row" class="more-row"></div>
+            <div id="detail-more-empty" class="detail-more-empty"></div>
+          </div>
         </div>
       </div>
     </div>
@@ -1433,6 +1511,51 @@ function parseEntryKey(key) {
   return { mediaType: "movie", tmdbId: Number.isFinite(id2) ? id2 : null };
 }
 
+// Smarter watch progress status
+const PROGRESS_STATUS = {
+  planned: "Planned",
+  started: "Started",
+  paused: "Paused",
+  abandoned: "Abandoned"
+};
+
+function normaliseProgressStatus(v) {
+  const s = String(v || "").toLowerCase();
+  if (s === "started" || s === "paused" || s === "abandoned" || s === "planned") return s;
+  return "planned";
+}
+
+function getProgressStatus(item) {
+  if (!item) return "planned";
+  return normaliseProgressStatus(item.progressStatus || item.status);
+}
+
+function setProgressStatusForItem(item, status) {
+  if (!item) return;
+  const next = normaliseProgressStatus(status);
+  item.progressStatus = next;
+  item.progressStatusUpdatedAt = Date.now();
+
+  // Any non-planned status implies you're actively tracking it.
+  if (next !== "planned") {
+    item.inWatchlist = true;
+    if (!item.priority) item.priority = "medium";
+  }
+
+  // Progress statuses are for not-yet-watched titles.
+  if (item.watched) {
+    item.watched = false;
+    item.watchedAt = null;
+    item.rewatch = false;
+  }
+
+  saveState();
+  render();
+
+  const label = PROGRESS_STATUS[next] || "Planned";
+  toast("Status set to " + label + ".");
+}
+
 
 
 function toTmdbId(v) {
@@ -1491,137 +1614,6 @@ const MOODS = {
 };
 
 const keywordIdCache = {};
-
-// --- Streaming availability cache (subscription streaming / flatrate) ---
-const streamingInfoCache = {};   // in-memory: key -> { f: boolean, ts: number }
-const streamingPending = {};     // key -> Promise
-let streamingInFlight = 0;
-
-function streamingCacheKey(mediaType, tmdbId, country) {
-  const mt = normaliseMediaType(mediaType);
-  const id = toTmdbId(tmdbId);
-  const cc = (country || "GB").toUpperCase();
-  return mt + ":" + String(id) + ":" + cc;
-}
-
-function getStreamingInfo(mediaType, tmdbId) {
-  const id = toTmdbId(tmdbId);
-  if (id === null) return null;
-  const mt = normaliseMediaType(mediaType);
-  const cc = (state.country || "GB").toUpperCase();
-  const key = streamingCacheKey(mt, id, cc);
-
-  if (streamingInfoCache[key]) return streamingInfoCache[key];
-
-  const cached = cacheGet("rq_stream_" + key, 1000 * 60 * 60 * 24 * 7); // 7 days
-  if (cached && typeof cached.f === "boolean") {
-    streamingInfoCache[key] = cached;
-    return cached;
-  }
-  return null;
-}
-
-async function fetchStreamingInfo(mediaType, tmdbId) {
-  const id = toTmdbId(tmdbId);
-  if (id === null) return null;
-
-  const mt = normaliseMediaType(mediaType);
-  const cc = (state.country || "GB").toUpperCase();
-  const key = streamingCacheKey(mt, id, cc);
-
-  if (streamingPending[key]) return streamingPending[key];
-
-  const task = (async () => {
-    const path = (mt === "tv" ? "tv" : "movie");
-    const url = new URL("https://api.themoviedb.org/3/" + path + "/" + id + "/watch/providers");
-    url.searchParams.set("api_key", TMDB_API_KEY);
-    try {
-      const data = await tmdbFetch(url);
-      const results = data && data.results ? data.results : {};
-      const entry = results && results[cc] ? results[cc] : null;
-      const hasFlat = !!(entry && Array.isArray(entry.flatrate) && entry.flatrate.length);
-      const out = { f: hasFlat, ts: Date.now() };
-      streamingInfoCache[key] = out;
-      cacheSet("rq_stream_" + key, out);
-      return out;
-    } catch (e) {
-      return null;
-    }
-  })();
-
-  streamingPending[key] = task.finally(() => { try { delete streamingPending[key]; } catch (e) {} });
-  return streamingPending[key];
-}
-
-function streamingFlagForView(view) {
-  if (!view) return null;
-  if (view.tmdbMovie) {
-    const mt = normaliseMediaType(view.tmdbMovie.media_type || view.mediaType || "movie");
-    const info = getStreamingInfo(mt, view.tmdbMovie.id);
-    return info ? info.f : null;
-  }
-  if (view.item) {
-    const mt = normaliseMediaType(view.item.mediaType || view.mediaType || "movie");
-    const info = getStreamingInfo(mt, view.item.tmdbId);
-    return info ? info.f : null;
-  }
-  return null;
-}
-
-function streamingPref() {
-  const v = state.streamingMode || "any";
-  return (v === "first" || v === "only") ? v : "any";
-}
-
-function ensureStreamingInfoForVisible(views) {
-  const pref = streamingPref();
-  if (pref === "any") {
-    state.streamingLoading = false;
-    return;
-  }
-  if (!Array.isArray(views) || !views.length) {
-    state.streamingLoading = false;
-    return;
-  }
-
-  const missing = [];
-  for (let i = 0; i < views.length; i++) {
-    const v = views[i];
-    let mt = null;
-    let id = null;
-
-    if (v && v.tmdbMovie) {
-      mt = normaliseMediaType(v.tmdbMovie.media_type || v.mediaType || "movie");
-      id = toTmdbId(v.tmdbMovie.id);
-    } else if (v && v.item) {
-      mt = normaliseMediaType(v.item.mediaType || v.mediaType || "movie");
-      id = toTmdbId(v.item.tmdbId);
-    }
-
-    if (id === null) continue;
-    if (getStreamingInfo(mt, id) === null) missing.push({ mt: mt, id: id });
-  }
-
-  if (!missing.length) {
-    state.streamingLoading = false;
-    return;
-  }
-
-  const batch = missing.slice(0, 20);
-  state.streamingLoading = true;
-  streamingInFlight += batch.length;
-
-  Promise.allSettled(batch.map((x) => fetchStreamingInfo(x.mt, x.id)))
-    .then(() => {
-      streamingInFlight -= batch.length;
-      if (streamingInFlight <= 0) {
-        streamingInFlight = 0;
-        state.streamingLoading = false;
-      }
-      setTimeout(() => { try { render(); } catch (e) {} }, 0);
-    });
-}
-
 
 async function resolveKeywordId(query) {
   const q = String(query || "").trim().toLowerCase();
@@ -1722,8 +1714,6 @@ function moodMatchesTmdb(tmdbObj) {
         includeTv: true,
         mood: "any",
         localMoodLoading: false,
-        streamingMode: "any",
-        streamingLoading: false,
         items: [],
         lists: [],
         listsUi: { mode: "index", activeListId: null, reorderMode: false },
@@ -1732,7 +1722,8 @@ function moodMatchesTmdb(tmdbObj) {
         minRating: 0,
         theme: "dark",
         detailsCache: {},
-        ui: { selectionMode: false, selectedKeys: [] },
+        moreLikeCache: {},
+        ui: { selectionMode: false, selectedKeys: [], detailToken: 0 },
         lastTmdbStatus: ""
       };
 
@@ -1804,11 +1795,6 @@ function formatDateUK(ts) {
             state.mood = parsed.mood;
           }
 
-          if (typeof parsed.streamingMode === "string") {
-            const sm = parsed.streamingMode;
-            state.streamingMode = (sm === "first" || sm === "only") ? sm : "any";
-          }
-
 if (parsed.ui && typeof parsed.ui === "object") {
   state.ui = {
     selectionMode: !!parsed.ui.selectionMode,
@@ -1838,6 +1824,39 @@ function migrateItemsMediaType() {
       if (!l.entries[j].mediaType) l.entries[j].mediaType = "movie";
     }
   }
+}
+
+function migrateProgressStatus() {
+  let changed = false;
+  for (let i = 0; i < state.items.length; i++) {
+    const it = state.items[i];
+    if (!it) continue;
+
+    // Older backups may use `status`; prefer the newer key.
+    if (typeof it.progressStatus === "undefined" && typeof it.status !== "undefined") {
+      it.progressStatus = it.status;
+      changed = true;
+    }
+
+    const norm = normaliseProgressStatus(it.progressStatus);
+    if (it.progressStatus !== norm) {
+      it.progressStatus = norm;
+      changed = true;
+    }
+
+    if (typeof it.progressStatusUpdatedAt !== "number") {
+      it.progressStatusUpdatedAt = typeof it.addedAt === "number" ? it.addedAt : (typeof it.createdAt === "number" ? it.createdAt : Date.now());
+      changed = true;
+    }
+
+    // Watched titles shouldn't keep a Started/Paused/Abandoned flag.
+    if (it.watched && it.progressStatus && it.progressStatus !== "planned") {
+      it.progressStatus = "planned";
+      it.progressStatusUpdatedAt = Date.now();
+      changed = true;
+    }
+  }
+  if (changed) saveState();
 }
 
 function migrateTmdbIdsToNumbers() {
@@ -1958,7 +1977,6 @@ function alertNice(message) {
               country: state.country,
               includeTv: state.includeTv,
               mood: state.mood,
-              streamingMode: state.streamingMode,
               ui: state.ui,
               theme: state.theme
             })
@@ -2088,7 +2106,6 @@ function openModalSheet(opts) {
 
 function getSelectedViewsForCurrentTab() {
   const views = getViewItemsForCurrentTab();
-        ensureStreamingInfoForVisible(views);
   const picked = [];
   for (let i = 0; i < views.length; i++) {
     const id = getKeyFromView(views[i]);
@@ -2110,6 +2127,8 @@ function bulkMoveSelectedToWatched(views) {
       item.watched = true;
       item.inWatchlist = false;
       if (!item.watchedAt) item.watchedAt = Date.now();
+      item.progressStatus = "planned";
+      item.progressStatusUpdatedAt = Date.now();
       changed++;
     } else if (item.inWatchlist) {
       item.inWatchlist = false;
@@ -2171,6 +2190,10 @@ function bulkRemoveSelectedFromContext(views) {
 
     if (state.activeTab === "watchlist") {
       if (item.inWatchlist) { item.inWatchlist = false; changed++; }
+      if (getProgressStatus(item) !== "planned") {
+        item.progressStatus = "planned";
+        item.progressStatusUpdatedAt = Date.now();
+      }
     } else if (state.activeTab === "watched") {
       if (item.watched) { item.watched = false; item.rewatch = false; changed++; }
     } else if (state.activeTab === "rewatch") {
@@ -2916,6 +2939,8 @@ async function loadForYouFallbackPopular() {
     inWatchlist: false,
     watched: false,
     watchedAt: null,
+    progressStatus: "planned",
+    progressStatusUpdatedAt: now,
     userRating: null,
     rewatch: false,
     priority: "medium",
@@ -2942,6 +2967,13 @@ function toggleWatchlistForItem(item) {
     return;
   }
 
+  // If you remove something from the watchlist, clear any in-progress status
+  // so it doesn't become "lost" with a Started/Paused/Abandoned label.
+  if (getProgressStatus(item) !== "planned") {
+    item.progressStatus = "planned";
+    item.progressStatusUpdatedAt = Date.now();
+  }
+
   // Removed
   saveState();
   render();
@@ -2956,57 +2988,51 @@ function toggleWatchlistForItem(item) {
   });
 }
 
-
 function toggleWatchedForItem(item) {
-  const was = !!item.watched;
-
-  if (!was) {
+  if (!item) return;
+  if (!item.watched) {
     item.watched = true;
-    // When something is watched, it typically leaves the watchlist
     item.inWatchlist = false;
-    // Rewatch only makes sense if watched, but default off on first mark
     item.rewatch = false;
-
-    if (!item.watchedAt) item.watchedAt = Date.now();
-
+    item.watchedAt = Date.now();
+    item.progressStatus = "planned";
+    item.progressStatusUpdatedAt = Date.now();
     saveState();
     render();
     toast("Marked as watched.");
     return;
   }
 
-  // Unwatch (with undo)
-  const prev = {
-    watchedAt: (typeof item.watchedAt === "number") ? item.watchedAt : null,
-    userRating: (typeof item.userRating === "number") ? item.userRating : null,
-    inWatchlist: !!item.inWatchlist,
-    rewatch: !!item.rewatch
-  };
-
+  // Un-watch
   item.watched = false;
-  item.rewatch = false;
   item.watchedAt = null;
-  item.userRating = null;
-
+  item.rewatch = false;
   saveState();
   render();
-
-  toast("Marked as not watched.", {
-    actionText: "Undo",
-    onAction: function () {
-      item.watched = true;
-      item.watchedAt = prev.watchedAt || Date.now();
-      item.userRating = prev.userRating;
-      item.inWatchlist = prev.inWatchlist;
-      item.rewatch = prev.rewatch;
-      saveState();
-      render();
-    }
-  });
+  toast("Marked as not watched.");
 }
 
+function clearWatchlist() {
+  if (!window.confirm("Clear your watchlist?")) return;
+  let changed = 0;
+  for (let i = 0; i < state.items.length; i++) {
+    const it = state.items[i];
+    if (!it) continue;
+    if (it.inWatchlist) {
+      it.inWatchlist = false;
+      changed++;
+    }
+    if (getProgressStatus(it) !== "planned") {
+      it.progressStatus = "planned";
+      it.progressStatusUpdatedAt = Date.now();
+    }
+  }
+  saveState();
+  render();
+  toast(changed ? ("Cleared " + changed + " title" + (changed === 1 ? "" : "s") + " from watchlist.") : "Watchlist already empty.");
+}
 
-function clearWatched() {
+      function clearWatched() {
         if (!window.confirm("Clear everything marked as watched?")) {
           return;
         }
@@ -3511,24 +3537,18 @@ async function pickFromWatchlist() {
 
         // Extra filters
         const minYear = state.filters && typeof state.filters.minYear === "number" ? state.filters.minYear : 0;
-        const hideWatchedRaw = state.filters ? !!state.filters.hideWatched : false;
-        const hideWatchlistRaw = state.filters ? !!state.filters.hideWatchlist : false;
+        const hideWatched = state.filters ? !!state.filters.hideWatched : false;
+        const hideWatchlist = state.filters ? !!state.filters.hideWatchlist : false;
         const excludedGenres = state.filters && Array.isArray(state.filters.excludedGenres) ? state.filters.excludedGenres : [];
-        // Important: don't hide items *within* their own tabs
-        const tab = state.activeTab;
-        const hideWatched = hideWatchedRaw && !(tab === "watched" || tab === "rewatch");
-        const hideWatchlist = hideWatchlistRaw && !(tab === "watchlist");
 
         if (minYear || hideWatched || hideWatchlist || (excludedGenres && excludedGenres.length)) {
           const temp2 = [];
           for (let i = 0; i < filtered.length; i++) {
             const v = filtered[i];
 
-            // Hide watched/watchlist based on linked local item if present.
-            // These toggles are meant to hide titles *from other tabs* (Discover/For You/etc),
-            // not from their own list tabs.
-            if (hideWatched && state.activeTab !== "watched" && state.activeTab !== "rewatch" && v.item && v.item.watched) continue;
-            if (hideWatchlist && state.activeTab !== "watchlist" && v.item && v.item.inWatchlist) continue;
+            // Hide watched/watchlist based on linked local item if present
+            if (hideWatched && v.item && v.item.watched) continue;
+            if (hideWatchlist && v.item && v.item.inWatchlist) continue;
 
             if (minYear) {
               const y = yearFromView(v);
@@ -3551,9 +3571,12 @@ async function pickFromWatchlist() {
           filtered = temp2;
         }
 
+        if (state.sortBy === "default") {
+          return filtered;
+        }
+
         const sorted = filtered.slice();
 
-        if (state.sortBy !== "default") {
         if (state.sortBy === "title-asc") {
           sorted.sort(function (a, b) {
             return titleFromView(a).localeCompare(titleFromView(b));
@@ -3588,24 +3611,6 @@ async function pickFromWatchlist() {
             return popularityFromView(b) - popularityFromView(a);
           });
         }
-        }
-
-
-        const pref = streamingPref();
-        if (pref !== "any") {
-          const available = [];
-          const unknown = [];
-          const unavailable = [];
-          for (let i = 0; i < sorted.length; i++) {
-            const v = sorted[i];
-            const f = streamingFlagForView(v);
-            if (f === true) available.push(v);
-            else if (f === false) unavailable.push(v);
-            else unknown.push(v);
-          }
-          if (pref === "only") return available.concat(unknown);
-          return available.concat(unknown, unavailable);
-        }
 
         return sorted;
       }
@@ -3616,7 +3621,6 @@ async function pickFromWatchlist() {
           : "";
 
         if (state.activeTab === "radar") {
-          const term = state.searchTerm ? state.searchTerm.trim().toLowerCase() : "";
           let raw = state.radarResults || [];
           if (term) {
             const filtered = [];
@@ -5015,11 +5019,9 @@ exportListBtn.addEventListener("click", function () {
         }
 
         const views = getViewItemsForCurrentTab();
-        try { ensureStreamingInfoForVisible(views); } catch (e) {}
         if (views.length > 0) return "";
 
         if (state.activeTab === "radar") {
-          const term = state.searchTerm ? state.searchTerm.trim().toLowerCase() : "";
           let raw = state.radarResults || [];
           if (term) {
             const filtered = [];
@@ -5063,6 +5065,9 @@ exportListBtn.addEventListener("click", function () {
         const tmdbMovie = view.tmdbMovie;
         const isLocal = mode === "local";
 
+        const bulkSelectable = isBulkSelectableTab();
+        const tmdbIdForSelect = bulkSelectable ? getKeyFromView(view) : null;
+
         let title;
         if (isLocal) {
           if (item.year) {
@@ -5102,6 +5107,14 @@ exportListBtn.addEventListener("click", function () {
         const card = document.createElement("article");
         card.className = "movie-card";
 
+        if (bulkSelectable) {
+          card.classList.add("selectable");
+          if (tmdbIdForSelect && isSelectedKey(tmdbIdForSelect)) card.classList.add("selected");
+          const badge = document.createElement("div");
+          badge.className = "select-badge";
+          card.appendChild(badge);
+        }
+
         const posterWrapper = document.createElement("div");
         posterWrapper.className = "poster-wrapper";
 
@@ -5133,6 +5146,16 @@ exportListBtn.addEventListener("click", function () {
           pill.className = "rating-pill";
           pill.innerHTML = "★ <span>" + rating.toFixed(1) + "</span>";
           posterWrapper.appendChild(pill);
+        }
+
+        // Progress status pill (saved titles)
+        const linkedItem = isLocal ? item : (view.item || null);
+        const ps = linkedItem ? getProgressStatus(linkedItem) : "planned";
+        if (linkedItem && linkedItem.inWatchlist && !linkedItem.watched && ps !== "planned") {
+          const sp = document.createElement("div");
+          sp.className = "status-pill";
+          sp.textContent = PROGRESS_STATUS[ps] || "Started";
+          posterWrapper.appendChild(sp);
         }
 
         const actions = document.createElement("div");
@@ -5197,10 +5220,17 @@ if (isLocal) {
   const bits = [];
   if (item.inWatchlist) {
     bits.push("On your watchlist");
+    const st = getProgressStatus(item);
+    if (!item.watched && st && st !== "planned") {
+      bits.push("Status: " + (PROGRESS_STATUS[st] || st));
+    }
     const p = item.priority || "medium";
     if (p === "high") bits.push("Priority: High");
     else if (p === "low") bits.push("Priority: Low");
     else bits.push("Priority: Medium");
+
+    const st = getProgressStatus(item);
+    if (!item.watched && st !== "planned") bits.push("Status: " + (PROGRESS_STATUS[st] || "Started"));
 
 if (Array.isArray(item.tags) && item.tags.length) {
   const show = item.tags.slice(0, 2).join(", ");
@@ -5420,7 +5450,6 @@ container.appendChild(pickBtn);
         if (els.sortSelect) els.sortSelect.value = state.sortBy;
         if (els.ratingFilterSelect) els.ratingFilterSelect.value = String(state.minRating);
         if (els.moodSelect) els.moodSelect.value = state.mood || "any";
-        if (els.streamingSelect) els.streamingSelect.value = state.streamingMode || "any";
 
         if (state.activeTab === "settings") {
           els.searchForm.style.display = "none";
@@ -5485,9 +5514,6 @@ container.appendChild(pickBtn);
         if (state.localMoodLoading) {
           els.message.style.display = "block";
           els.message.textContent = "Fetching genre info so Mood filtering works on your saved lists…";
-        } else if (state.streamingLoading && streamingPref() !== "any") {
-          els.message.style.display = "block";
-          els.message.textContent = "Checking streaming availability for this list…";
         } else if (state.activeTab === "for-you" && state.forYouLoading) {
           els.message.style.display = "block";
           els.message.textContent =
@@ -5523,17 +5549,55 @@ container.appendChild(pickBtn);
       }
 
       function handleSearchInput(e) {
-        try {
-          state.searchTerm = (e && e.target && typeof e.target.value === "string") ? e.target.value : "";
-        } catch (err) {
-          state.searchTerm = "";
+        state.searchTerm = e.target.value || "";
+        if (state.activeTab === "radar") {
+          let raw = state.radarResults || [];
+          if (term) {
+            const filtered = [];
+            for (let i = 0; i < raw.length; i++) {
+              const m = raw[i];
+              const t = (m.title || "").toLowerCase();
+              if (t.indexOf(term) !== -1) filtered.push(m);
+            }
+            raw = filtered;
+          }
+          const views = [];
+          for (let i = 0; i < raw.length; i++) {
+            const m = raw[i];
+            const linked = findItemByTmdbId(m.id);
+            views.push({ mode: "remote", tmdbMovie: m, item: linked });
+          }
+          return applyFiltersAndSort(views);
         }
-        // Filtering is handled in getViewItemsForCurrentTab(); just re-render.
+
+        if (state.activeTab === "discover") {
+          return;
+        }
         render();
       }
 
       function handleSearchSubmit(e) {
         e.preventDefault();
+        if (state.activeTab === "radar") {
+          let raw = state.radarResults || [];
+          if (term) {
+            const filtered = [];
+            for (let i = 0; i < raw.length; i++) {
+              const m = raw[i];
+              const t = (m.title || "").toLowerCase();
+              if (t.indexOf(term) !== -1) filtered.push(m);
+            }
+            raw = filtered;
+          }
+          const views = [];
+          for (let i = 0; i < raw.length; i++) {
+            const m = raw[i];
+            const linked = findItemByTmdbId(m.id);
+            views.push({ mode: "remote", tmdbMovie: m, item: linked });
+          }
+          return applyFiltersAndSort(views);
+        }
+
         if (state.activeTab === "discover") {
           performDiscoverSearch();
         } else {
@@ -5637,13 +5701,6 @@ function handleMoodChange(e) {
   }
 }
 
-function handleStreamingModeChange(e) {
-  const val = (e && e.target && typeof e.target.value === "string") ? e.target.value : "any";
-  state.streamingMode = (val === "first" || val === "only") ? val : "any";
-  saveState();
-  render();
-}
-
       async function fetchWatchProviders(tmdbId, mediaType) {
   const mt = normaliseMediaType(mediaType);
   const url = new URL("https://api.themoviedb.org/3/" + (mt === "tv" ? "tv" : "movie") + "/" + tmdbId + "/watch/providers");
@@ -5668,9 +5725,126 @@ function handleStreamingModeChange(e) {
   return data;
 }
 
+
+      async function fetchMoreLikeThis(tmdbId, mediaType) {
+  if (!tmdbId) throw new Error("No TMDB id");
+  const mt = normaliseMediaType(mediaType);
+  const cacheKey = mt + ":" + tmdbId;
+
+  const now = Date.now();
+  const cached = state.moreLikeCache ? state.moreLikeCache[cacheKey] : null;
+  if (cached && cached.ts && cached.data && (now - cached.ts) < (1000 * 60 * 60 * 6)) {
+    return cached.data;
+  }
+
+  const base = "https://api.themoviedb.org/3/" + (mt === "tv" ? "tv" : "movie") + "/" + tmdbId;
+
+  const recUrl = new URL(base + "/recommendations");
+  recUrl.searchParams.set("api_key", TMDB_API_KEY);
+  recUrl.searchParams.set("language", "en-GB");
+  recUrl.searchParams.set("page", "1");
+
+  const simUrl = new URL(base + "/similar");
+  simUrl.searchParams.set("api_key", TMDB_API_KEY);
+  simUrl.searchParams.set("language", "en-GB");
+  simUrl.searchParams.set("page", "1");
+
+  const pair = await Promise.all([tmdbFetch(recUrl), tmdbFetch(simUrl)]);
+  const data = {
+    recommendations: (pair[0] && Array.isArray(pair[0].results)) ? pair[0].results : [],
+    similar: (pair[1] && Array.isArray(pair[1].results)) ? pair[1].results : []
+  };
+
+  if (state.moreLikeCache) {
+    state.moreLikeCache[cacheKey] = { ts: now, data: data };
+  }
+  return data;
+}
+
+function clearDetailMoreSection(message) {
+  if (els.detailRecsRow) els.detailRecsRow.innerHTML = "";
+  if (els.detailSimilarRow) els.detailSimilarRow.innerHTML = "";
+  if (els.detailMoreEmpty) els.detailMoreEmpty.textContent = message || "";
+}
+
+async function loadDetailMoreLikeThis(tmdbId, mediaType, token) {
+  try {
+    if (!els.detailMore || !els.detailRecsRow || !els.detailSimilarRow) return;
+
+    if (isOffline()) {
+      clearDetailMoreSection("Offline — can’t load similar titles.");
+      return;
+    }
+
+    const mt = normaliseMediaType(mediaType);
+    const data = await fetchMoreLikeThis(tmdbId, mt);
+
+    // If another title was opened while we were loading, bail.
+    if (state.ui && typeof token === "number" && token !== state.ui.detailToken) return;
+
+    const moodKey = getMoodKey();
+    const seen = new Set();
+
+    function pick(list, limit) {
+      const out = [];
+      const arr = Array.isArray(list) ? list : [];
+      for (let i = 0; i < arr.length; i++) {
+        const m = arr[i];
+        if (!m || !m.id) continue;
+        if (m.id === tmdbId) continue;
+        m.media_type = mt;
+        const k = mt + ":" + m.id;
+        if (seen.has(k)) continue;
+        if (moodKey !== "any" && !moodMatchesTmdb(m)) continue;
+        seen.add(k);
+        out.push(m);
+        if (out.length >= limit) break;
+      }
+      return out;
+    }
+
+    const recs = pick(data.recommendations, 12);
+    const sims = pick(data.similar, 12);
+
+    // Render
+    els.detailRecsRow.innerHTML = "";
+    for (let i = 0; i < recs.length; i++) {
+      const m = recs[i];
+      const linked = findItemByTmdbId(m.id, mt);
+      const view = { mode: "remote", tmdbMovie: m, item: linked, mediaType: mt };
+      const card = createCard(view);
+      card.classList.add("mini-card");
+      els.detailRecsRow.appendChild(card);
+    }
+
+    els.detailSimilarRow.innerHTML = "";
+    for (let i = 0; i < sims.length; i++) {
+      const m = sims[i];
+      const linked = findItemByTmdbId(m.id, mt);
+      const view = { mode: "remote", tmdbMovie: m, item: linked, mediaType: mt };
+      const card = createCard(view);
+      card.classList.add("mini-card");
+      els.detailSimilarRow.appendChild(card);
+    }
+
+    if (!recs.length && !sims.length) {
+      clearDetailMoreSection("No similar titles found.");
+    } else {
+      if (els.detailMoreEmpty) els.detailMoreEmpty.textContent = "";
+    }
+  } catch (e) {
+    console.error(e);
+    clearDetailMoreSection("Couldn’t load similar titles right now.");
+  }
+}
+
       function closeDetail() {
         els.detailOverlay.classList.add("hidden");
         els.detailOverlay.setAttribute("aria-hidden", "true");
+        if (state.ui) state.ui.detailToken = (state.ui.detailToken || 0) + 1;
+        if (els.detailMoreEmpty) els.detailMoreEmpty.textContent = "";
+        if (els.detailRecsRow) els.detailRecsRow.innerHTML = "";
+        if (els.detailSimilarRow) els.detailSimilarRow.innerHTML = "";
       }
 
       async function openDetailForView(view) {
@@ -5696,11 +5870,23 @@ function handleStreamingModeChange(e) {
         els.detailChips.innerHTML = "";
         els.detailActions.innerHTML = "";
         els.detailLinks.innerHTML = "";
+        if (state.ui) state.ui.detailToken = (state.ui.detailToken || 0) + 1;
+        const detailToken = state.ui ? state.ui.detailToken : 0;
+
+        if (els.detailRecsRow) els.detailRecsRow.innerHTML = "";
+        if (els.detailSimilarRow) els.detailSimilarRow.innerHTML = "";
+        if (els.detailMoreEmpty) els.detailMoreEmpty.textContent = isOffline() ? "Offline — can’t load similar titles." : "Loading suggestions…";
         els.detailOverlay.classList.remove("hidden");
         els.detailOverlay.setAttribute("aria-hidden", "false");
 
         try {
           const details = await fetchDetails(tmdbId, mediaType);
+
+          // Kick off "More like this" inside the detail panel (non-blocking)
+          if (!isOffline()) {
+            loadDetailMoreLikeThis(details.id, mediaType, detailToken);
+          }
+
 
           const year = (details.release_date || details.first_air_date)
             ? String(details.release_date || details.first_air_date).slice(0, 4)
@@ -5798,6 +5984,58 @@ function handleStreamingModeChange(e) {
 
           els.detailActions.appendChild(watchBtn);
           els.detailActions.appendChild(watchedBtn);
+
+          // Status: Planned / Started / Paused / Abandoned
+          const statusBlock = document.createElement("div");
+          statusBlock.style.display = "flex";
+          statusBlock.style.flexWrap = "wrap";
+          statusBlock.style.gap = "8px";
+          statusBlock.style.alignItems = "center";
+          statusBlock.style.marginTop = "10px";
+
+          const statusLabel = document.createElement("span");
+          statusLabel.textContent = "Status:";
+          statusLabel.style.fontSize = "12px";
+          statusLabel.style.color = "var(--text-muted)";
+          statusBlock.appendChild(statusLabel);
+
+          const statusSelect = document.createElement("select");
+          statusSelect.className = "controls-select";
+          statusSelect.style.borderRadius = "14px";
+          statusSelect.style.padding = "6px 10px";
+          statusSelect.style.minWidth = "160px";
+
+          const statusOrder = ["planned", "started", "paused", "abandoned"];
+          for (let si = 0; si < statusOrder.length; si++) {
+            const key = statusOrder[si];
+            const opt = document.createElement("option");
+            opt.value = key;
+            opt.textContent = PROGRESS_STATUS[key] || key;
+            statusSelect.appendChild(opt);
+          }
+
+          statusSelect.value = getProgressStatus(linked);
+          if (linked.watched) {
+            statusSelect.disabled = true;
+            statusLabel.textContent = "Status: (watched)";
+          }
+
+          statusSelect.addEventListener("change", function () {
+            setProgressStatusForItem(linked, statusSelect.value);
+            // Keep buttons in sync
+            watchBtn.textContent = linked.inWatchlist ? "Remove from watchlist" : "Add to watchlist";
+            watchedBtn.textContent = linked.watched ? "Mark as not watched" : "Mark as watched";
+          });
+
+          // If you un-watch from here, re-enable status selection
+          watchedBtn.addEventListener("click", function () {
+            statusSelect.disabled = !!linked.watched;
+            statusLabel.textContent = linked.watched ? "Status: (watched)" : "Status:";
+            if (!linked.watched) statusSelect.value = getProgressStatus(linked);
+          });
+
+          statusBlock.appendChild(statusSelect);
+          els.detailActions.appendChild(statusBlock);
 
           // Lists: add this film to one of your custom lists
           const listBlock = document.createElement("div");
@@ -6098,7 +6336,7 @@ els.detailActions.appendChild(orgWrap);
 
           // Where to watch (UK)
           try {
-            const providers = await fetchWatchProviders(details.id);
+            const providers = await fetchWatchProviders(details.id, mediaType);
             const gb = providers && providers[(state.country || "GB")] ? providers[(state.country || "GB")] : null;
             const wrap = document.createElement("div");
             wrap.style.marginTop = "10px";
@@ -6373,6 +6611,9 @@ els.detailActions.appendChild(orgWrap);
 
     const priority = (it.priority === "high" || it.priority === "medium" || it.priority === "low") ? it.priority : "medium";
     const watchedAt = (typeof it.watchedAt === "number") ? it.watchedAt : (watched ? Date.now() : null);
+    let progressStatus = normaliseProgressStatus(it.progressStatus || it.status);
+    if (watched && progressStatus !== "planned") progressStatus = "planned";
+    const progressStatusUpdatedAt = (typeof it.progressStatusUpdatedAt === "number") ? it.progressStatusUpdatedAt : Date.now();
     const userRating = (typeof it.userRating === "number") ? it.userRating : null;
     const rewatch = !!it.rewatch;
 
@@ -6387,6 +6628,8 @@ els.detailActions.appendChild(orgWrap);
       inWatchlist: inWatchlist,
       watched: watched,
       watchedAt: watchedAt,
+      progressStatus: progressStatus,
+      progressStatusUpdatedAt: progressStatusUpdatedAt,
       userRating: userRating,
       rewatch: rewatch,
       priority: priority,
@@ -6550,6 +6793,14 @@ function mergeImportedData(imported) {
     if (!existing.watchedAt && inc.watchedAt) existing.watchedAt = inc.watchedAt;
 
     existing.rewatch = !!(existing.rewatch || inc.rewatch);
+
+    // Progress status: only adopt an imported non-planned status if we don't already have one.
+    const exStatus = getProgressStatus(existing);
+    const inStatus = normaliseProgressStatus(inc.progressStatus || inc.status);
+    if (!existing.watched && exStatus === "planned" && inStatus !== "planned") {
+      existing.progressStatus = inStatus;
+      existing.progressStatusUpdatedAt = typeof inc.progressStatusUpdatedAt === "number" ? inc.progressStatusUpdatedAt : Date.now();
+    }
 
     if (existing.userRating === null && inc.userRating !== null) existing.userRating = inc.userRating;
     if (existing.priority === "medium" && inc.priority && inc.priority !== "medium") existing.priority = inc.priority;
@@ -6766,9 +7017,7 @@ function init() {
           sortSelect: document.getElementById("sort-select"),
           ratingFilterSelect: document.getElementById("rating-filter-select"),
           moodSelect: document.getElementById("mood-select"),
-          streamingSelect: document.getElementById("streaming-select"),
           listActions: document.getElementById("list-actions"),
-          importInput: document.getElementById("import-input"),
           detailOverlay: document.getElementById("detail-overlay"),
           detailClose: document.getElementById("detail-close"),
           detailTitle: document.getElementById("detail-title"),
@@ -6778,6 +7027,10 @@ function init() {
           detailChips: document.getElementById("detail-chips"),
           detailActions: document.getElementById("detail-actions"),
           detailLinks: document.getElementById("detail-links"),
+          detailMore: document.getElementById("detail-more"),
+          detailRecsRow: document.getElementById("detail-recs-row"),
+          detailSimilarRow: document.getElementById("detail-similar-row"),
+          detailMoreEmpty: document.getElementById("detail-more-empty"),
           themeToggle: document.getElementById("theme-toggle"),
           settingsToggle: document.getElementById("settings-toggle"),
           menuToggle: document.getElementById("menu-toggle"),
@@ -6788,9 +7041,11 @@ function init() {
 
         loadState();
         migrateItemsMediaType();
+        migrateProgressStatus();
         handleIncomingSharedList();
         migrateTmdbIdsToNumbers();
         migrateItemsMediaType();
+        migrateProgressStatus();
         applyTheme();
         render();
 
@@ -6816,7 +7071,6 @@ function init() {
         if (els.sortSelect) els.sortSelect.addEventListener("change", handleSortChange);
         if (els.ratingFilterSelect) els.ratingFilterSelect.addEventListener("change", handleRatingFilterChange);
         if (els.moodSelect) els.moodSelect.addEventListener("change", handleMoodChange);
-        if (els.streamingSelect) els.streamingSelect.addEventListener("change", handleStreamingModeChange);
 
         if (els.importInput) {
           els.importInput.addEventListener("change", function (e) {
