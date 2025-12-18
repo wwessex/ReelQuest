@@ -1575,6 +1575,42 @@ function migrateWatchProgressStatuses() {
 }
 
 
+function migrateWatchlistWatchedInvariant() {
+  // Keep lists consistent: if something is marked watched, it should not remain in Watchlist,
+  // and any in-progress status should be cleared.
+  try {
+    if (!state || !Array.isArray(state.items)) return;
+    let changed = false;
+    for (let i = 0; i < state.items.length; i++) {
+      const it = state.items[i];
+      if (!it) continue;
+
+      if (it.watched) {
+        if (it.inWatchlist) { it.inWatchlist = false; changed = true; }
+        if (it.status != null) { it.status = null; changed = true; }
+      } else {
+        if (it.inWatchlist) {
+          const norm = normaliseWatchStatus(it.status);
+          if (it.status !== norm) { it.status = norm; changed = true; }
+        }
+      }
+
+      // Rewatch implies watched
+      if (it.rewatch && !it.watched) {
+        it.watched = true;
+        it.watchedAt = it.watchedAt || Date.now();
+        it.inWatchlist = false;
+        it.status = null;
+        changed = true;
+      }
+    }
+    if (changed) saveState();
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+
 // --- Streaming availability cache (subscription streaming / flatrate) ---
 const streamingInfoCache = {};   // in-memory: key -> { f: boolean, ts: number }
 const streamingPending = {};     // key -> Promise
@@ -3214,6 +3250,7 @@ function toggleWatchedForItem(item) {
     item.watched = true;
     // When something is watched, it typically leaves the watchlist
     item.inWatchlist = false;
+    item.status = null;
     // Rewatch only makes sense if watched, but default off on first mark
     item.rewatch = false;
 
@@ -3936,7 +3973,7 @@ async function pickFromWatchlist() {
         if (state.activeTab === "watchlist") {
           const tmp = [];
           for (let i = 0; i < base.length; i++) {
-            if (base[i].inWatchlist) tmp.push(base[i]);
+            if (base[i].inWatchlist && !base[i].watched) tmp.push(base[i]);
           }
           filteredItems = tmp;
         } else if (state.activeTab === "rewatch") {
@@ -7112,6 +7149,7 @@ function init() {
 
         loadState();
         migrateWatchProgressStatuses();
+        migrateWatchlistWatchedInvariant();
         migrateItemsMediaType();
         handleIncomingSharedList();
         migrateTmdbIdsToNumbers();
