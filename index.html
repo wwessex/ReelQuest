@@ -1482,6 +1482,132 @@ const MOODS = {
 
 const keywordIdCache = {};
 
+// --- Streaming availability cache (subscription streaming / flatrate) ---
+const streamingInfoCache = {};   // in-memory: key -> { f: boolean, ts: number }
+const streamingPending = {};     // key -> Promise
+let streamingInFlight = 0;
+
+function streamingCacheKey(mediaType, tmdbId, country) {
+  const mt = normaliseMediaType(mediaType);
+  const id = toTmdbId(tmdbId);
+  const cc = (country || "GB").toUpperCase();
+  return mt + ":" + String(id) + ":" + cc;
+}
+
+function getStreamingInfo(mediaType, tmdbId) {
+  const id = toTmdbId(tmdbId);
+  if (id === null) return null;
+  const mt = normaliseMediaType(mediaType);
+  const cc = (state.country || "GB").toUpperCase();
+  const key = streamingCacheKey(mt, id, cc);
+
+  if (streamingInfoCache[key]) return streamingInfoCache[key];
+
+  const cached = cacheGet("rq_stream_" + key, 1000 * 60 * 60 * 24 * 7); // 7 days
+  if (cached && typeof cached.f === "boolean") {
+    streamingInfoCache[key] = cached;
+    return cached;
+  }
+  return null;
+}
+
+async function fetchStreamingInfo(mediaType, tmdbId) {
+  const id = toTmdbId(tmdbId);
+  if (id === null) return null;
+
+  const mt = normaliseMediaType(mediaType);
+  const cc = (state.country || "GB").toUpperCase();
+  const key = streamingCacheKey(mt, id, cc);
+
+  if (streamingPending[key]) return streamingPending[key];
+
+  const task = (async () => {
+    const path = (mt === "tv" ? "tv" : "movie");
+    const url = new URL("https://api.themoviedb.org/3/" + path + "/" + id + "/watch/providers");
+    url.searchParams.set("api_key", TMDB_API_KEY);
+    try {
+      const data = await tmdbFetch(url);
+      const results = data && data.results ? data.results : {};
+      const entry = results && results[cc] ? results[cc] : null;
+      const hasFlat = !!(entry && Array.isArray(entry.flatrate) && entry.flatrate.length);
+      const out = { f: hasFlat, ts: Date.now() };
+      streamingInfoCache[key] = out;
+      cacheSet("rq_stream_" + key, out);
+      return out;
+    } catch (e) {
+      return null;
+    }
+  })();
+
+  streamingPending[key] = task.finally(() => { try { delete streamingPending[key]; } catch (e) {} });
+  return streamingPending[key];
+}
+
+function streamingFlagForView(view) {
+  if (!view) return null;
+  if (view.tmdbMovie) {
+    const mt = normaliseMediaType(view.tmdbMovie.media_type || view.mediaType || "movie");
+    const info = getStreamingInfo(mt, view.tmdbMovie.id);
+    return info ? info.f : null;
+  }
+  if (view.item) {
+    const mt = normaliseMediaType(view.item.mediaType || view.mediaType || "movie");
+    const info = getStreamingInfo(mt, view.item.tmdbId);
+    return info ? info.f : null;
+  }
+  return null;
+}
+
+function ensureStreamingInfoForVisible(views) {
+  const pref = streamingPref();
+  if (pref === "any") {
+    state.streamingLoading = false;
+    return;
+  }
+  if (!Array.isArray(views) || !views.length) {
+    state.streamingLoading = false;
+    return;
+  }
+
+  const missing = [];
+  for (let i = 0; i < views.length; i++) {
+    const v = views[i];
+    let mt = null;
+    let id = null;
+
+    if (v && v.tmdbMovie) {
+      mt = normaliseMediaType(v.tmdbMovie.media_type || v.mediaType || "movie");
+      id = toTmdbId(v.tmdbMovie.id);
+    } else if (v && v.item) {
+      mt = normaliseMediaType(v.item.mediaType || v.mediaType || "movie");
+      id = toTmdbId(v.item.tmdbId);
+    }
+
+    if (id === null) continue;
+    if (getStreamingInfo(mt, id) === null) missing.push({ mt: mt, id: id });
+  }
+
+  if (!missing.length) {
+    state.streamingLoading = false;
+    return;
+  }
+
+  const batch = missing.slice(0, 20);
+  state.streamingLoading = true;
+  streamingInFlight += batch.length;
+
+  Promise.allSettled(batch.map((x) => fetchStreamingInfo(x.mt, x.id)))
+    .then(() => {
+      streamingInFlight -= batch.length;
+      if (streamingInFlight <= 0) {
+        streamingInFlight = 0;
+        state.streamingLoading = false;
+      }
+      setTimeout(() => { try { render(); } catch (e) {} }, 0);
+    });
+}
+
+
 async function resolveKeywordId(query) {
   const q = String(query || "").trim().toLowerCase();
   if (!q) return null;
@@ -1939,6 +2065,7 @@ function openModalSheet(opts) {
 
 function getSelectedViewsForCurrentTab() {
   const views = getViewItemsForCurrentTab();
+        ensureStreamingInfoForVisible(views);
   const picked = [];
   for (let i = 0; i < views.length; i++) {
     const id = getKeyFromView(views[i]);
@@ -3361,9 +3488,13 @@ async function pickFromWatchlist() {
 
         // Extra filters
         const minYear = state.filters && typeof state.filters.minYear === "number" ? state.filters.minYear : 0;
-        const hideWatched = state.filters ? !!state.filters.hideWatched : false;
-        const hideWatchlist = state.filters ? !!state.filters.hideWatchlist : false;
+        const hideWatchedRaw = state.filters ? !!state.filters.hideWatched : false;
+        const hideWatchlistRaw = state.filters ? !!state.filters.hideWatchlist : false;
         const excludedGenres = state.filters && Array.isArray(state.filters.excludedGenres) ? state.filters.excludedGenres : [];
+        // Important: don't hide items *within* their own tabs
+        const tab = state.activeTab;
+        const hideWatched = hideWatchedRaw && !(tab === "watched" || tab === "rewatch");
+        const hideWatchlist = hideWatchlistRaw && !(tab === "watchlist");
 
         if (minYear || hideWatched || hideWatchlist || (excludedGenres && excludedGenres.length)) {
           const temp2 = [];
@@ -3397,12 +3528,9 @@ async function pickFromWatchlist() {
           filtered = temp2;
         }
 
-        if (state.sortBy === "default") {
-          return filtered;
-        }
-
         const sorted = filtered.slice();
 
+        if (state.sortBy !== "default") {
         if (state.sortBy === "title-asc") {
           sorted.sort(function (a, b) {
             return titleFromView(a).localeCompare(titleFromView(b));
@@ -3436,6 +3564,24 @@ async function pickFromWatchlist() {
           sorted.sort(function (a, b) {
             return popularityFromView(b) - popularityFromView(a);
           });
+        }
+        }
+
+
+        const pref = streamingPref();
+        if (pref !== "any") {
+          const available = [];
+          const unknown = [];
+          const unavailable = [];
+          for (let i = 0; i < sorted.length; i++) {
+            const v = sorted[i];
+            const f = streamingFlagForView(v);
+            if (f === true) available.push(v);
+            else if (f === false) unavailable.push(v);
+            else unknown.push(v);
+          }
+          if (pref === "only") return available.concat(unknown);
+          return available.concat(unknown, unavailable);
         }
 
         return sorted;
@@ -5312,6 +5458,9 @@ container.appendChild(pickBtn);
         if (state.localMoodLoading) {
           els.message.style.display = "block";
           els.message.textContent = "Fetching genre info so Mood filtering works on your saved lists…";
+        } else if (state.streamingLoading && streamingPref() !== "any") {
+          els.message.style.display = "block";
+          els.message.textContent = "Checking streaming availability for this list…";
         } else if (state.activeTab === "for-you" && state.forYouLoading) {
           els.message.style.display = "block";
           els.message.textContent =
