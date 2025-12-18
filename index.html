@@ -3122,7 +3122,8 @@ function linkSavedItemFromTmdb(obj, fallbackType) {
 
 
 function ensureItemFromTmdb(tmdbObj, mediaType) {
-  const mt = normaliseMediaType(mediaType || (tmdbObj && tmdbObj.media_type) || inferMediaTypeFromTmdb(tmdbObj, "movie"));
+  // Always infer from the TMDB object when possible, so wrong/missing `media_type` doesn't create duplicates.
+  const mt = normaliseMediaType(inferMediaTypeFromTmdb(tmdbObj || {}, mediaType || (tmdbObj && tmdbObj.media_type) || "movie"));
   const existing = findItemByTmdbId(tmdbObj.id, mt);
   if (existing) return existing;
 
@@ -5395,15 +5396,17 @@ if (isLocal) {
 
 if (statusItem && statusItem.inWatchlist && !statusItem.watched) {
   const st = normaliseWatchStatus(statusItem.status);
-  const showPlanned = (state.activeTab === "watchlist");
-  if (st !== "planned" || showPlanned) {
-    const sp = document.createElement("div");
-    sp.className = "status-pill status-" + st;
-    sp.textContent = WATCH_PROGRESS_STATUS_LABELS[st];
-    posterWrapper.appendChild(sp);
-  }
-}
 
+  // Outside the Watchlist tab, "Planned" can feel noisy, so show a compact badge.
+  // This also stops the UI feeling "random" when lots of items are still Planned.
+  const compactPlanned = (st === "planned" && state.activeTab !== "watchlist");
+
+  const sp = document.createElement("div");
+  sp.className = "status-pill status-" + st;
+  sp.textContent = compactPlanned ? "WL" : WATCH_PROGRESS_STATUS_LABELS[st];
+  sp.title = WATCH_PROGRESS_STATUS_LABELS[st];
+  posterWrapper.appendChild(sp);
+}
 
 
         const actions = document.createElement("div");
