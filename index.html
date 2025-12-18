@@ -3045,6 +3045,80 @@ async function loadForYouFallbackPopular() {
 
   return null;
 }
+// Link a remote TMDB result to an existing saved item more reliably.
+// This fixes "status only shows on some random titles" caused by:
+// - TMDB TV results often missing `media_type`
+// - legacy saves with wrong mediaType
+// - rare TMDB ID collisions between movie and TV namespaces
+function normaliseTitleForMatch(t) {
+  return String(t || "")
+    .toLowerCase()
+    .replace(/[\W_]+/g, "")
+    .trim();
+}
+
+function linkSavedItemFromTmdb(obj, fallbackType) {
+  const id = toTmdbId(obj && obj.id);
+  if (id === null) return null;
+
+  const mt = inferMediaTypeFromTmdb(obj || {}, fallbackType || "movie");
+  const matches = [];
+  for (let i = 0; i < state.items.length; i++) {
+    const it = state.items[i];
+    const have = toTmdbId(it.tmdbId);
+    if (have === null || have !== id) continue;
+    matches.push(it);
+  }
+  if (!matches.length) return null;
+
+  // Prefer exact type match
+  for (let i = 0; i < matches.length; i++) {
+    const it = matches[i];
+    const itType = normaliseMediaType(it.mediaType || "movie");
+    if (itType === mt) return it;
+  }
+
+  // If there's only one match, heal the media type
+  if (matches.length === 1) {
+    const it = matches[0];
+    const cur = normaliseMediaType(it.mediaType || "movie");
+    if (cur !== mt) {
+      it.mediaType = mt;
+      saveState();
+    }
+    return it;
+  }
+
+  // Collision: choose best title match (no healing)
+  const wantTitle = normaliseTitleForMatch(titleFromTmdb(obj));
+  if (wantTitle) {
+    let best = null;
+    let bestScore = -1;
+    let bestCount = 0;
+
+    for (let i = 0; i < matches.length; i++) {
+      const it = matches[i];
+      const haveTitle = normaliseTitleForMatch(it.title);
+      let score = 0;
+      if (haveTitle && haveTitle === wantTitle) score = 100;
+      else if (haveTitle && (haveTitle.includes(wantTitle) || wantTitle.includes(haveTitle))) score = 50;
+
+      if (score > bestScore) {
+        bestScore = score;
+        best = it;
+        bestCount = 1;
+      } else if (score === bestScore) {
+        bestCount += 1;
+      }
+    }
+
+    if (best && bestScore > 0 && bestCount === 1) return best;
+  }
+
+  return matches[0];
+}
+
+
 
 
 function ensureItemFromTmdb(tmdbObj, mediaType) {
@@ -3805,7 +3879,7 @@ async function pickFromWatchlist() {
           const views = [];
           for (let i = 0; i < raw.length; i++) {
             const m = raw[i];
-            const linked = findItemByTmdbId(m.id, inferMediaTypeFromTmdb(m, "movie"));
+            const linked = linkSavedItemFromTmdb(m, "movie");
             views.push({ mode: "remote", tmdbMovie: m, item: linked, mediaType: inferMediaTypeFromTmdb(m, "movie") });
           }
           return applyFiltersAndSort(views);
@@ -3825,7 +3899,7 @@ async function pickFromWatchlist() {
           const views = [];
           for (let i = 0; i < raw.length; i++) {
             const m = raw[i];
-            const linked = findItemByTmdbId(m.id, inferMediaTypeFromTmdb(m, "movie"));
+            const linked = linkSavedItemFromTmdb(m, "movie");
             views.push({ mode: "remote", tmdbMovie: m, item: linked, mediaType: inferMediaTypeFromTmdb(m, "movie") });
           }
           return applyFiltersAndSort(views);
@@ -3845,7 +3919,7 @@ async function pickFromWatchlist() {
           const views = [];
           for (let i = 0; i < base.length; i++) {
             const m = base[i];
-            const linked = findItemByTmdbId(m.id, inferMediaTypeFromTmdb(m, "movie"));
+            const linked = linkSavedItemFromTmdb(m, "movie");
             views.push({ mode: "remote", tmdbMovie: m, item: linked, mediaType: inferMediaTypeFromTmdb(m, "movie") });
           }
           return applyFiltersAndSort(views);
@@ -5067,7 +5141,7 @@ exportListBtn.addEventListener("click", function () {
     const views = [];
     for (let i = 0; i < raw.length; i++) {
       const m = raw[i];
-      const linked = findItemByTmdbId(m.id, inferMediaTypeFromTmdb(m, "movie"));
+      const linked = linkSavedItemFromTmdb(m, "movie");
       views.push({ mode: "remote", tmdbMovie: m, item: linked, mediaType: inferMediaTypeFromTmdb(m, "movie") });
     }
     return applyFiltersAndSort(views);
@@ -5209,7 +5283,7 @@ exportListBtn.addEventListener("click", function () {
           const views = [];
           for (let i = 0; i < raw.length; i++) {
             const m = raw[i];
-            const linked = findItemByTmdbId(m.id, inferMediaTypeFromTmdb(m, "movie"));
+            const linked = linkSavedItemFromTmdb(m, "movie");
             views.push({ mode: "remote", tmdbMovie: m, item: linked, mediaType: inferMediaTypeFromTmdb(m, "movie") });
           }
           return applyFiltersAndSort(views);
@@ -5312,16 +5386,24 @@ exportListBtn.addEventListener("click", function () {
         }
 
 // Watch progress status badge (watchlist items that aren't watched)
-const statusItem = isLocal ? item : (view && view.item ? view.item : null);
+let statusItem = null;
+if (isLocal) {
+  statusItem = item;
+} else {
+  statusItem = (view && view.item) ? view.item : linkSavedItemFromTmdb(tmdbMovie || {}, mt);
+}
+
 if (statusItem && statusItem.inWatchlist && !statusItem.watched) {
   const st = normaliseWatchStatus(statusItem.status);
-  if (st !== "planned") {
+  const showPlanned = (state.activeTab === "watchlist");
+  if (st !== "planned" || showPlanned) {
     const sp = document.createElement("div");
     sp.className = "status-pill status-" + st;
     sp.textContent = WATCH_PROGRESS_STATUS_LABELS[st];
     posterWrapper.appendChild(sp);
   }
 }
+
 
 
         const actions = document.createElement("div");
