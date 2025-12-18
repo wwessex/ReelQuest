@@ -1,10 +1,11 @@
 <!DOCTYPE html>
+
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <title>ReelQuest</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <style>
+<meta charset="utf-8"/>
+<title>ReelQuest</title>
+<meta content="width=device-width, initial-scale=1" name="viewport"/>
+<style>
     :root {
       /* Dark theme defaults */
       --bg: #020617;
@@ -1236,172 +1237,192 @@
   z-index:2;
 }
 
-  </style>
-  <link rel="manifest" href="./manifest.webmanifest">
-  <meta name="theme-color" content="#0b1220">
-  <link rel="apple-touch-icon" href="./icon-192.png">
-  <link rel="icon" href="./icon-192.png">
-  <meta name="apple-mobile-web-app-capable" content="yes">
+  
+
+    /* Sticky header + internal scrolling (so only lists scroll) */
+    body {
+      height: 100dvh;
+      overflow: hidden;
+    }
+
+    .app {
+      height: 100%;
+      max-height: 100%;
+      overflow: hidden;
+    }
+
+    .app > main {
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      overscroll-behavior: contain;
+    }
+
+    .pagehead {
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      background: var(--bg);
+      padding-top: 6px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+      box-shadow: 0 12px 28px rgba(0, 0, 0, 0.22);
+      backdrop-filter: blur(10px);
+    }
+
+    /* Make sure the sticky header doesn't look cramped on small screens */
+    @media (max-width: 520px) {
+      .pagehead {
+        padding-top: 8px;
+        padding-bottom: 12px;
+      }
+    }
+</style>
+<link href="./manifest.webmanifest" rel="manifest"/>
+<meta content="#0b1220" name="theme-color"/>
+<link href="./icon-192.png" rel="apple-touch-icon"/>
+<link href="./icon-192.png" rel="icon"/>
+<meta content="yes" name="apple-mobile-web-app-capable"/>
 </head>
 <body>
-  <div class="app">
-    <header class="topbar">
-      <button id="brand-home" class="brand brand-home" type="button" aria-label="Go to For You">
-        <div class="brand-mark" aria-hidden="true">
-          <div class="brand-mark-inner"></div>
-        </div>
-        <div class="brand-text">ReelQuest</div>
-      </button>
-      <div class="topbar-actions">
-        <button id="menu-toggle" class="theme-toggle burger-btn" type="button" aria-label="Menu">
+<div class="app">
+<header class="topbar">
+<button aria-label="Go to For You" class="brand brand-home" id="brand-home" type="button">
+<div aria-hidden="true" class="brand-mark">
+<div class="brand-mark-inner"></div>
+</div>
+<div class="brand-text">ReelQuest</div>
+</button>
+<div class="topbar-actions">
+<button aria-label="Menu" class="theme-toggle burger-btn" id="menu-toggle" type="button">
           ☰
         </button>
-        <button id="settings-toggle" class="theme-toggle" type="button" aria-label="Settings">
+<button aria-label="Settings" class="theme-toggle" id="settings-toggle" type="button">
           ⚙︎
         </button>
-        <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">
+<button aria-label="Toggle theme" class="theme-toggle" id="theme-toggle" type="button">
           ☾
         </button>
-      </div>
-    </header>
-
-    <nav class="tabs">
-      <button class="tab-btn active" data-tab="for-you">For You</button>
-      <button class="tab-btn" data-tab="discover">Discover</button>
-      <button class="tab-btn" data-tab="radar">Radar</button>
-      <button class="tab-btn" data-tab="watchlist">Watchlist</button>
-      <button class="tab-btn" data-tab="watched">Watched</button>
-      <button class="tab-btn" data-tab="rewatch">Rewatch</button>
-      <button class="tab-btn" data-tab="lists">Lists</button>
-    </nav>
-
-    <main>
-      <section class="section-header">
-        <h1 id="section-title" class="section-title">For You</h1>
-        <p id="section-subtitle" class="section-subtitle">
+</div>
+</header>
+<nav class="tabs">
+<button class="tab-btn active" data-tab="for-you">For You</button>
+<button class="tab-btn" data-tab="discover">Discover</button>
+<button class="tab-btn" data-tab="radar">Radar</button>
+<button class="tab-btn" data-tab="watchlist">Watchlist</button>
+<button class="tab-btn" data-tab="watched">Watched</button>
+<button class="tab-btn" data-tab="rewatch">Rewatch</button>
+<button class="tab-btn" data-tab="lists">Lists</button>
+</nav>
+<main><div class="pagehead" id="pagehead"><section class="section-header">
+<h1 class="section-title" id="section-title">For You</h1>
+<p class="section-subtitle" id="section-subtitle">
           Smart suggestions based on your favourite genres.
         </p>
-      </section>
-
-      <form id="search-form" class="search-form" autocomplete="off">
-        <div class="search-wrapper">
-          <span class="search-icon">🔍</span>
-          <input
-            id="search-input"
-            class="search-input"
-            type="search"
-            placeholder="Search within your recommendations…"
-          />
-        </div>
-      </form>
-
-      <div class="controls-bar" id="controls-bar">
-        <div class="controls-group">
-          <label class="controls-label">
-            <span>Sort by</span>
-            <select id="sort-select" class="controls-select">
-              <option value="default">Default</option>
-              <option value="title-asc">Title (A–Z)</option>
-              <option value="year-desc">Year (newest)</option>
-              <option value="rating-desc">Rating (highest)</option>
-              <option value="popularity-desc">Popularity</option>
-              <option value="priority">Priority (watchlist)</option>
-            </select>
-          </label>
-          <label class="controls-label">
-            <span>Min rating</span>
-            <select id="rating-filter-select" class="controls-select">
-              <option value="0">Any</option>
-              <option value="5">5.0+</option>
-              <option value="7">7.0+</option>
-              <option value="8">8.0+</option>
-            </select>
-          </label>
-
+</section><form autocomplete="off" class="search-form" id="search-form">
+<div class="search-wrapper">
+<span class="search-icon">🔍</span>
+<input class="search-input" id="search-input" placeholder="Search within your recommendations…" type="search"/>
+</div>
+</form><div class="controls-bar" id="controls-bar">
+<div class="controls-group">
 <label class="controls-label">
-  <span>Mood</span>
-  <select id="mood-select" class="controls-select">
-    <option value="any">Any</option>
-    <option value="cosy">Cosy</option>
-    <option value="gory">Gory</option>
-    <option value="mindbendy">Mind-bendy</option>
-    <option value="feelgood">Feel-good</option>
-    <option value="darkhumour">Dark humour</option>
-  </select>
+<span>Sort by</span>
+<select class="controls-select" id="sort-select">
+<option value="default">Default</option>
+<option value="title-asc">Title (A–Z)</option>
+<option value="year-desc">Year (newest)</option>
+<option value="rating-desc">Rating (highest)</option>
+<option value="popularity-desc">Popularity</option>
+<option value="priority">Priority (watchlist)</option>
+</select>
 </label>
-
 <label class="controls-label">
-  <span>Streaming</span>
-  <select id="streaming-select" class="controls-select">
-    <option value="any">Any</option>
-    <option value="first">Streaming-first</option>
-    <option value="only">Streaming only</option>
-  </select>
+<span>Min rating</span>
+<select class="controls-select" id="rating-filter-select">
+<option value="0">Any</option>
+<option value="5">5.0+</option>
+<option value="7">7.0+</option>
+<option value="8">8.0+</option>
+</select>
 </label>
-
-        </div>
-        <div class="list-actions" id="list-actions"></div>
-      </div>
-
-      <div id="message" class="message">
+<label class="controls-label">
+<span>Mood</span>
+<select class="controls-select" id="mood-select">
+<option value="any">Any</option>
+<option value="cosy">Cosy</option>
+<option value="gory">Gory</option>
+<option value="mindbendy">Mind-bendy</option>
+<option value="feelgood">Feel-good</option>
+<option value="darkhumour">Dark humour</option>
+</select>
+</label>
+<label class="controls-label">
+<span>Streaming</span>
+<select class="controls-select" id="streaming-select">
+<option value="any">Any</option>
+<option value="first">Streaming-first</option>
+<option value="only">Streaming only</option>
+</select>
+</label>
+</div>
+<div class="list-actions" id="list-actions"></div>
+</div><div class="message" id="message">
         Pick favourite genres in Settings for personalised recommendations — otherwise we’ll show popular films.
-      </div>
+      </div></div>
 
-      <div id="settings-panel" class="settings-panel"></div>
-      <div id="lists-panel" class="settings-panel"></div>
 
-      <input id="import-input" type="file" accept="application/json" class="file-input-hidden" />
 
-      <div id="card-grid" class="grid"></div>
 
-      <div id="debug" class="debug"></div>
-    </main>
-  </div>
-
-  <!-- Detail overlay -->
-  <div id="detail-overlay" class="detail-overlay hidden" aria-hidden="true">
-    <div class="detail-panel" role="dialog" aria-modal="true">
-      <div class="detail-header">
-        <div class="detail-title-block">
-          <div id="detail-title" class="detail-title"></div>
-          <div id="detail-meta" class="detail-meta"></div>
-        </div>
-        <button id="detail-close" class="detail-close" type="button" aria-label="Close">
+<div class="settings-panel" id="settings-panel"></div>
+<div class="settings-panel" id="lists-panel"></div>
+<input accept="application/json" class="file-input-hidden" id="import-input" type="file"/>
+<div class="grid" id="card-grid"></div>
+<div class="debug" id="debug"></div>
+</main>
+</div>
+<!-- Detail overlay -->
+<div aria-hidden="true" class="detail-overlay hidden" id="detail-overlay">
+<div aria-modal="true" class="detail-panel" role="dialog">
+<div class="detail-header">
+<div class="detail-title-block">
+<div class="detail-title" id="detail-title"></div>
+<div class="detail-meta" id="detail-meta"></div>
+</div>
+<button aria-label="Close" class="detail-close" id="detail-close" type="button">
           ×
         </button>
-      </div>
-      <div class="detail-body">
-        <div class="detail-poster" id="detail-poster"></div>
-        <div class="detail-main">
-          <div id="detail-overview" class="detail-overview"></div>
-          <div id="detail-chips" class="detail-chips"></div>
-          <div id="detail-actions" class="detail-actions"></div>
-          <div id="detail-links"></div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-
-  <!-- Burger menu overlay (mobile) -->
-  <div id="menu-overlay" class="menu-overlay hidden" aria-hidden="true">
-    <div class="menu-panel" role="dialog" aria-modal="true" aria-label="Navigation menu">
-      <div class="menu-header">
-        <div class="menu-title">Menu</div>
-        <button id="menu-close" class="detail-close" type="button" aria-label="Close menu">×</button>
-      </div>
-      <div class="menu-items">
-        <button class="menu-item" type="button" data-tab="for-you">For You</button>
-        <button class="menu-item" type="button" data-tab="discover">Discover</button>
-        <button class="menu-item" type="button" data-tab="watchlist">Watchlist</button>
-        <button class="menu-item" type="button" data-tab="watched">Watched</button>
-        <button class="menu-item" type="button" data-tab="lists">Lists</button>
-        <button class="menu-item" type="button" data-tab="settings">Settings</button>
-      </div>
-    </div>
-  </div>
-
-  <script>
+</div>
+<div class="detail-body">
+<div class="detail-poster" id="detail-poster"></div>
+<div class="detail-main">
+<div class="detail-overview" id="detail-overview"></div>
+<div class="detail-chips" id="detail-chips"></div>
+<div class="detail-actions" id="detail-actions"></div>
+<div id="detail-links"></div>
+</div>
+</div>
+</div>
+</div>
+<!-- Burger menu overlay (mobile) -->
+<div aria-hidden="true" class="menu-overlay hidden" id="menu-overlay">
+<div aria-label="Navigation menu" aria-modal="true" class="menu-panel" role="dialog">
+<div class="menu-header">
+<div class="menu-title">Menu</div>
+<button aria-label="Close menu" class="detail-close" id="menu-close" type="button">×</button>
+</div>
+<div class="menu-items">
+<button class="menu-item" data-tab="for-you" type="button">For You</button>
+<button class="menu-item" data-tab="discover" type="button">Discover</button>
+<button class="menu-item" data-tab="watchlist" type="button">Watchlist</button>
+<button class="menu-item" data-tab="watched" type="button">Watched</button>
+<button class="menu-item" data-tab="lists" type="button">Lists</button>
+<button class="menu-item" data-tab="settings" type="button">Settings</button>
+</div>
+</div>
+</div>
+<script>
 (function () {
       const TMDB_API_KEY = "b24323f85318cb1b12fd1ea0a94420de";
 
@@ -7277,6 +7298,6 @@ function init() {
       document.addEventListener("DOMContentLoaded", init);
     })();
 </script>
-  <div id="toast-host" aria-live="polite" aria-atomic="true"></div>
+<div aria-atomic="true" aria-live="polite" id="toast-host"></div>
 </body>
 </html>
