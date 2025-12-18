@@ -3014,18 +3014,41 @@ async function loadForYouFallbackPopular() {
   const mt = normaliseMediaType(mediaType);
   const want = toTmdbId(tmdbId);
   if (want === null) return null;
+
+  // First pass: exact match (tmdbId + media type)
+  let otherMatch = null;
+  let otherCount = 0;
+
   for (let i = 0; i < state.items.length; i++) {
     const it = state.items[i];
-    const itType = normaliseMediaType(it.mediaType || "movie");
     const have = toTmdbId(it.tmdbId);
-    if (have !== null && have === want && itType === mt) return it;
+    if (have === null || have !== want) continue;
+
+    const itType = normaliseMediaType(it.mediaType || "movie");
+    if (itType === mt) return it;
+
+    // Track mismatched-type matches in case we can safely heal legacy data
+    otherMatch = it;
+    otherCount += 1;
   }
+
+  // If there's exactly one item with this tmdbId (but wrong type), heal it to the expected type.
+  // This avoids the "status only shows for some titles" issue caused by older saves that defaulted TV->movie.
+  if (otherMatch && otherCount === 1) {
+    const cur = normaliseMediaType(otherMatch.mediaType || "movie");
+    if (cur !== mt) {
+      otherMatch.mediaType = mt;
+      saveState();
+    }
+    return otherMatch;
+  }
+
   return null;
 }
 
 
-      function ensureItemFromTmdb(tmdbObj, mediaType) {
-  const mt = normaliseMediaType(mediaType || (tmdbObj && tmdbObj.media_type));
+function ensureItemFromTmdb(tmdbObj, mediaType) {
+  const mt = normaliseMediaType(mediaType || (tmdbObj && tmdbObj.media_type) || inferMediaTypeFromTmdb(tmdbObj, "movie"));
   const existing = findItemByTmdbId(tmdbObj.id, mt);
   if (existing) return existing;
 
@@ -5272,8 +5295,8 @@ exportListBtn.addEventListener("click", function () {
         }
 
         const mt = isLocal
-          ? normaliseMediaType(item.mediaType || "movie")
-          : normaliseMediaType((tmdbMovie && tmdbMovie.media_type) || view.mediaType || "movie");
+  ? normaliseMediaType(item.mediaType || "movie")
+  : inferMediaTypeFromTmdb(tmdbMovie || {}, view.mediaType || "movie");
         if (mt === "tv") {
           const tp = document.createElement("div");
           tp.className = "type-pill";
