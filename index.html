@@ -1293,6 +1293,16 @@
     <option value="darkhumour">Dark humour</option>
   </select>
 </label>
+
+<label class="controls-label">
+  <span>Streaming</span>
+  <select id="streaming-select" class="controls-select">
+    <option value="any">Any</option>
+    <option value="first">Streaming-first</option>
+    <option value="only">Streaming only</option>
+  </select>
+</label>
+
         </div>
         <div class="list-actions" id="list-actions"></div>
       </div>
@@ -1558,6 +1568,11 @@ function streamingFlagForView(view) {
   return null;
 }
 
+function streamingPref() {
+  const v = state.streamingMode || "any";
+  return (v === "first" || v === "only") ? v : "any";
+}
+
 function ensureStreamingInfoForVisible(views) {
   const pref = streamingPref();
   if (pref === "any") {
@@ -1707,6 +1722,8 @@ function moodMatchesTmdb(tmdbObj) {
         includeTv: true,
         mood: "any",
         localMoodLoading: false,
+        streamingMode: "any",
+        streamingLoading: false,
         items: [],
         lists: [],
         listsUi: { mode: "index", activeListId: null, reorderMode: false },
@@ -1785,6 +1802,11 @@ function formatDateUK(ts) {
           }
           if (typeof parsed.mood === "string" && MOODS[parsed.mood]) {
             state.mood = parsed.mood;
+          }
+
+          if (typeof parsed.streamingMode === "string") {
+            const sm = parsed.streamingMode;
+            state.streamingMode = (sm === "first" || sm === "only") ? sm : "any";
           }
 
 if (parsed.ui && typeof parsed.ui === "object") {
@@ -1936,6 +1958,7 @@ function alertNice(message) {
               country: state.country,
               includeTv: state.includeTv,
               mood: state.mood,
+              streamingMode: state.streamingMode,
               ui: state.ui,
               theme: state.theme
             })
@@ -3593,6 +3616,7 @@ async function pickFromWatchlist() {
           : "";
 
         if (state.activeTab === "radar") {
+          const term = state.searchTerm ? state.searchTerm.trim().toLowerCase() : "";
           let raw = state.radarResults || [];
           if (term) {
             const filtered = [];
@@ -4991,9 +5015,11 @@ exportListBtn.addEventListener("click", function () {
         }
 
         const views = getViewItemsForCurrentTab();
+        try { ensureStreamingInfoForVisible(views); } catch (e) {}
         if (views.length > 0) return "";
 
         if (state.activeTab === "radar") {
+          const term = state.searchTerm ? state.searchTerm.trim().toLowerCase() : "";
           let raw = state.radarResults || [];
           if (term) {
             const filtered = [];
@@ -5394,6 +5420,7 @@ container.appendChild(pickBtn);
         if (els.sortSelect) els.sortSelect.value = state.sortBy;
         if (els.ratingFilterSelect) els.ratingFilterSelect.value = String(state.minRating);
         if (els.moodSelect) els.moodSelect.value = state.mood || "any";
+        if (els.streamingSelect) els.streamingSelect.value = state.streamingMode || "any";
 
         if (state.activeTab === "settings") {
           els.searchForm.style.display = "none";
@@ -5496,55 +5523,17 @@ container.appendChild(pickBtn);
       }
 
       function handleSearchInput(e) {
-        state.searchTerm = e.target.value || "";
-        if (state.activeTab === "radar") {
-          let raw = state.radarResults || [];
-          if (term) {
-            const filtered = [];
-            for (let i = 0; i < raw.length; i++) {
-              const m = raw[i];
-              const t = (m.title || "").toLowerCase();
-              if (t.indexOf(term) !== -1) filtered.push(m);
-            }
-            raw = filtered;
-          }
-          const views = [];
-          for (let i = 0; i < raw.length; i++) {
-            const m = raw[i];
-            const linked = findItemByTmdbId(m.id);
-            views.push({ mode: "remote", tmdbMovie: m, item: linked });
-          }
-          return applyFiltersAndSort(views);
+        try {
+          state.searchTerm = (e && e.target && typeof e.target.value === "string") ? e.target.value : "";
+        } catch (err) {
+          state.searchTerm = "";
         }
-
-        if (state.activeTab === "discover") {
-          return;
-        }
+        // Filtering is handled in getViewItemsForCurrentTab(); just re-render.
         render();
       }
 
       function handleSearchSubmit(e) {
         e.preventDefault();
-        if (state.activeTab === "radar") {
-          let raw = state.radarResults || [];
-          if (term) {
-            const filtered = [];
-            for (let i = 0; i < raw.length; i++) {
-              const m = raw[i];
-              const t = (m.title || "").toLowerCase();
-              if (t.indexOf(term) !== -1) filtered.push(m);
-            }
-            raw = filtered;
-          }
-          const views = [];
-          for (let i = 0; i < raw.length; i++) {
-            const m = raw[i];
-            const linked = findItemByTmdbId(m.id);
-            views.push({ mode: "remote", tmdbMovie: m, item: linked });
-          }
-          return applyFiltersAndSort(views);
-        }
-
         if (state.activeTab === "discover") {
           performDiscoverSearch();
         } else {
@@ -5646,6 +5635,13 @@ function handleMoodChange(e) {
       render();
     }
   }
+}
+
+function handleStreamingModeChange(e) {
+  const val = (e && e.target && typeof e.target.value === "string") ? e.target.value : "any";
+  state.streamingMode = (val === "first" || val === "only") ? val : "any";
+  saveState();
+  render();
 }
 
       async function fetchWatchProviders(tmdbId, mediaType) {
@@ -6770,7 +6766,9 @@ function init() {
           sortSelect: document.getElementById("sort-select"),
           ratingFilterSelect: document.getElementById("rating-filter-select"),
           moodSelect: document.getElementById("mood-select"),
+          streamingSelect: document.getElementById("streaming-select"),
           listActions: document.getElementById("list-actions"),
+          importInput: document.getElementById("import-input"),
           detailOverlay: document.getElementById("detail-overlay"),
           detailClose: document.getElementById("detail-close"),
           detailTitle: document.getElementById("detail-title"),
@@ -6818,6 +6816,7 @@ function init() {
         if (els.sortSelect) els.sortSelect.addEventListener("change", handleSortChange);
         if (els.ratingFilterSelect) els.ratingFilterSelect.addEventListener("change", handleRatingFilterChange);
         if (els.moodSelect) els.moodSelect.addEventListener("change", handleMoodChange);
+        if (els.streamingSelect) els.streamingSelect.addEventListener("change", handleStreamingModeChange);
 
         if (els.importInput) {
           els.importInput.addEventListener("change", function (e) {
