@@ -3370,9 +3370,11 @@ async function pickFromWatchlist() {
           for (let i = 0; i < filtered.length; i++) {
             const v = filtered[i];
 
-            // Hide watched/watchlist based on linked local item if present
-            if (hideWatched && v.item && v.item.watched) continue;
-            if (hideWatchlist && v.item && v.item.inWatchlist) continue;
+            // Hide watched/watchlist based on linked local item if present.
+            // These toggles are meant to hide titles *from other tabs* (Discover/For You/etc),
+            // not from their own list tabs.
+            if (hideWatched && state.activeTab !== "watched" && state.activeTab !== "rewatch" && v.item && v.item.watched) continue;
+            if (hideWatchlist && state.activeTab !== "watchlist" && v.item && v.item.inWatchlist) continue;
 
             if (minYear) {
               const y = yearFromView(v);
