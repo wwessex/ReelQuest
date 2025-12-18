@@ -1452,6 +1452,21 @@ function normaliseMediaType(mt) {
   return mt === "tv" ? "tv" : "movie";
 }
 
+// Infer media type when TMDB objects don't include `media_type` (common on /discover/movie or /discover/tv)
+function inferMediaTypeFromTmdb(obj, fallback) {
+  if (obj && typeof obj.media_type === "string" && obj.media_type.length) {
+    return normaliseMediaType(obj.media_type);
+  }
+  // Heuristic: TV results usually have `name` and/or `first_air_date`
+  const hasFirstAir = !!(obj && obj.first_air_date);
+  const hasRelease = !!(obj && obj.release_date);
+  const hasName = !!(obj && obj.name);
+  const hasTitle = !!(obj && obj.title);
+  if (hasFirstAir || (hasName && !hasTitle && !hasRelease)) return "tv";
+  return normaliseMediaType(fallback);
+}
+
+
 function entryKey(mediaType, tmdbId) {
   const mt = normaliseMediaType(mediaType);
   return (mt === "tv" ? "t" : "m") + String(tmdbId);
@@ -3767,8 +3782,8 @@ async function pickFromWatchlist() {
           const views = [];
           for (let i = 0; i < raw.length; i++) {
             const m = raw[i];
-            const linked = findItemByTmdbId(m.id, normaliseMediaType(m.media_type || "movie"));
-            views.push({ mode: "remote", tmdbMovie: m, item: linked, mediaType: normaliseMediaType(m.media_type || "movie") });
+            const linked = findItemByTmdbId(m.id, inferMediaTypeFromTmdb(m, "movie"));
+            views.push({ mode: "remote", tmdbMovie: m, item: linked, mediaType: inferMediaTypeFromTmdb(m, "movie") });
           }
           return applyFiltersAndSort(views);
         }
@@ -3787,8 +3802,8 @@ async function pickFromWatchlist() {
           const views = [];
           for (let i = 0; i < raw.length; i++) {
             const m = raw[i];
-            const linked = findItemByTmdbId(m.id, normaliseMediaType(m.media_type || "movie"));
-            views.push({ mode: "remote", tmdbMovie: m, item: linked, mediaType: normaliseMediaType(m.media_type || "movie") });
+            const linked = findItemByTmdbId(m.id, inferMediaTypeFromTmdb(m, "movie"));
+            views.push({ mode: "remote", tmdbMovie: m, item: linked, mediaType: inferMediaTypeFromTmdb(m, "movie") });
           }
           return applyFiltersAndSort(views);
         }
@@ -3807,8 +3822,8 @@ async function pickFromWatchlist() {
           const views = [];
           for (let i = 0; i < base.length; i++) {
             const m = base[i];
-            const linked = findItemByTmdbId(m.id, normaliseMediaType(m.media_type || "movie"));
-            views.push({ mode: "remote", tmdbMovie: m, item: linked, mediaType: normaliseMediaType(m.media_type || "movie") });
+            const linked = findItemByTmdbId(m.id, inferMediaTypeFromTmdb(m, "movie"));
+            views.push({ mode: "remote", tmdbMovie: m, item: linked, mediaType: inferMediaTypeFromTmdb(m, "movie") });
           }
           return applyFiltersAndSort(views);
         }
@@ -5029,8 +5044,8 @@ exportListBtn.addEventListener("click", function () {
     const views = [];
     for (let i = 0; i < raw.length; i++) {
       const m = raw[i];
-      const linked = findItemByTmdbId(m.id);
-      views.push({ mode: "remote", tmdbMovie: m, item: linked });
+      const linked = findItemByTmdbId(m.id, inferMediaTypeFromTmdb(m, "movie"));
+      views.push({ mode: "remote", tmdbMovie: m, item: linked, mediaType: inferMediaTypeFromTmdb(m, "movie") });
     }
     return applyFiltersAndSort(views);
   }
@@ -5073,7 +5088,7 @@ exportListBtn.addEventListener("click", function () {
   const views = [];
   for (let i = 0; i < entries.length; i++) {
     const e = entries[i];
-    const linked = findItemByTmdbId(e.tmdbId);
+    const linked = findItemByTmdbId(e.tmdbId, normaliseMediaType(e.mediaType || "movie"));
     views.push({
       mode: "remote",
       tmdbMovie: {
@@ -5085,6 +5100,7 @@ exportListBtn.addEventListener("click", function () {
         popularity: 0
       },
       item: linked,
+      mediaType: normaliseMediaType(e.mediaType || "movie"),
       __listEntry: true
     });
   }
@@ -5170,8 +5186,8 @@ exportListBtn.addEventListener("click", function () {
           const views = [];
           for (let i = 0; i < raw.length; i++) {
             const m = raw[i];
-            const linked = findItemByTmdbId(m.id);
-            views.push({ mode: "remote", tmdbMovie: m, item: linked });
+            const linked = findItemByTmdbId(m.id, inferMediaTypeFromTmdb(m, "movie"));
+            views.push({ mode: "remote", tmdbMovie: m, item: linked, mediaType: inferMediaTypeFromTmdb(m, "movie") });
           }
           return applyFiltersAndSort(views);
         }
