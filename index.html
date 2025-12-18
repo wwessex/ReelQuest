@@ -6772,6 +6772,9 @@ els.detailActions.appendChild(orgWrap);
     const watchedAt = (typeof it.watchedAt === "number") ? it.watchedAt : (watched ? Date.now() : null);
     const userRating = (typeof it.userRating === "number") ? it.userRating : null;
     const rewatch = !!it.rewatch;
+    const status = (inWatchlist && !watched)
+      ? normaliseWatchStatus((typeof it.status !== "undefined") ? it.status : it.progressStatus)
+      : null;
 
     clean.push({
       id: typeof it.id === "string" ? it.id : safeId(),
@@ -6786,6 +6789,7 @@ els.detailActions.appendChild(orgWrap);
       watchedAt: watchedAt,
       userRating: userRating,
       rewatch: rewatch,
+      status: status,
       priority: priority,
       tags: tags,
       notes: notes,
