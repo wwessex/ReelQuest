@@ -104,6 +104,21 @@
       letter-spacing: 0.04em;
     }
 
+    .brand-home{
+      background: transparent;
+      border: 0;
+      padding: 0;
+      color: inherit;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .brand-home:focus-visible{
+      outline: 2px solid var(--accent-pill-bg);
+      outline-offset: 4px;
+      border-radius: 14px;
+    }
+
+
     .topbar-actions {
       display: flex;
       align-items: center;
@@ -1231,12 +1246,12 @@
 <body>
   <div class="app">
     <header class="topbar">
-      <div class="brand">
-        <div class="brand-mark">
+      <button id="brand-home" class="brand brand-home" type="button" aria-label="Go to For You">
+        <div class="brand-mark" aria-hidden="true">
           <div class="brand-mark-inner"></div>
         </div>
         <div class="brand-text">ReelQuest</div>
-      </div>
+      </button>
       <div class="topbar-actions">
         <button id="menu-toggle" class="theme-toggle burger-btn" type="button" aria-label="Menu">
           ☰
@@ -7144,7 +7159,8 @@ function init() {
           menuToggle: document.getElementById("menu-toggle"),
           menuOverlay: document.getElementById("menu-overlay"),
           menuClose: document.getElementById("menu-close"),
-          menuItems: document.querySelectorAll(".menu-item")
+          menuItems: document.querySelectorAll(".menu-item"),
+          brandHome: document.getElementById("brand-home")
         };
 
         loadState();
@@ -7173,6 +7189,23 @@ function init() {
         for (let i = 0; i < els.tabButtons.length; i++) {
           els.tabButtons[i].addEventListener("click", handleTabClick);
         }
+
+        if (els.brandHome) {
+          els.brandHome.addEventListener("click", function () {
+            if (state.activeTab !== "for-you") {
+              try { closeDetail(); } catch (e) {}
+              try { closeMenu(); } catch (e) {}
+              switchToTab("for-you");
+            } else {
+              try {
+                window.scrollTo({ top: 0, behavior: "smooth" });
+              } catch (e) {
+                window.scrollTo(0, 0);
+              }
+            }
+          });
+        }
+
 
         if (els.searchInput) els.searchInput.addEventListener("input", handleSearchInput);
         if (els.searchForm) els.searchForm.addEventListener("submit", handleSearchSubmit);
