@@ -2171,7 +2171,7 @@ function bulkMoveSelectedToWatched(views) {
     const v = views[i];
     let item = null;
     if (v.mode === "local" && v.item) item = v.item;
-    if (v.mode === "remote" && v.tmdbMovie) item = ensureItemFromTmdb(v.tmdbMovie);
+    if (v.mode === "remote" && v.tmdbMovie) item = ensureItemFromTmdb(v.tmdbMovie, v.mediaType || (v.tmdbMovie && v.tmdbMovie.media_type));
     if (!item) continue;
 
     if (!item.watched) {
@@ -2235,7 +2235,7 @@ function bulkRemoveSelectedFromContext(views) {
     const v = views[i];
     let item = null;
     if (v.mode === "local" && v.item) item = v.item;
-    if (v.mode === "remote" && v.tmdbMovie) item = ensureItemFromTmdb(v.tmdbMovie);
+    if (v.mode === "remote" && v.tmdbMovie) item = ensureItemFromTmdb(v.tmdbMovie, v.mediaType || (v.tmdbMovie && v.tmdbMovie.media_type));
     if (!item) continue;
 
     if (state.activeTab === "watchlist") {
@@ -2282,7 +2282,7 @@ function bulkAddSelectedViewsToList(views, listId) {
       year = v.tmdbMovie.release_date ? v.tmdbMovie.release_date.slice(0, 4) : "";
       posterPath = v.tmdbMovie.poster_path || null;
       rating = typeof v.tmdbMovie.vote_average === "number" ? v.tmdbMovie.vote_average : null;
-      ensureItemFromTmdb(v.tmdbMovie);
+      ensureItemFromTmdb(v.tmdbMovie, v.mediaType || (v.tmdbMovie && v.tmdbMovie.media_type));
     } else if (v.mode === "local" && v.item) {
       title = v.item.title || "Untitled";
       year = v.item.year || "";
@@ -2469,32 +2469,75 @@ function openBulkAddToListPicker(selectedViews) {
   }
 }
 
-async function loadBecauseYouLiked(tmdbId, seedTitle) {
-        state.activeTab = "discover";
-        state.discoverMode = "because";
-        state.discoverSeedTitle = seedTitle || "";
-        state.searchTerm = "";
-        if (els.searchInput) els.searchInput.value = "";
-        els.message.style.display = "block";
-        els.message.textContent = "Loading recommendations…";
-        renderSkeletonGrid(10);
-        try {
-          const url = new URL("https://api.themoviedb.org/3/movie/" + tmdbId + "/recommendations");
-          url.searchParams.set("api_key", TMDB_API_KEY);
-          url.searchParams.set("language", "en-GB");
-          url.searchParams.set("page", "1");
-          const data = await tmdbFetch(url);
-          state.discoverResults = Array.isArray(data.results) ? data.results : [];
-        } catch (err) {
-          console.error(err);
-          state.discoverResults = [];
-          els.message.textContent = "We couldn’t load recommendations. Please try again.";
-        } finally {
-          render();
-        }
-      }
+async function loadBecauseYouLiked(tmdbId, seedTitle, mediaType) {
+  const mt = normaliseMediaType(mediaType || "movie");
+  state.activeTab = "discover";
+  state.discoverMode = "because";
+  state.discoverSeedTitle = seedTitle || "";
+  state.searchTerm = "";
+  if (els.searchInput) els.searchInput.value = "";
+  els.message.style.display = "block";
+  els.message.textContent = "Loading more like this…";
+  renderSkeletonGrid(10);
 
-      
+  try {
+    const base = "https://api.themoviedb.org/3/" + mt + "/" + tmdbId + "/";
+    const recUrl = new URL(base + "recommendations");
+    recUrl.searchParams.set("api_key", TMDB_API_KEY);
+    recUrl.searchParams.set("language", "en-GB");
+    recUrl.searchParams.set("page", "1");
+
+    const simUrl = new URL(base + "similar");
+    simUrl.searchParams.set("api_key", TMDB_API_KEY);
+    simUrl.searchParams.set("language", "en-GB");
+    simUrl.searchParams.set("page", "1");
+
+    const [recData, simData] = await Promise.all([
+      tmdbFetch(recUrl).catch(() => null),
+      tmdbFetch(simUrl).catch(() => null)
+    ]);
+
+    const merged = [];
+    const seen = new Set();
+
+    function addResults(arr) {
+      if (!Array.isArray(arr)) return;
+      for (let i = 0; i < arr.length; i++) {
+        const it = arr[i];
+        if (!it || typeof it.id !== "number") continue;
+        if (seen.has(it.id)) continue;
+        seen.add(it.id);
+        it.media_type = mt; // important for TV cards + detail
+        merged.push(it);
+      }
+    }
+
+    addResults(recData && recData.results);
+    addResults(simData && simData.results);
+
+    // Mood filter (if active)
+    let out = merged;
+    if (state.mood && state.mood !== "any") {
+      const mf = [];
+      for (let i = 0; i < out.length; i++) if (moodMatchesTmdb(out[i])) mf.push(out[i]);
+      out = mf;
+    }
+
+    state.discoverResults = out.slice(0, 40);
+    if (!state.discoverResults.length) {
+      els.message.textContent = "No matches found — try a different mood or broaden your filters.";
+    } else {
+      els.message.style.display = "none";
+    }
+  } catch (err) {
+    console.error(err);
+    state.discoverResults = [];
+    els.message.textContent = "We couldn’t load similar titles. Please try again.";
+  } finally {
+    render();
+  }
+}
+
 async function loadMoodForDiscover() {
   if (!els.message || !els.grid) return;
 
@@ -2971,7 +3014,24 @@ async function loadForYouFallbackPopular() {
   const existing = findItemByTmdbId(tmdbObj.id, mt);
   if (existing) return existing;
 
-  const now = Date.now();
+  // Legacy healing: if we previously saved a TV show as a movie (or vice versa),
+  // reuse the existing item and correct its mediaType.
+  const want = toTmdbId(tmdbObj && tmdbObj.id);
+  if (want !== null) {
+    for (let i = 0; i < state.items.length; i++) {
+      const it = state.items[i];
+      const have = toTmdbId(it.tmdbId);
+      if (have !== null && have === want) {
+        const cur = normaliseMediaType(it.mediaType || "movie");
+        if (cur !== mt) {
+          it.mediaType = mt;
+          saveState();
+        }
+        return it;
+      }
+    }
+  }
+const now = Date.now();
   const item = {
     id: safeId(),
     tmdbId: tmdbObj.id,
@@ -5330,7 +5390,7 @@ if (item.notes && String(item.notes).trim()) {
           if (isLocal) {
             toggleWatchedForItem(item);
           } else if (tmdbMovie) {
-            const linked = ensureItemFromTmdb(tmdbMovie);
+            const linked = ensureItemFromTmdb(tmdbMovie, view.mediaType || (tmdbMovie && tmdbMovie.media_type));
             toggleWatchedForItem(linked);
           }
         });
@@ -5340,7 +5400,7 @@ if (item.notes && String(item.notes).trim()) {
           if (isLocal) {
             toggleWatchlistForItem(item);
           } else if (tmdbMovie) {
-            const linked = ensureItemFromTmdb(tmdbMovie);
+            const linked = ensureItemFromTmdb(tmdbMovie, view.mediaType || (tmdbMovie && tmdbMovie.media_type));
             toggleWatchlistForItem(linked);
           }
         });
@@ -5858,7 +5918,7 @@ function handleStreamingModeChange(e) {
           const linked =
             view.mode === "local" && view.item
               ? view.item
-              : ensureItemFromTmdb(details);
+              : ensureItemFromTmdb(details, mediaType);
 
           const watchBtn = document.createElement("button");
           watchBtn.type = "button";
@@ -5975,7 +6035,7 @@ function handleStreamingModeChange(e) {
           moreBtn.textContent = "More like this";
           moreBtn.addEventListener("click", function () {
             closeDetail();
-            loadBecauseYouLiked(details.id, title);
+            loadBecauseYouLiked(details.id, title, mediaType);
           });
           els.detailActions.appendChild(moreBtn);
 
