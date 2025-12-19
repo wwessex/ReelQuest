@@ -5398,8 +5398,9 @@ function moveEntryInList(listId, entryKeyValue, direction) {
       let rqSupabaseLoading = null;
 
       function getSupabaseConfig() {
-        const url = String(localStorage.getItem("rq_supabase_url") || "").trim();
-        const anon = String(localStorage.getItem("rq_supabase_anon") || "").trim();
+        // Use baked-in defaults, but allow overrides for development via localStorage.
+        const url = String(localStorage.getItem("rq_supabase_url") || "").trim() || DEFAULT_SUPABASE_URL;
+        const anon = String(localStorage.getItem("rq_supabase_anon") || "").trim() || DEFAULT_SUPABASE_ANON;
         return { url, anon };
       }
 
@@ -5414,7 +5415,7 @@ function moveEntryInList(listId, entryKeyValue, direction) {
 
         rqSupabaseLoading = new Promise(function (resolve, reject) {
           const s = document.createElement("script");
-          s.src = "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2";
+          s.src = "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js";
           s.async = true;
           s.onload = function () { resolve(); };
           s.onerror = function () { reject(new Error("Failed to load Supabase JS")); };
@@ -5509,17 +5510,28 @@ function moveEntryInList(listId, entryKeyValue, direction) {
             alertNice("Enter a valid email address.");
             return;
           }
+          const prevText = linkBtn.textContent;
+          linkBtn.disabled = true;
+          linkBtn.textContent = "Sending…";
+          status.textContent = "Status: Sending magic link…";
+
           try {
             const client = await getSupabaseClient();
             if (!client) throw new Error("Supabase client not available");
-            await client.auth.signInWithOtp({
+            const res = await client.auth.signInWithOtp({
               email: email,
               options: { emailRedirectTo: (location.origin + location.pathname) }
             });
+            if (res && res.error) throw res.error;
             toast("Magic link sent.");
+            status.textContent = "Status: Check your email for the link.";
           } catch (e) {
             console.error(e);
-            alertNice("Couldn’t send the magic link. Try again in a moment.");
+            alertNice("Couldn’t send the magic link: " + (e && e.message ? e.message : "Unknown error"));
+            status.textContent = "Status: Not signed in.";
+          } finally {
+            linkBtn.disabled = false;
+            linkBtn.textContent = prevText;
           }
         });
 
