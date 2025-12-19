@@ -5459,17 +5459,18 @@ function moveEntryInList(listId, entryKeyValue, direction) {
         const status = document.createElement("div");
         status.className = "settings-copy";
         status.style.marginTop = "10px";
+        status.textContent = "Status: Checking sign-in…";
 
         const authSub = document.createElement("div");
         authSub.className = "settings-subheading";
         authSub.style.marginTop = "14px";
         authSub.textContent = "Sign in";
 
-        const wrap = document.createElement("div");
-        wrap.style.display = "flex";
-        wrap.style.flexWrap = "wrap";
-        wrap.style.gap = "10px";
-        wrap.style.alignItems = "center";
+        const emailWrap = document.createElement("div");
+        emailWrap.style.display = "flex";
+        emailWrap.style.flexWrap = "wrap";
+        emailWrap.style.gap = "10px";
+        emailWrap.style.alignItems = "center";
 
         const emailInput = document.createElement("input");
         emailInput.className = "search-input";
@@ -5489,49 +5490,41 @@ function moveEntryInList(listId, entryKeyValue, direction) {
         signOutBtn.textContent = "Sign out";
         signOutBtn.style.display = "none";
 
-        wrap.appendChild(emailInput);
-        wrap.appendChild(linkBtn);
-        wrap.appendChild(signOutBtn);
+        // Avoid “flash” of the email box when already signed in.
+        emailInput.style.display = "none";
+        linkBtn.style.display = "none";
 
-        panel.appendChild(heading);
-        panel.appendChild(copy);
-        panel.appendChild(status);
-        panel.appendChild(authSub);
-        panel.appendChild(wrap);
+        function setAuthUi(isSignedIn, email) {
+          if (isSignedIn) {
+            status.textContent = "Status: Signed in as " + (email || "your account");
+            emailInput.style.display = "none";
+            linkBtn.style.display = "none";
+            signOutBtn.style.display = "inline-flex";
+          } else {
+            status.textContent = "Status: Not signed in.";
+            emailInput.style.display = "";
+            linkBtn.style.display = "";
+            signOutBtn.style.display = "none";
+          }
+        }
 
         linkBtn.addEventListener("click", async function () {
-          const cfg = getSupabaseConfig();
-          if (!cfg.url || !cfg.anon) {
-            alertNice("Account sync is not configured in this build.");
-            return;
-          }
           const email = String(emailInput.value || "").trim();
           if (!email || email.indexOf("@") === -1) {
             alertNice("Enter a valid email address.");
             return;
           }
-          const prevText = linkBtn.textContent;
-          linkBtn.disabled = true;
-          linkBtn.textContent = "Sending…";
-          status.textContent = "Status: Sending magic link…";
-
           try {
             const client = await getSupabaseClient();
             if (!client) throw new Error("Supabase client not available");
-            const res = await client.auth.signInWithOtp({
+            await client.auth.signInWithOtp({
               email: email,
               options: { emailRedirectTo: (location.origin + location.pathname) }
             });
-            if (res && res.error) throw res.error;
             toast("Magic link sent.");
-            status.textContent = "Status: Check your email for the link.";
           } catch (e) {
             console.error(e);
-            alertNice("Couldn’t send the magic link: " + (e && e.message ? e.message : "Unknown error"));
-            status.textContent = "Status: Not signed in.";
-          } finally {
-            linkBtn.disabled = false;
-            linkBtn.textContent = prevText;
+            alertNice("Couldn’t send the magic link: " + (e && e.message ? e.message : "unknown error"));
           }
         });
 
@@ -5544,38 +5537,43 @@ function moveEntryInList(listId, entryKeyValue, direction) {
             renderAccount();
           } catch (e) {
             console.error(e);
-            alertNice("Couldn’t sign out.");
+            alertNice("Couldn’t sign out: " + (e && e.message ? e.message : "unknown error"));
           }
         });
 
-        // Async: update sign-in status
+        emailWrap.appendChild(emailInput);
+        emailWrap.appendChild(linkBtn);
+        emailWrap.appendChild(signOutBtn);
+
+        panel.appendChild(heading);
+        panel.appendChild(copy);
+        panel.appendChild(authSub);
+        panel.appendChild(emailWrap);
+        panel.appendChild(status);
+
+        // Async: update sign-in status and wire an auth-change listener.
         (async function () {
-          const cfg = getSupabaseConfig();
-          if (!cfg.url || !cfg.anon) {
-            status.textContent = "Status: Sync not configured.";
-            linkBtn.disabled = true;
-            linkBtn.style.opacity = "0.6";
-            return;
-          }
-          status.textContent = "Status: Checking sign-in…";
           try {
             const client = await getSupabaseClient();
-            if (!client) {
-              status.textContent = "Status: Sign-in service unavailable.";
-              return;
+            if (!client) { status.textContent = "Status: Sign-in unavailable."; setAuthUi(false); return; }
+
+            if (!rqSupabaseAuthListenerAttached && client.auth && client.auth.onAuthStateChange) {
+              rqSupabaseAuthListenerAttached = true;
+              try {
+                client.auth.onAuthStateChange(function () {
+                  if (state && state.activeTab === "account") renderAccount();
+                });
+              } catch (e) { /* ignore */ }
             }
+
             const userRes = await client.auth.getUser();
             const user = userRes && userRes.data ? userRes.data.user : null;
-            if (user && user.email) {
-              status.textContent = "Status: Signed in as " + user.email;
-              signOutBtn.style.display = "inline-flex";
-            } else {
-              status.textContent = "Status: Not signed in.";
-              signOutBtn.style.display = "none";
-            }
+            setAuthUi(!!(user && user.email), user && user.email ? user.email : "");
           } catch (e) {
             console.error(e);
             status.textContent = "Status: Couldn’t check sign-in.";
+            // Allow retry by showing fields.
+            setAuthUi(false);
           }
         })();
       }
