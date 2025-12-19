@@ -1,7 +1,7 @@
 /* ReelQuest service worker (network-first for navigation)
    Keeps the app loading after updates, and caches TMDB + images opportunistically.
 */
-const VERSION = "rq-sw-v29";
+const VERSION = "rq-sw-v28";
 const SHELL = [
   "./",
   "./index.html",
@@ -76,7 +76,7 @@ self.addEventListener("fetch", (event) => {
   }
 
   // App assets: cache-first
-  if (sameOrigin && (url.pathname.endsWith(".png") || url.pathname.endsWith(".webmanifest") || url.pathname.endsWith(".js") || url.pathname.endsWith(".html"))) {
+  if (sameOrigin && (url.pathname.endsWith(".png") || url.pathname.endsWith(".webmanifest") || url.pathname.endsWith(".js"))) {
     event.respondWith(cacheFirst(req));
     return;
   }
