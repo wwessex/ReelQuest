@@ -254,6 +254,45 @@
       pointer-events: none;
     }
 
+
+/* Tag autocomplete */
+
+.tag-ac-wrap {
+  position: relative;
+  flex: 1 1 220px;
+  min-width: 220px;
+}
+
+.tag-suggest {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 6px);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: 14px;
+  box-shadow: var(--shadow-soft);
+  padding: 6px;
+  z-index: 80;
+  max-height: 200px;
+  overflow: auto;
+  display: none;
+}
+
+.tag-suggest-item {
+  padding: 8px 10px;
+  border-radius: 10px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-main);
+  user-select: none;
+}
+
+.tag-suggest-item:hover,
+.tag-suggest-item.active {
+  background: var(--bg-soft);
+}
+
     /* Controls bar */
 
     .controls-bar {
@@ -6920,7 +6959,8 @@ if (linked.inWatchlist && !linked.watched) {
 
 
 
-// Tags
+
+// Tags (with autocomplete from existing tags)
 const tagRow = document.createElement("div");
 tagRow.className = "organise-row";
 tagRow.style.flexWrap = "wrap";
@@ -6928,34 +6968,195 @@ tagRow.style.gap = "8px";
 tagRow.style.alignItems = "center";
 tagRow.style.marginTop = "10px";
 
+const tagWrap = document.createElement("div");
+tagWrap.className = "tag-ac-wrap";
+
 const tagsInput = document.createElement("input");
 tagsInput.type = "text";
 tagsInput.className = "search-input";
 tagsInput.placeholder = "Tags (comma-separated)…";
 tagsInput.style.borderRadius = "14px";
 tagsInput.style.paddingLeft = "14px";
-tagsInput.style.flex = "1 1 220px";
+tagsInput.style.width = "100%";
 tagsInput.value = Array.isArray(linked.tags) ? linked.tags.join(", ") : "";
+
+const suggestBox = document.createElement("div");
+suggestBox.className = "tag-suggest";
+
+tagWrap.appendChild(tagsInput);
+tagWrap.appendChild(suggestBox);
 
 const tagsSave = document.createElement("button");
 tagsSave.type = "button";
 tagsSave.className = "pill-btn";
 tagsSave.textContent = "Save tags";
-tagsSave.addEventListener("click", function () {
-  const raw = String(tagsInput.value || "");
-  const parts = raw.split(",");
-  const next = [];
+
+function parseTagsText(raw) {
+  const parts = String(raw || "").split(",");
+  const out = [];
   for (let i = 0; i < parts.length; i++) {
-    const t = parts[i].trim();
-    if (t) next.push(t);
+    const t = String(parts[i] || "").trim();
+    if (t) out.push(t);
   }
+  return out;
+}
+
+function collectExistingTags() {
+  const seen = {};
+  const out = [];
+  const items = state && Array.isArray(state.items) ? state.items : [];
+  for (let i = 0; i < items.length; i++) {
+    const it = items[i];
+    const tags = it && Array.isArray(it.tags) ? it.tags : [];
+    for (let j = 0; j < tags.length; j++) {
+      const t = String(tags[j] || "").trim();
+      if (!t) continue;
+      const key = t.toLowerCase();
+      if (!seen[key]) {
+        seen[key] = true;
+        out.push(t);
+      }
+    }
+  }
+  out.sort(function (a, b) { return a.localeCompare(b); });
+  return out;
+}
+
+let activeIndex = -1;
+let activeValues = [];
+
+function hideSuggestions() {
+  suggestBox.style.display = "none";
+  suggestBox.innerHTML = "";
+  activeIndex = -1;
+  activeValues = [];
+}
+
+function highlightActive() {
+  const kids = suggestBox.querySelectorAll(".tag-suggest-item");
+  for (let i = 0; i < kids.length; i++) {
+    if (i === activeIndex) kids[i].classList.add("active");
+    else kids[i].classList.remove("active");
+  }
+}
+
+function applySuggestion(value) {
+  const raw = String(tagsInput.value || "");
+  const comma = raw.lastIndexOf(",");
+  const head = comma === -1 ? "" : raw.slice(0, comma);
+  const existing = comma === -1 ? [] : parseTagsText(head);
+  existing.push(value);
+
+  // De-dupe case-insensitive (keep first casing)
+  const seen = {};
+  const out = [];
+  for (let i = 0; i < existing.length; i++) {
+    const t = String(existing[i] || "").trim();
+    if (!t) continue;
+    const k = t.toLowerCase();
+    if (!seen[k]) { seen[k] = true; out.push(t); }
+  }
+
+  tagsInput.value = out.join(", ") + ", ";
+  hideSuggestions();
+  tagsInput.focus();
+}
+
+function renderSuggestions() {
+  const raw = String(tagsInput.value || "");
+  const comma = raw.lastIndexOf(",");
+  const tokenRaw = comma === -1 ? raw : raw.slice(comma + 1);
+  const token = String(tokenRaw || "").trim().toLowerCase();
+
+  const chosen = {};
+  const chosenArr = parseTagsText(raw);
+  for (let i = 0; i < chosenArr.length; i++) {
+    chosen[chosenArr[i].toLowerCase()] = true;
+  }
+
+  const all = collectExistingTags();
+  const matches = [];
+  for (let i = 0; i < all.length; i++) {
+    const t = all[i];
+    const key = t.toLowerCase();
+    if (chosen[key]) continue;
+    if (!token || key.indexOf(token) !== -1) matches.push(t);
+    if (matches.length >= 10) break;
+  }
+
+  if (!matches.length) {
+    hideSuggestions();
+    return;
+  }
+
+  suggestBox.innerHTML = "";
+  activeValues = matches.slice();
+  activeIndex = 0;
+
+  for (let i = 0; i < matches.length; i++) {
+    const v = matches[i];
+    const item = document.createElement("div");
+    item.className = "tag-suggest-item";
+    item.textContent = v;
+
+    // Use mousedown so the input doesn't lose focus before we apply
+    item.addEventListener("mousedown", function (e) {
+      e.preventDefault();
+      applySuggestion(v);
+    });
+
+    suggestBox.appendChild(item);
+  }
+
+  suggestBox.style.display = "block";
+  highlightActive();
+}
+
+tagsInput.addEventListener("input", function () {
+  renderSuggestions();
+});
+
+tagsInput.addEventListener("focus", function () {
+  renderSuggestions();
+});
+
+tagsInput.addEventListener("blur", function () {
+  setTimeout(function () {
+    if (!tagWrap.contains(document.activeElement)) hideSuggestions();
+  }, 120);
+});
+
+tagsInput.addEventListener("keydown", function (e) {
+  if (suggestBox.style.display !== "block") return;
+
+  if (e.key === "ArrowDown") {
+    e.preventDefault();
+    activeIndex = Math.min(activeValues.length - 1, activeIndex + 1);
+    highlightActive();
+  } else if (e.key === "ArrowUp") {
+    e.preventDefault();
+    activeIndex = Math.max(0, activeIndex - 1);
+    highlightActive();
+  } else if (e.key === "Enter" || e.key === "Tab") {
+    if (activeIndex >= 0 && activeIndex < activeValues.length) {
+      e.preventDefault();
+      applySuggestion(activeValues[activeIndex]);
+    }
+  } else if (e.key === "Escape") {
+    e.preventDefault();
+    hideSuggestions();
+  }
+});
+
+tagsSave.addEventListener("click", function () {
+  const next = parseTagsText(tagsInput.value || "");
   linked.tags = next;
   saveState();
   render();
   alertNice("Tags saved.");
 });
 
-tagRow.appendChild(tagsInput);
+tagRow.appendChild(tagWrap);
 tagRow.appendChild(tagsSave);
 orgGrid.appendChild(tagRow);
 
