@@ -5396,6 +5396,7 @@ function moveEntryInList(listId, entryKeyValue, direction) {
       let rqSupabaseClient = null;
       let rqSupabaseClientKey = "";
       let rqSupabaseLoading = null;
+      let rqSupabaseAuthListenerAttached = false;
 
       function getSupabaseConfig() {
         // Use baked-in defaults, but allow overrides for development via localStorage.
