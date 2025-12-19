@@ -3828,6 +3828,286 @@ function handleIncomingSharedList() {
 
 
 
+
+/* =========================
+   Share Image Card (Canvas)
+   ========================= */
+
+function rqShareEntriesFromViews(views) {
+  const out = [];
+  for (let i = 0; i < views.length; i++) {
+    const v = views[i];
+    if (!v) continue;
+
+    if (v.mode === "local" && v.item) {
+      const it = v.item;
+      out.push({
+        title: it.title || "Untitled",
+        year: it.year || "",
+        posterPath: it.posterPath || null,
+        mediaType: normaliseMediaType(it.mediaType || "movie")
+      });
+      continue;
+    }
+
+    if (v.mode === "remote" && v.tmdbMovie) {
+      const t = v.tmdbMovie;
+      const mt = inferMediaTypeFromTmdb(t, v.mediaType || "movie");
+      const title = t.title || t.name || "Untitled";
+      const d = t.release_date || t.first_air_date || "";
+      const year = (typeof d === "string" && d.length >= 4) ? d.slice(0, 4) : "";
+      out.push({
+        title: title,
+        year: year,
+        posterPath: t.poster_path || null,
+        mediaType: normaliseMediaType(mt || "movie")
+      });
+    }
+  }
+  return out;
+}
+
+function rqPosterUrl(posterPath) {
+  if (!posterPath) return null;
+  return "https://image.tmdb.org/t/p/w342" + posterPath;
+}
+
+async function rqLoadCanvasImage(url) {
+  if (!url) return null;
+  // Prefer fetch->blob: keeps canvas exportable if CORS allows it.
+  try {
+    const r = await fetch(url, { mode: "cors", cache: "force-cache" });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const blob = await r.blob();
+    if (typeof createImageBitmap === "function") {
+      return await createImageBitmap(blob);
+    }
+    const objUrl = URL.createObjectURL(blob);
+    const img = await new Promise(function (resolve) {
+      const im = new Image();
+      im.onload = function () { resolve(im); };
+      im.onerror = function () { resolve(null); };
+      im.src = objUrl;
+    });
+    try { URL.revokeObjectURL(objUrl); } catch (e) {}
+    return img;
+  } catch (e) {
+    // Fallback: Image element direct (may taint; we handle that on export)
+    return await new Promise(function (resolve) {
+      const im = new Image();
+      im.crossOrigin = "anonymous";
+      im.onload = function () { resolve(im); };
+      im.onerror = function () { resolve(null); };
+      im.src = url;
+    });
+  }
+}
+
+function rqRoundRectPath(ctx, x, y, w, h, r) {
+  const rr = Math.max(0, Math.min(r || 0, Math.min(w, h) / 2));
+  ctx.beginPath();
+  ctx.moveTo(x + rr, y);
+  ctx.arcTo(x + w, y, x + w, y + h, rr);
+  ctx.arcTo(x + w, y + h, x, y + h, rr);
+  ctx.arcTo(x, y + h, x, y, rr);
+  ctx.arcTo(x, y, x + w, y, rr);
+  ctx.closePath();
+}
+
+function rqDrawTextFit(ctx, text, x, y, maxW) {
+  const t = String(text || "");
+  if (!t) return;
+  let s = t;
+  while (ctx.measureText(s).width > maxW && s.length > 2) s = s.slice(0, -1);
+  if (s !== t) s = s.slice(0, Math.max(0, s.length - 1)) + "…";
+  ctx.fillText(s, x, y);
+}
+
+async function rqRenderShareCard(entries, title, subtitle, size) {
+  const W = 1080;
+  const H = (size === "story") ? 1920 : (size === "square" ? 1080 : 1350);
+
+  const canvas = document.createElement("canvas");
+  canvas.width = W;
+  canvas.height = H;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("Canvas unsupported");
+
+  // Background
+  const g = ctx.createLinearGradient(0, 0, W, H);
+  g.addColorStop(0, "#0b0f1a");
+  g.addColorStop(0.55, "#0a1324");
+  g.addColorStop(1, "#070a12");
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, H);
+
+  const pad = 54;
+  const headerH = 180;
+
+  // Title
+  ctx.fillStyle = "rgba(255,255,255,0.95)";
+  ctx.font = "900 56px system-ui, -apple-system, Segoe UI, Roboto, Arial";
+  rqDrawTextFit(ctx, title || "ReelQuest", pad, 92, W - pad * 2);
+
+  ctx.fillStyle = "rgba(255,255,255,0.75)";
+  ctx.font = "700 30px system-ui, -apple-system, Segoe UI, Roboto, Arial";
+  if (subtitle) rqDrawTextFit(ctx, subtitle, pad, 138, W - pad * 2);
+
+  // Grid
+  const cols = 4;
+  const rows = 3;
+  const gap = 18;
+  const cellW = (W - pad * 2 - gap * (cols - 1)) / cols;
+  const cellH = cellW * 1.5;
+  const max = cols * rows;
+  const picked = entries.slice(0, max);
+
+  // Load images (limited)
+  const imgs = new Array(picked.length).fill(null);
+  let idx = 0;
+  const cap = 6;
+  async function worker() {
+    while (idx < picked.length) {
+      const my = idx++;
+      imgs[my] = await rqLoadCanvasImage(rqPosterUrl(picked[my].posterPath));
+    }
+  }
+  const ws = [];
+  for (let i = 0; i < cap; i++) ws.push(worker());
+  await Promise.all(ws);
+
+  const r = 18;
+  const top = headerH + 28;
+
+  for (let i = 0; i < picked.length; i++) {
+    const col = i % cols;
+    const row = Math.floor(i / cols);
+    const x = pad + col * (cellW + gap);
+    const y = top + row * (cellH + gap);
+
+    // frame
+    ctx.save();
+    ctx.shadowColor = "rgba(0,0,0,0.55)";
+    ctx.shadowBlur = 18;
+    ctx.shadowOffsetY = 10;
+    ctx.fillStyle = "rgba(255,255,255,0.08)";
+    rqRoundRectPath(ctx, x, y, cellW, cellH, r);
+    ctx.fill();
+    ctx.restore();
+
+    // clip
+    ctx.save();
+    rqRoundRectPath(ctx, x, y, cellW, cellH, r);
+    ctx.clip();
+
+    const img = imgs[i];
+    if (img) {
+      const iw = img.width || cellW;
+      const ih = img.height || cellH;
+      const scale = Math.max(cellW / iw, cellH / ih);
+      const dw = iw * scale;
+      const dh = ih * scale;
+      const dx = x + (cellW - dw) / 2;
+      const dy = y + (cellH - dh) / 2;
+      ctx.drawImage(img, dx, dy, dw, dh);
+    } else {
+      ctx.fillStyle = "rgba(255,255,255,0.10)";
+      ctx.fillRect(x, y, cellW, cellH);
+    }
+    ctx.restore();
+
+    // caption overlay
+    ctx.save();
+    rqRoundRectPath(ctx, x, y, cellW, cellH, r);
+    ctx.clip();
+    const gg = ctx.createLinearGradient(0, y + cellH * 0.55, 0, y + cellH);
+    gg.addColorStop(0, "rgba(0,0,0,0)");
+    gg.addColorStop(1, "rgba(0,0,0,0.62)");
+    ctx.fillStyle = gg;
+    ctx.fillRect(x, y, cellW, cellH);
+    ctx.restore();
+
+    ctx.fillStyle = "rgba(255,255,255,0.95)";
+    ctx.font = "800 20px system-ui, -apple-system, Segoe UI, Roboto, Arial";
+    rqDrawTextFit(ctx, picked[i].title || "Untitled", x + 14, y + cellH - 20, cellW - 28);
+  }
+
+  // Footer
+  const region = (state && state.country) ? String(state.country).toUpperCase() : "";
+  const d = new Date();
+  const stamp = String(d.getDate()).padStart(2, "0") + "/" + String(d.getMonth() + 1).padStart(2, "0") + "/" + d.getFullYear();
+  ctx.fillStyle = "rgba(255,255,255,0.55)";
+  ctx.font = "700 26px system-ui, -apple-system, Segoe UI, Roboto, Arial";
+  const meta = (region ? ("Region: " + region + " • ") : "") + "Generated: " + stamp;
+  rqDrawTextFit(ctx, meta, pad, H - 30, W - pad * 2);
+
+  return canvas;
+}
+
+async function rqCanvasToPngBlob(canvas) {
+  return await new Promise(function (resolve) {
+    try {
+      canvas.toBlob(function (b) { resolve(b || null); }, "image/png", 0.92);
+    } catch (e) {
+      resolve(null);
+    }
+  });
+}
+
+async function shareImageCardForCurrentContext(customTitle) {
+  const views = (state.activeTab === "lists" && state.listsUi && state.listsUi.mode === "detail")
+    ? getViewsForActiveList()
+    : getViewItemsForCurrentTab();
+
+  const entries = rqShareEntriesFromViews(views);
+  if (!entries.length) {
+    alertNice("Nothing to share here.");
+    return;
+  }
+
+  const title = String(customTitle || (state.activeTab === "watchlist" ? "My Watchlist" : "My List"));
+  const subtitle = String(entries.length) + " titles";
+
+  let canvas = await rqRenderShareCard(entries, title, subtitle, "portrait");
+  let blob = await rqCanvasToPngBlob(canvas);
+
+  // If export failed (likely tainted by CORS), re-render without images.
+  if (!blob) {
+    const safe = entries.map(function (e) { return { title: e.title, year: e.year, posterPath: null, mediaType: e.mediaType }; });
+    canvas = await rqRenderShareCard(safe, title, subtitle, "portrait");
+    blob = await rqCanvasToPngBlob(canvas);
+  }
+
+  if (!blob) {
+    alertNice("Sorry — we couldn’t generate the image on this device.");
+    return;
+  }
+
+  const filename = "reelquest-" + slugifyFilename(title) + ".png";
+  const file = new File([blob], filename, { type: "image/png" });
+
+  if (navigator.share && (!navigator.canShare || navigator.canShare({ files: [file] }))) {
+    try {
+      await navigator.share({ title: title, files: [file] });
+      return;
+    } catch (e) {
+      // fall through to download
+    }
+  }
+
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(function () { try { URL.revokeObjectURL(url); } catch (e) {} }, 250);
+  toast("Image downloaded.");
+}
+
+
+
 async function pickFromWatchlist() {
   // Build watchlist views (local) and apply current filters/search
   const views = getViewItemsForCurrentTab();
@@ -5705,6 +5985,15 @@ shareBtn.addEventListener("click", function () {
   shareList(list.id);
 });
 
+const shareImgBtn = document.createElement("button");
+shareImgBtn.type = "button";
+shareImgBtn.className = "pill-btn";
+shareImgBtn.textContent = "Share image";
+shareImgBtn.addEventListener("click", function () {
+  // Generates a poster-grid image and opens the native share sheet when available.
+  shareImageCardForCurrentContext(list && list.name ? list.name : "List");
+});
+
 const exportListBtn = document.createElement("button");
 exportListBtn.type = "button";
 exportListBtn.className = "pill-btn";
@@ -5714,6 +6003,7 @@ exportListBtn.addEventListener("click", function () {
 });
 
   right.appendChild(shareBtn);
+  right.appendChild(shareImgBtn);
   right.appendChild(exportListBtn);
 
   right.appendChild(deleteBtn);
@@ -6336,6 +6626,16 @@ if (item.notes && String(item.notes).trim()) {
           shareBtn.textContent = "Share watchlist";
           shareBtn.addEventListener("click", shareWatchlist);
           container.appendChild(shareBtn);
+
+
+          const shareImgBtn = document.createElement("button");
+          shareImgBtn.type = "button";
+          shareImgBtn.className = "pill-btn";
+          shareImgBtn.textContent = "Share image";
+          shareImgBtn.addEventListener("click", function () {
+            shareImageCardForCurrentContext("My Watchlist");
+          });
+          container.appendChild(shareImgBtn);
 
 const pickBtn = document.createElement("button");
 pickBtn.type = "button";
