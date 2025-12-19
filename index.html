@@ -777,6 +777,50 @@
     }
 
   
+    
+    .menu-section {
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid var(--border-subtle);
+    }
+    .menu-subtitle {
+      font-size: 12px;
+      opacity: 0.75;
+      padding: 0 2px 8px 2px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .menu-pinned-items {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .menu-pinned-item {
+      width: 100%;
+      text-align: left;
+      border-radius: 14px;
+      border: 1px solid var(--border-subtle);
+      background: var(--bg);
+      color: var(--text-main);
+      padding: 10px 12px;
+      font-size: 13px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      transition: transform 0.08s ease, box-shadow 0.15s ease, background 0.15s ease;
+    }
+    .menu-pinned-item:active { transform: translateY(1px) scale(0.99); }
+    .menu-pinned-item .name {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      min-width: 0;
+    }
+    .menu-pinned-item .chev { opacity: 0.7; }
+
+
     /* Hidden file input (must not be display:none on iOS) */
     .file-input-hidden {
       position: fixed;
@@ -808,6 +852,31 @@
       gap: 10px;
       min-width: 0;
       flex: 1 1 auto;
+    }
+
+    .list-row.reorderable {
+      touch-action: none;
+    }
+
+    .list-drag-handle {
+      width: 32px;
+      height: 32px;
+      border-radius: 12px;
+      border: 1px solid var(--border-subtle);
+      background: var(--chip-bg);
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: grab;
+      user-select: none;
+      flex: 0 0 auto;
+    }
+    .list-drag-handle:active { cursor: grabbing; transform: translateY(1px); }
+
+    .list-row.dragging {
+      opacity: 0.75;
+      outline: 1px dashed var(--border-subtle);
     }
 
     .list-cover {
@@ -1419,6 +1488,10 @@
 <button class="menu-item" data-tab="watched" type="button">Watched</button>
 <button class="menu-item" data-tab="lists" type="button">Lists</button>
 <button class="menu-item" data-tab="settings" type="button">Settings</button>
+</div>
+<div class="menu-section" id="menu-pinned-section" style="display:none">
+  <div class="menu-subtitle">Pinned lists</div>
+  <div class="menu-pinned-items" id="menu-pinned-items"></div>
 </div>
 </div>
 </div>
@@ -4471,6 +4544,164 @@ function togglePinList(listId) {
   render();
 }
 
+
+function toggleListsIndexReorderMode() {
+  const ui = state.listsUi || { mode: "index", activeListId: null, reorderMode: false };
+  if (ui.mode !== "index") return;
+  ui.reorderMode = !ui.reorderMode;
+  state.listsUi = ui;
+  saveState();
+  render();
+}
+
+function rebuildListsOrderFromPanel(panel) {
+  if (!panel) return;
+  const rows = panel.querySelectorAll(".list-row[data-list-id]");
+  const pinnedIds = [];
+  const unpinnedIds = [];
+  for (let i = 0; i < rows.length; i++) {
+    const id = rows[i].dataset.listId;
+    const l = getListById(id);
+    if (!l) continue;
+    if (l.pinned) pinnedIds.push(id);
+    else unpinnedIds.push(id);
+  }
+
+  const byId = {};
+  for (let i = 0; i < state.lists.length; i++) byId[state.lists[i].id] = state.lists[i];
+
+  const next = [];
+  for (let i = 0; i < pinnedIds.length; i++) {
+    const l = byId[pinnedIds[i]];
+    if (l) {
+      next.push(l);
+      delete byId[pinnedIds[i]];
+    }
+  }
+  for (let i = 0; i < unpinnedIds.length; i++) {
+    const l = byId[unpinnedIds[i]];
+    if (l) {
+      next.push(l);
+      delete byId[unpinnedIds[i]];
+    }
+  }
+  // Any leftovers (shouldn't happen) are appended.
+  for (const k in byId) next.push(byId[k]);
+
+  state.lists = next;
+}
+
+function attachListsIndexDragHandlers(panel) {
+  if (!panel) return;
+  const handles = panel.querySelectorAll(".list-drag-handle");
+  if (!handles || !handles.length) return;
+
+  let draggingRow = null;
+  let pointerId = null;
+
+  function onMove(e) {
+    if (!draggingRow) return;
+    const el = document.elementFromPoint(e.clientX, e.clientY);
+    const target = el ? el.closest(".list-row.reorderable") : null;
+    if (!target || target === draggingRow) return;
+
+    const dragId = draggingRow.dataset.listId;
+    const targetId = target.dataset.listId;
+    const a = getListById(dragId);
+    const b = getListById(targetId);
+    if (!a || !b) return;
+
+    // Don't drag between pinned/unpinned groups (they'll just snap back).
+    if (!!a.pinned !== !!b.pinned) return;
+
+    const rect = target.getBoundingClientRect();
+    const before = e.clientY < rect.top + rect.height / 2;
+    if (before) {
+      target.parentNode.insertBefore(draggingRow, target);
+    } else {
+      target.parentNode.insertBefore(draggingRow, target.nextSibling);
+    }
+  }
+
+  function endDrag() {
+    if (!draggingRow) return;
+    draggingRow.classList.remove("dragging");
+    try { draggingRow.releasePointerCapture(pointerId); } catch (_) {}
+    draggingRow = null;
+    pointerId = null;
+    rebuildListsOrderFromPanel(panel);
+    saveState();
+    render();
+  }
+
+  for (let i = 0; i < handles.length; i++) {
+    const h = handles[i];
+    h.addEventListener("pointerdown", function (e) {
+      if (e.button !== undefined && e.button !== 0) return;
+      const row = h.closest(".list-row.reorderable");
+      if (!row) return;
+      draggingRow = row;
+      pointerId = e.pointerId;
+      row.classList.add("dragging");
+      try { row.setPointerCapture(pointerId); } catch (_) {}
+      e.preventDefault();
+    });
+
+    h.addEventListener("pointermove", function (e) {
+      if (!draggingRow) return;
+      if (e.pointerId !== pointerId) return;
+      onMove(e);
+    });
+
+    h.addEventListener("pointerup", function (e) {
+      if (e.pointerId !== pointerId) return;
+      endDrag();
+    });
+
+    h.addEventListener("pointercancel", function (e) {
+      if (e.pointerId !== pointerId) return;
+      endDrag();
+    });
+  }
+}
+
+function renderMenuPinnedLists() {
+  const section = document.getElementById("menu-pinned-section");
+  const container = document.getElementById("menu-pinned-items");
+  if (!section || !container) return;
+  container.innerHTML = "";
+  const pinned = state.lists.filter((l) => !!l.pinned);
+  if (!pinned.length) {
+    section.style.display = "none";
+    return;
+  }
+  section.style.display = "block";
+  // Preserve current list order
+  const idxById = {};
+  for (let i = 0; i < state.lists.length; i++) idxById[state.lists[i].id] = i;
+  pinned.sort((a, b) => (idxById[a.id] ?? 0) - (idxById[b.id] ?? 0));
+
+  for (let i = 0; i < pinned.length; i++) {
+    const l = pinned[i];
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "menu-pinned-item";
+    const left = document.createElement("div");
+    left.className = "name";
+    left.textContent = l.name || "Untitled list";
+    const chev = document.createElement("div");
+    chev.className = "chev";
+    chev.textContent = "›";
+    btn.appendChild(left);
+    btn.appendChild(chev);
+    btn.addEventListener("click", function () {
+      closeMenu();
+      openList(l.id);
+    });
+    container.appendChild(btn);
+  }
+}
+
 function editListDescription(listId) {
   const list = getListById(listId);
   if (!list) return;
@@ -4859,6 +5090,15 @@ function moveEntryInList(listId, entryKeyValue, direction) {
 
     tools.appendChild(importListBtn);
 
+    const reorderBtn = document.createElement("button");
+    reorderBtn.type = "button";
+    reorderBtn.className = "pill-btn";
+    reorderBtn.textContent = ui.reorderMode ? "Done reordering" : "Reorder lists";
+    reorderBtn.addEventListener("click", function () {
+      toggleListsIndexReorderMode();
+    });
+    tools.appendChild(reorderBtn);
+
     panel.appendChild(tools);
 
     const listHeading = document.createElement("div");
@@ -4875,13 +5115,15 @@ function moveEntryInList(listId, entryKeyValue, direction) {
       return;
     }
 
-    // Pinned lists first, then alphabetical
+    // Pinned lists first, then your custom order
     const lists = state.lists.slice();
+    const idxById = {};
+    for (let i = 0; i < state.lists.length; i++) idxById[state.lists[i].id] = i;
     lists.sort(function (a, b) {
       const ap = a.pinned ? 1 : 0;
       const bp = b.pinned ? 1 : 0;
       if (ap !== bp) return bp - ap;
-      return String(a.name || "").localeCompare(String(b.name || ""), "en-GB");
+      return (idxById[a.id] ?? 0) - (idxById[b.id] ?? 0);
     });
 
     for (let i = 0; i < lists.length; i++) {
@@ -4892,6 +5134,18 @@ function moveEntryInList(listId, entryKeyValue, direction) {
 
       const left = document.createElement("div");
       left.className = "list-left";
+
+      if (ui.reorderMode) {
+        row.classList.add("reorderable");
+        row.dataset.listId = l.id;
+
+        const handle = document.createElement("div");
+        handle.className = "list-drag-handle";
+        handle.textContent = "≡";
+        handle.title = "Drag to reorder";
+        handle.dataset.listId = l.id;
+        left.appendChild(handle);
+      }
 
       const cover = document.createElement("div");
       cover.className = "list-cover";
@@ -4976,6 +5230,10 @@ function moveEntryInList(listId, entryKeyValue, direction) {
       row.appendChild(left);
       row.appendChild(actions);
       panel.appendChild(row);
+    }
+
+    if (ui.reorderMode) {
+      attachListsIndexDragHandlers(panel);
     }
 
     return;
@@ -6647,6 +6905,7 @@ els.detailActions.appendChild(orgWrap);
         els.menuOverlay.classList.remove("hidden");
         els.menuOverlay.setAttribute("aria-hidden", "false");
         updateMenuActiveState();
+        renderMenuPinnedLists();
       }
 
       function closeMenu() {
