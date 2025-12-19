@@ -1237,7 +1237,6 @@
       <button class="tab-btn" data-tab="watched">Watched</button>
       <button class="tab-btn" data-tab="rewatch">Rewatch</button>
       <button class="tab-btn" data-tab="lists">Lists</button>
-      <button class="tab-btn" data-tab="account">Account</button>
     </nav>
 
     <main>
@@ -1291,7 +1290,6 @@
       </div>
 
       <div id="settings-panel" class="settings-panel"></div>
-      <div id="account-panel" class="settings-panel"></div>
       <div id="lists-panel" class="settings-panel"></div>
 
       <input id="import-input" type="file" accept="application/json" class="file-input-hidden" />
@@ -1340,170 +1338,14 @@
         <button class="menu-item" type="button" data-tab="watchlist">Watchlist</button>
         <button class="menu-item" type="button" data-tab="watched">Watched</button>
         <button class="menu-item" type="button" data-tab="lists">Lists</button>
-        <button class="menu-item" type="button" data-tab="account">Account</button>
         <button class="menu-item" type="button" data-tab="settings">Settings</button>
       </div>
     </div>
   </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-
-<script>
+  <script>
 (function () {
       const TMDB_API_KEY = "b24323f85318cb1b12fd1ea0a94420de";
-
-
-// Supabase (optional): add your project URL + anon key here to enable cloud login + sync.
-// Get these from Supabase: Project Settings → API.
-// ⚠️ Keep Row Level Security enabled on your table (see SQL notes in Account tab).
-const SUPABASE_URL = "https://cemwsthdhlvznjqwtdzp.supabase.co"; // e.g. "https://xxxx.supabase.co"
-const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNlbXdzdGhkaGx2em5qcXd0ZHpwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjYwOTUzMDAsImV4cCI6MjA4MTY3MTMwMH0.20U2AIdTTHKKzqbJy_42oSB_Ob8aR9dhGA7ks0g5Edg"; // anon public key
-
-const sb = (SUPABASE_URL && SUPABASE_ANON_KEY && window.supabase)
-  ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
-  : null;
-
-const CLOUD_TABLE = "reelquest_user_data"; // You create this table in Supabase
-
-let cloudSaveTimer = null;
-let cloudBusy = false;
-let cloudLastError = "";
-
-function isCloudEnabled() {
-  return !!(sb && state.cloud && state.cloud.enabled && state.user);
-}
-
-function scheduleCloudSave() {
-  if (!isCloudEnabled()) return;
-  if (cloudSaveTimer) clearTimeout(cloudSaveTimer);
-  cloudSaveTimer = setTimeout(function () {
-    cloudSaveTimer = null;
-    cloudSaveNow("auto");
-  }, 1200);
-}
-
-async function cloudSaveNow(reason) {
-  if (!isCloudEnabled()) return;
-  if (cloudBusy) return;
-  cloudBusy = true;
-  cloudLastError = "";
-
-  try {
-    const payload = buildExportPayload();
-    payload.meta = payload.meta || {};
-    payload.meta.lastModified = state.lastModified || Date.now();
-    payload.meta.reason = reason || "manual";
-
-    const row = {
-      user_id: state.user.id,
-      data: payload,
-      updated_at: new Date().toISOString()
-    };
-
-    const res = await sb.from(CLOUD_TABLE).upsert(row, { onConflict: "user_id" });
-    if (res && res.error) throw res.error;
-
-    state.cloud.lastSyncedAt = Date.now();
-    saveStateLocalOnly();
-    render();
-  } catch (err) {
-    cloudLastError = String((err && err.message) || err || "Unknown error");
-    console.error(err);
-    render();
-  } finally {
-    cloudBusy = false;
-  }
-}
-
-async function cloudFetchRow() {
-  if (!sb || !state.user) return null;
-  const res = await sb.from(CLOUD_TABLE).select("data, updated_at").eq("user_id", state.user.id).maybeSingle();
-  if (res && res.error) throw res.error;
-  return res && res.data ? res.data : null;
-}
-
-async function cloudSyncOnLogin() {
-  if (!isCloudEnabled()) return;
-  cloudBusy = true;
-  cloudLastError = "";
-  try {
-    const cloudRow = await cloudFetchRow();
-    const cloudPayload = cloudRow && cloudRow.data ? cloudRow.data : null;
-
-    const localLm = state.lastModified || 0;
-    const cloudLm = (cloudPayload && cloudPayload.meta && cloudPayload.meta.lastModified) ? Number(cloudPayload.meta.lastModified) : 0;
-
-    const localHasData = !!(state.items && state.items.length) || !!(state.lists && state.lists.length);
-    const cloudHasData = !!(cloudPayload && cloudPayload.data && ((cloudPayload.data.items && cloudPayload.data.items.length) || (cloudPayload.data.lists && cloudPayload.data.lists.length)));
-
-    if (!cloudPayload) {
-      await cloudSaveNow("first-push");
-      return;
-    }
-
-    if (!localHasData && cloudHasData) {
-      applyImportedData(cloudPayload);
-      state.cloud.lastSyncedAt = Date.now();
-      saveState();
-      render();
-      toast("Loaded your ReelQuest data from the cloud.");
-      return;
-    }
-
-    if (cloudLm > localLm + 30000) {
-      applyImportedData(cloudPayload);
-      state.cloud.lastSyncedAt = Date.now();
-      saveState();
-      render();
-      toast("Cloud data was newer — loaded it.");
-      return;
-    }
-
-    if (localLm > cloudLm + 30000) {
-      await cloudSaveNow("push-newer-local");
-      toast("This device was newer — saved it to the cloud.");
-      return;
-    }
-
-    const doMerge = window.confirm("ReelQuest found data on this device and in the cloud. Press OK to MERGE them, or Cancel to keep this device's data.");
-    if (doMerge) {
-      mergeImportedData(cloudPayload);
-      state.cloud.lastSyncedAt = Date.now();
-      saveState();
-      await cloudSaveNow("merge");
-      toast("Merged with cloud data.");
-    } else {
-      await cloudSaveNow("keep-local");
-      toast("Kept this device's data and saved it to the cloud.");
-    }
-  } catch (err) {
-    cloudLastError = String((err && err.message) || err || "Unknown error");
-    console.error(err);
-  } finally {
-    cloudBusy = false;
-    render();
-  }
-}
-
-async function signUpEmailPassword(email, password) {
-  if (!sb) return;
-  const res = await sb.auth.signUp({ email: email, password: password });
-  if (res && res.error) throw res.error;
-  return res.data;
-}
-
-async function signInEmailPassword(email, password) {
-  if (!sb) return;
-  const res = await sb.auth.signInWithPassword({ email: email, password: password });
-  if (res && res.error) throw res.error;
-  return res.data;
-}
-
-async function signOutCloud() {
-  if (!sb) return;
-  const res = await sb.auth.signOut();
-  if (res && res.error) throw res.error;
-}
 
       const GENRES = [
         { id: 28, name: "Action" },
@@ -1604,10 +1446,7 @@ function yearFromTmdb(obj) {
         theme: "dark",
         detailsCache: {},
         ui: { selectionMode: false, selectedKeys: [] },
-        lastTmdbStatus: "",
-        lastModified: 0,
-        user: null,
-        cloud: { enabled: true, lastSyncedAt: 0 }
+        lastTmdbStatus: ""
       };
 
       function updateDebug(msg) {
@@ -1674,9 +1513,6 @@ function formatDateUK(ts) {
           if (typeof parsed.includeTv === "boolean") {
             state.includeTv = parsed.includeTv;
           }
-          if (typeof parsed.lastModified === "number") { state.lastModified = parsed.lastModified; }
-          if (parsed.cloud && typeof parsed.cloud === "object") { state.cloud = Object.assign({ enabled: true, lastSyncedAt: 0 }, parsed.cloud); }
-          if (parsed.user && typeof parsed.user === "object") { state.user = parsed.user; }
 
 if (parsed.ui && typeof parsed.ui === "object") {
   state.ui = {
@@ -1772,35 +1608,7 @@ function alertNice(message) {
   toast(message);
 }
 
-      
-function saveStateLocalOnly() {
-  try {
-    const payload = {
-      activeTab: state.activeTab,
-      favouriteGenres: state.favouriteGenres,
-      items: state.items,
-      lists: state.lists,
-      listsUi: state.listsUi,
-      sortBy: state.sortBy,
-      minRating: state.minRating,
-      theme: state.theme,
-      country: state.country,
-      filters: state.filters,
-      includeTv: state.includeTv,
-      detailsCache: state.detailsCache,
-      ui: state.ui,
-      lastModified: state.lastModified,
-      cloud: state.cloud,
-      user: state.user
-    };
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
-  } catch (err) {
-    console.error(err);
-  }
-}
-
-function saveState() {
-  state.lastModified = Date.now();
+      function saveState() {
         try {
           localStorage.setItem(
             STORAGE_KEY,
@@ -1817,9 +1625,7 @@ function saveState() {
         } catch (e) {
           console.warn("Failed to save ReelQuest state", e);
         }
-      
-  scheduleCloudSave();
-}
+      }
 
 
 function cacheSet(key, value) {
@@ -3389,169 +3195,7 @@ async function pickFromWatchlist() {
         }
       }
 
-      
-
-      function renderAccount() {
-        if (!els.accountPanel) return;
-
-        const configured = !!(sb && SUPABASE_URL && SUPABASE_ANON_KEY);
-        const signedIn = !!(state.user && state.user.id);
-
-        const statusLine = signedIn
-          ? ("Signed in as " + (state.user.email || "user") + ".")
-          : "Not signed in.";
-
-        const syncLine = (!configured)
-          ? "Supabase is not configured in this file yet."
-          : (signedIn ? ("Cloud sync is " + ((state.cloud && state.cloud.enabled) ? "on" : "off") + ".") : "Sign in to enable cloud sync.");
-
-        const err = cloudLastError ? ("<div class=\"hint danger\">" + escapeHtml(cloudLastError) + "</div>") : "";
-        const busy = cloudBusy ? "<div class=\"hint\">Syncing…</div>" : "";
-
-        els.accountPanel.innerHTML = `
-          <div class="settings-title">Account</div>
-          <div class="hint">${escapeHtml(statusLine)}</div>
-          <div class="hint">${escapeHtml(syncLine)}</div>
-          ${busy}
-          ${err}
-
-          <div class="settings-grid" style="margin-top: 12px;">
-            <div class="settings-row">
-              <div class="settings-row-title">Cloud sync</div>
-              <div class="settings-row-desc">Store your ReelQuest data in the cloud so it follows you across devices.</div>
-              <div class="settings-row-actions">
-                <button class="btn ${(!configured || !signedIn) ? "disabled" : ""}" id="cloud-toggle-btn" type="button">
-                  ${(state.cloud && state.cloud.enabled) ? "On" : "Off"}
-                </button>
-                <button class="btn ${(!configured || !signedIn) ? "disabled" : ""}" id="cloud-sync-btn" type="button">
-                  Sync now
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <div class="settings-grid" style="margin-top: 10px;">
-            <div class="settings-row">
-              <div class="settings-row-title">Sign in</div>
-              <div class="settings-row-desc">Use email + password.</div>
-              <div class="settings-row-actions" style="flex-wrap: wrap; gap: 10px;">
-                <input id="auth-email" class="text-input" type="email" placeholder="Email" style="min-width: 220px;" />
-                <input id="auth-pass" class="text-input" type="password" placeholder="Password" style="min-width: 180px;" />
-                <button class="btn ${(!configured) ? "disabled" : ""}" id="auth-signin" type="button">Sign in</button>
-                <button class="btn ${(!configured) ? "disabled" : ""}" id="auth-signup" type="button">Sign up</button>
-                <button class="btn ${(!configured || !signedIn) ? "disabled" : ""}" id="auth-signout" type="button">Sign out</button>
-              </div>
-            </div>
-          </div>
-
-          <details class="settings-panel" style="margin-top: 12px;">
-            <summary style="cursor:pointer; font-weight: 700;">Supabase setup notes</summary>
-            <div class="hint" style="margin-top: 10px;">
-              <div><strong>1)</strong> Create a Supabase project and copy your <em>Project URL</em> + <em>anon public key</em> into this file (SUPABASE_URL / SUPABASE_ANON_KEY).</div>
-              <div style="margin-top: 10px;"><strong>2)</strong> Run this SQL in Supabase (SQL editor):</div>
-              <pre class="code">create table if not exists reelquest_user_data (
-  user_id uuid primary key references auth.users(id) on delete cascade,
-  data jsonb not null,
-  updated_at timestamptz not null default now()
-);
-
-alter table reelquest_user_data enable row level security;
-
-create policy "Users can read their own data"
-on reelquest_user_data for select
-using (auth.uid() = user_id);
-
-create policy "Users can upsert their own data"
-on reelquest_user_data for insert
-with check (auth.uid() = user_id);
-
-create policy "Users can update their own data"
-on reelquest_user_data for update
-using (auth.uid() = user_id)
-with check (auth.uid() = user_id);</pre>
-              <div class="hint" style="margin-top: 10px;">ReelQuest saves your export/import JSON into the cloud after you sign in.</div>
-            </div>
-          </details>
-        `;
-
-        const cloudToggle = document.getElementById("cloud-toggle-btn");
-        const syncBtn = document.getElementById("cloud-sync-btn");
-        const emailEl = document.getElementById("auth-email");
-        const passEl = document.getElementById("auth-pass");
-        const signInBtn = document.getElementById("auth-signin");
-        const signUpBtn = document.getElementById("auth-signup");
-        const signOutBtn = document.getElementById("auth-signout");
-
-        if (cloudToggle) {
-          cloudToggle.addEventListener("click", function () {
-            if (!configured || !signedIn) return;
-            state.cloud.enabled = !state.cloud.enabled;
-            saveState();
-            render();
-          });
-        }
-
-        if (syncBtn) {
-          syncBtn.addEventListener("click", function () {
-            if (!configured || !signedIn) return;
-            cloudSaveNow("manual");
-          });
-        }
-
-        function readCreds() {
-          return {
-            email: String((emailEl && emailEl.value) || "").trim(),
-            pass: String((passEl && passEl.value) || "")
-          };
-        }
-
-        if (signInBtn) {
-          signInBtn.addEventListener("click", async function () {
-            if (!configured) return;
-            const c = readCreds();
-            if (!c.email || !c.pass) { toast("Please enter email + password."); return; }
-            try {
-              await signInEmailPassword(c.email, c.pass);
-              toast("Signed in.");
-            } catch (err) {
-              toast("Sign in failed.");
-              cloudLastError = String((err && err.message) || err || "Unknown error");
-              render();
-            }
-          });
-        }
-
-        if (signUpBtn) {
-          signUpBtn.addEventListener("click", async function () {
-            if (!configured) return;
-            const c = readCreds();
-            if (!c.email || !c.pass) { toast("Please enter email + password."); return; }
-            try {
-              await signUpEmailPassword(c.email, c.pass);
-              toast("Account created. If email confirmation is enabled, check your inbox.");
-            } catch (err) {
-              toast("Sign up failed.");
-              cloudLastError = String((err && err.message) || err || "Unknown error");
-              render();
-            }
-          });
-        }
-
-        if (signOutBtn) {
-          signOutBtn.addEventListener("click", async function () {
-            if (!configured || !signedIn) return;
-            try {
-              await signOutCloud();
-              toast("Signed out.");
-            } catch (err) {
-              cloudLastError = String((err && err.message) || err || "Unknown error");
-              render();
-            }
-          });
-        }
-      }
-
-function renderSettings() {
+      function renderSettings() {
         const panel = els.settingsPanel;
         panel.innerHTML = "";
 
@@ -3812,7 +3456,6 @@ tvBtn.addEventListener("click", function () {
         });
 
         filterRow.appendChild(minYearWrap);
-        filterRow.appendChild(tvBtn);
         filterRow.appendChild(hideWatchedBtn);
         filterRow.appendChild(hideWatchlistBtn);
 
@@ -4810,10 +4453,6 @@ exportListBtn.addEventListener("click", function () {
           title = "Lists";
           subtitle = "Create and curate your own collections.";
           placeholder = "Search within your lists…";
-        } else if (state.activeTab === "account") {
-          title = "Account";
-          subtitle = "Sign in to sync your ReelQuest across devices.";
-          placeholder = "Search is not used in Account.";
         } else if (state.activeTab === "settings") {
           title = "Settings";
           subtitle = "Tune ReelQuest to your taste.";
@@ -5240,26 +4879,12 @@ container.appendChild(pickBtn);
         if (els.sortSelect) els.sortSelect.value = state.sortBy;
         if (els.ratingFilterSelect) els.ratingFilterSelect.value = String(state.minRating);
 
-        if (state.activeTab === "account") {
-          els.searchForm.style.display = "none";
-          els.controlsBar.style.display = "none";
-          els.message.style.display = "none";
-          els.grid.style.display = "none";
-          if (els.settingsPanel) els.settingsPanel.style.display = "none";
-          if (els.listsPanel) els.listsPanel.style.display = "none";
-          if (els.accountPanel) els.accountPanel.style.display = "block";
-          renderAccount();
-          if (state.lastTmdbStatus) updateDebug(state.lastTmdbStatus);
-          return;
-        }
-
         if (state.activeTab === "settings") {
           els.searchForm.style.display = "none";
           els.controlsBar.style.display = "none";
           els.message.style.display = "none";
           els.grid.style.display = "none";
           els.settingsPanel.style.display = "block";
-          if (els.accountPanel) els.accountPanel.style.display = "none";
           if (els.listsPanel) els.listsPanel.style.display = "none";
           renderSettings();
           renderListActions();
@@ -5275,7 +4900,6 @@ container.appendChild(pickBtn);
           els.settingsPanel.style.display = "none";
         if (els.listsPanel) els.listsPanel.style.display = "none";
           els.listsPanel.style.display = "block";
-          if (els.accountPanel) els.accountPanel.style.display = "none";
           renderListsPanel();
 
           if (state.listsUi && state.listsUi.mode === "detail") {
@@ -6530,7 +6154,6 @@ function init() {
           message: document.getElementById("message"),
           grid: document.getElementById("card-grid"),
           settingsPanel: document.getElementById("settings-panel"),
-          accountPanel: document.getElementById("account-panel"),
           listsPanel: document.getElementById("lists-panel"),
           debug: document.getElementById("debug"),
           controlsBar: document.getElementById("controls-bar"),
@@ -6559,24 +6182,7 @@ function init() {
         handleIncomingSharedList();
         migrateItemsMediaType();
         applyTheme();
-        
-// Supabase auth binding (optional)
-if (sb) {
-  sb.auth.getSession().then(function (res) {
-    const sess = res && res.data ? res.data.session : null;
-    state.user = sess && sess.user ? { id: sess.user.id, email: sess.user.email } : null;
-    saveStateLocalOnly();
-    render();
-    if (state.user && state.cloud && state.cloud.enabled) cloudSyncOnLogin();
-  });
-
-  sb.auth.onAuthStateChange(function (_event, session) {
-    state.user = session && session.user ? { id: session.user.id, email: session.user.email } : null;
-    saveStateLocalOnly();
-    render();
-    if (state.user && state.cloud && state.cloud.enabled) cloudSyncOnLogin();
-  });
-}        render();
+        render();
 
         // Initial load for the starting tab
         if (state.activeTab === "discover") {
