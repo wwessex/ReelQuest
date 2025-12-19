@@ -3841,11 +3841,18 @@ function rqShareEntriesFromViews(views) {
 
     if (v.mode === "local" && v.item) {
       const it = v.item;
+      const mt = normaliseMediaType(it.mediaType || "movie");
+      // Local items may come from TVDB or TMDB; prefer TMDB poster_path when available.
+      const tid = (it.tmdbId != null && it.tmdbId !== "") ? Number(it.tmdbId) : null;
+      const tmdbId = (typeof tid === "number" && isFinite(tid)) ? tid : null;
+
       out.push({
-        title: it.title || "Untitled",
+        title: it.title || it.name || "Untitled",
         year: it.year || "",
-        posterPath: it.posterPath || null,
-        mediaType: normaliseMediaType(it.mediaType || "movie")
+        tmdbId: tmdbId,
+        posterPath: it.posterPath || it.tmdbPosterPath || it.poster_path || null,
+        posterUrl: it.posterUrl || it.poster || it.image || it.posterURL || null,
+        mediaType: mt
       });
       continue;
     }
@@ -3859,7 +3866,9 @@ function rqShareEntriesFromViews(views) {
       out.push({
         title: title,
         year: year,
+        tmdbId: (t && t.id != null) ? Number(t.id) : null,
         posterPath: t.poster_path || null,
+        posterUrl: null,
         mediaType: normaliseMediaType(mt || "movie")
       });
     }
@@ -3869,7 +3878,73 @@ function rqShareEntriesFromViews(views) {
 
 function rqPosterUrl(posterPath) {
   if (!posterPath) return null;
-  return "https://image.tmdb.org/t/p/w342" + posterPath;
+  const p = String(posterPath);
+  // Accept full URLs / data URLs
+  if (p.startsWith("http://") || p.startsWith("https://") || p.startsWith("data:")) return p;
+  // Accept TMDB-style /path
+  if (p.startsWith("/")) return "https://image.tmdb.org/t/p/w342" + p;
+  // Otherwise, treat as a URL-like string
+  return p;
+}
+
+function rqEntryPosterUrl(entry) {
+  if (!entry) return null;
+  return rqPosterUrl(entry.posterPath) || rqPosterUrl(entry.posterUrl) || null;
+}
+
+
+async function rqHydrateShareEntries(entries) {
+  // Best-effort: if entries don't have posters (common for TVDB-backed local items),
+  // pull poster_path from TMDB using tmdbId and cache it.
+  try { state.sharePosterCache = state.sharePosterCache || {}; } catch (e) {}
+  const cache = (state && state.sharePosterCache) ? state.sharePosterCache : {};
+  const cc = (state && state.country) ? String(state.country).toUpperCase() : "GB";
+
+  const need = [];
+  for (let i = 0; i < entries.length; i++) {
+    const e = entries[i];
+    if (!e) continue;
+    if (e.posterPath || e.posterUrl) continue;
+    const id = (e.tmdbId != null && isFinite(Number(e.tmdbId))) ? Number(e.tmdbId) : null;
+    if (!id) continue;
+    const key = String(e.mediaType || "movie") + ":" + String(id);
+    if (cache[key]) {
+      e.posterPath = cache[key];
+      continue;
+    }
+    need.push({ e: e, key: key, id: id });
+  }
+
+  if (!need.length) return;
+
+  // Simple concurrency limit to keep it quick on mobile
+  const limit = 4;
+  let idx = 0;
+  async function worker() {
+    while (idx < need.length) {
+      const cur = need[idx++];
+      try {
+        if (typeof TMDB_API_KEY !== "string" || !TMDB_API_KEY) continue;
+        const path = (cur.e.mediaType === "tv") ? "tv" : "movie";
+        const url = new URL("https://api.themoviedb.org/3/" + path + "/" + cur.id);
+        url.searchParams.set("api_key", TMDB_API_KEY);
+        // language/region not required for poster_path, but keep consistent
+        if (cc) url.searchParams.set("region", cc);
+        const data = await tmdbFetch(url);
+        const pp = data && data.poster_path ? data.poster_path : null;
+        if (pp) {
+          cur.e.posterPath = pp;
+          cache[cur.key] = pp;
+        }
+      } catch (e) {
+        // ignore
+      }
+    }
+  }
+  const workers = [];
+  for (let i = 0; i < limit; i++) workers.push(worker());
+  await Promise.all(workers);
+  try { saveState(); } catch (e) {}
 }
 
 async function rqLoadCanvasImage(url) {
@@ -3969,7 +4044,7 @@ async function rqRenderShareCard(entries, title, subtitle, size) {
   async function worker() {
     while (idx < picked.length) {
       const my = idx++;
-      imgs[my] = await rqLoadCanvasImage(rqPosterUrl(picked[my].posterPath));
+      imgs[my] = await rqLoadCanvasImage(rqEntryPosterUrl(picked[my]));
     }
   }
   const ws = [];
@@ -4065,7 +4140,9 @@ async function shareImageCardForCurrentContext(customTitle) {
     return;
   }
 
-  const title = String(customTitle || (state.activeTab === "watchlist" ? "My Watchlist" : "My List"));
+  
+  await rqHydrateShareEntries(entries);
+const title = String(customTitle || (state.activeTab === "watchlist" ? "My Watchlist" : "My List"));
   const subtitle = String(entries.length) + " titles";
 
   let canvas = await rqRenderShareCard(entries, title, subtitle, "portrait");
