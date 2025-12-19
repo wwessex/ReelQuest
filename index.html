@@ -5389,6 +5389,10 @@ function moveEntryInList(listId, entryKeyValue, direction) {
       // -------- Account (basic config + sign-in stub) --------
       // This prevents the Account tab rendering blank.
       // Data sync can be wired up later once auth + tables are ready.
+      // Backend config is intentionally not shown in the UI. It can be overridden via localStorage keys:
+      // rq_supabase_url and rq_supabase_anon (for development).
+      const DEFAULT_SUPABASE_URL = "https://cemwsthdhlvznjqwtdzp.supabase.co";
+      const DEFAULT_SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNlbXdzdGhkaGx2em5qcXd0ZHpwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjYwOTUzMDAsImV4cCI6MjA4MTY3MTMwMH0.20U2AIdTTHKKzqbJy_42oSB_Ob8aR9dhGA7ks0g5Edg";
       let rqSupabaseClient = null;
       let rqSupabaseClientKey = "";
       let rqSupabaseLoading = null;
@@ -5437,10 +5441,10 @@ function moveEntryInList(listId, entryKeyValue, direction) {
         return rqSupabaseClient;
       }
 
+      
       function renderAccount() {
         const panel = els.accountPanel;
         if (!panel) return;
-
         panel.innerHTML = "";
 
         const heading = document.createElement("h2");
@@ -5449,66 +5453,22 @@ function moveEntryInList(listId, entryKeyValue, direction) {
 
         const copy = document.createElement("p");
         copy.className = "settings-copy";
-        copy.textContent = "Sign in to sync your ReelQuest across devices. (Sync storage is a follow-up step — this page now works.)";
-
-        const cfg = getSupabaseConfig();
-
-        const sub = document.createElement("div");
-        sub.className = "settings-subheading";
-        sub.textContent = "Supabase connection";
-
-        const urlLabel = document.createElement("label");
-        urlLabel.className = "settings-label";
-        urlLabel.textContent = "Project URL";
-        const urlInput = document.createElement("input");
-        urlInput.className = "search-input";
-        urlInput.placeholder = "https://xxxx.supabase.co";
-        urlInput.value = cfg.url || "";
-        urlLabel.appendChild(urlInput);
-
-        const keyLabel = document.createElement("label");
-        keyLabel.className = "settings-label";
-        keyLabel.textContent = "Anon key";
-        const keyInput = document.createElement("input");
-        keyInput.className = "search-input";
-        keyInput.type = "password";
-        keyInput.placeholder = "Paste anon public key";
-        keyInput.value = cfg.anon || "";
-        keyLabel.appendChild(keyInput);
-
-        const row = document.createElement("div");
-        row.style.display = "flex";
-        row.style.flexWrap = "wrap";
-        row.style.gap = "10px";
-        row.style.alignItems = "center";
-
-        const saveBtn = document.createElement("button");
-        saveBtn.type = "button";
-        saveBtn.className = "pill-btn";
-        saveBtn.textContent = "Save connection";
-        saveBtn.addEventListener("click", function () {
-          setSupabaseConfig(urlInput.value, keyInput.value);
-          toast("Saved.");
-          renderAccount();
-        });
+        copy.textContent = "Sign in to sync your ReelQuest across devices.";
 
         const status = document.createElement("div");
         status.className = "settings-copy";
         status.style.marginTop = "10px";
-        status.textContent = (!cfg.url || !cfg.anon)
-          ? "Status: Not configured yet."
-          : "Status: Checking sign-in…";
 
         const authSub = document.createElement("div");
         authSub.className = "settings-subheading";
         authSub.style.marginTop = "14px";
         authSub.textContent = "Sign in";
 
-        const emailWrap = document.createElement("div");
-        emailWrap.style.display = "flex";
-        emailWrap.style.flexWrap = "wrap";
-        emailWrap.style.gap = "10px";
-        emailWrap.style.alignItems = "center";
+        const wrap = document.createElement("div");
+        wrap.style.display = "flex";
+        wrap.style.flexWrap = "wrap";
+        wrap.style.gap = "10px";
+        wrap.style.alignItems = "center";
 
         const emailInput = document.createElement("input");
         emailInput.className = "search-input";
@@ -5528,17 +5488,20 @@ function moveEntryInList(listId, entryKeyValue, direction) {
         signOutBtn.textContent = "Sign out";
         signOutBtn.style.display = "none";
 
-        saveBtn.style.marginRight = "6px";
-        row.appendChild(saveBtn);
+        wrap.appendChild(emailInput);
+        wrap.appendChild(linkBtn);
+        wrap.appendChild(signOutBtn);
 
-        emailWrap.appendChild(emailInput);
-        emailWrap.appendChild(linkBtn);
-        emailWrap.appendChild(signOutBtn);
+        panel.appendChild(heading);
+        panel.appendChild(copy);
+        panel.appendChild(status);
+        panel.appendChild(authSub);
+        panel.appendChild(wrap);
 
         linkBtn.addEventListener("click", async function () {
-          const cfg2 = getSupabaseConfig();
-          if (!cfg2.url || !cfg2.anon) {
-            alertNice("Add your Supabase Project URL + anon key first.");
+          const cfg = getSupabaseConfig();
+          if (!cfg.url || !cfg.anon) {
+            alertNice("Account sync is not configured in this build.");
             return;
           }
           const email = String(emailInput.value || "").trim();
@@ -5550,13 +5513,13 @@ function moveEntryInList(listId, entryKeyValue, direction) {
             const client = await getSupabaseClient();
             if (!client) throw new Error("Supabase client not available");
             await client.auth.signInWithOtp({
-              email,
+              email: email,
               options: { emailRedirectTo: (location.origin + location.pathname) }
             });
             toast("Magic link sent.");
           } catch (e) {
             console.error(e);
-            alertNice("Couldn’t send the magic link. Check the URL/key and try again.");
+            alertNice("Couldn’t send the magic link. Try again in a moment.");
           }
         });
 
@@ -5573,39 +5536,36 @@ function moveEntryInList(listId, entryKeyValue, direction) {
           }
         });
 
-        panel.appendChild(heading);
-        panel.appendChild(copy);
-        panel.appendChild(sub);
-        panel.appendChild(urlLabel);
-        panel.appendChild(keyLabel);
-        panel.appendChild(row);
-        panel.appendChild(status);
-        panel.appendChild(authSub);
-        panel.appendChild(emailWrap);
-
-        // Async: update sign-in status if configured
-        if (cfg.url && cfg.anon) {
-          (async function () {
-            try {
-              const client = await getSupabaseClient();
-              if (!client) { status.textContent = "Status: Supabase client failed to load."; return; }
-
-              const userRes = await client.auth.getUser();
-              const user = userRes && userRes.data ? userRes.data.user : null;
-
-              if (user && user.email) {
-                status.textContent = "Status: Signed in as " + user.email;
-                signOutBtn.style.display = "inline-flex";
-              } else {
-                status.textContent = "Status: Not signed in.";
-                signOutBtn.style.display = "none";
-              }
-            } catch (e) {
-              console.error(e);
-              status.textContent = "Status: Couldn’t check sign-in (URL/key may be wrong).";
+        // Async: update sign-in status
+        (async function () {
+          const cfg = getSupabaseConfig();
+          if (!cfg.url || !cfg.anon) {
+            status.textContent = "Status: Sync not configured.";
+            linkBtn.disabled = true;
+            linkBtn.style.opacity = "0.6";
+            return;
+          }
+          status.textContent = "Status: Checking sign-in…";
+          try {
+            const client = await getSupabaseClient();
+            if (!client) {
+              status.textContent = "Status: Sign-in service unavailable.";
+              return;
             }
-          })();
-        }
+            const userRes = await client.auth.getUser();
+            const user = userRes && userRes.data ? userRes.data.user : null;
+            if (user && user.email) {
+              status.textContent = "Status: Signed in as " + user.email;
+              signOutBtn.style.display = "inline-flex";
+            } else {
+              status.textContent = "Status: Not signed in.";
+              signOutBtn.style.display = "none";
+            }
+          } catch (e) {
+            console.error(e);
+            status.textContent = "Status: Couldn’t check sign-in.";
+          }
+        })();
       }
 
 function renderListsPanel() {
