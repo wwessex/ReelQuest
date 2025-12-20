@@ -4360,25 +4360,8 @@ panel.appendChild(appRow);
         countrySelect.style.borderRadius = "14px";
         countrySelect.style.padding = "8px 12px";
 
-        const COUNTRIES = [
-          ["GB", "United Kingdom"],
-          ["IE", "Ireland"],
-          ["US", "United States"],
-          ["CA", "Canada"],
-          ["AU", "Australia"],
-          ["NZ", "New Zealand"],
-          ["FR", "France"],
-          ["DE", "Germany"],
-          ["ES", "Spain"],
-          ["IT", "Italy"],
-          ["NL", "Netherlands"],
-          ["SE", "Sweden"],
-          ["NO", "Norway"],
-          ["DK", "Denmark"],
-          ["FI", "Finland"],
-          ["BE", "Belgium"],
-          ["CH", "Switzerland"]
-        ];
+        
+        const COUNTRIES = rqGetCountryOptions();
 
         for (let i = 0; i < COUNTRIES.length; i++) {
           const opt = document.createElement("option");
@@ -4388,9 +4371,12 @@ panel.appendChild(appRow);
         }
 
         countrySelect.value = (state.country || "GB").toUpperCase();
+        els.prefCountrySelect = countrySelect;
         countrySelect.addEventListener("change", function (e) {
           state.country = String(e.target.value || "GB").toUpperCase();
           saveState();
+          // Keep the signed-in profile country in sync (best-effort)
+          rqTrySyncCountryToProfile(state.country);
           // Refresh Radar immediately, and update provider info next time details are opened
           if (state.activeTab === "radar") {
             loadRadarUpcoming();
@@ -4886,6 +4872,65 @@ function normaliseCountryCode(v, fallback) {
   const fb = String(fallback || "").trim().toUpperCase();
   return /^[A-Z]{2}$/.test(fb) ? fb : "GB";
 }
+
+function rqGetCountryOptions() {
+  // Shared country list for Preferences + Profile (kept small + sensible defaults).
+  return [
+    ["GB", "United Kingdom"],
+    ["IE", "Ireland"],
+    ["US", "United States"],
+    ["CA", "Canada"],
+    ["AU", "Australia"],
+    ["NZ", "New Zealand"],
+    ["FR", "France"],
+    ["DE", "Germany"],
+    ["ES", "Spain"],
+    ["IT", "Italy"],
+    ["NL", "Netherlands"],
+    ["SE", "Sweden"],
+    ["NO", "Norway"],
+    ["DK", "Denmark"],
+    ["FI", "Finland"],
+    ["BE", "Belgium"],
+    ["CH", "Switzerland"]
+  ];
+}
+
+async function rqTrySyncCountryToProfile(countryCode) {
+  // Best-effort: keep profile.country_region aligned with Preferences.
+  // Silent failure (so auth/profile can never break the app).
+  try {
+    const u = (typeof rqCurrentUser !== "undefined") ? rqCurrentUser : null;
+    if (!u || !u.id) return;
+    const client = await getSupabaseClient();
+    if (!client) return;
+
+    const cc = normaliseCountryCode(countryCode, "GB");
+    const payload = { id: u.id, email: u.email || null, country_region: cc };
+
+    const res = await client
+      .from("profiles")
+      .upsert(payload, { onConflict: "id" })
+      .select("id, display_name, avatar_url, country_region")
+      .maybeSingle();
+
+    if (res && res.error) return;
+
+    const updated = res ? res.data : null;
+    if (updated) {
+      rqCurrentProfile = Object.assign({}, rqCurrentProfile || {}, updated);
+      rqSetHeaderUserChip(u, rqCurrentProfile);
+
+      // If Account/Profile UI is currently rendered, mirror the value there too.
+      if (els && els.profileCountrySelect) {
+        try { els.profileCountrySelect.value = cc; } catch (e) {}
+      }
+    }
+  } catch (e) {
+    // ignore
+  }
+}
+
 
 function splitCsv(str) {
   if (!str) return [];
@@ -5571,6 +5616,22 @@ function moveEntryInList(listId, entryKeyValue, direction) {
           rqCurrentUser = user;
           rqCurrentProfile = profile;
           rqSetHeaderUserChip(user, profile);
+          // Keep Preferences country in sync with the signed-in profile (if present).
+          try {
+            if (profile && profile.country_region) {
+              const cc = normaliseCountryCode(profile.country_region, state && state.country ? state.country : "GB");
+              if (state && cc && cc !== state.country) {
+                state.country = cc;
+                saveState();
+              }
+              if (els && els.prefCountrySelect) {
+                els.prefCountrySelect.value = cc;
+              }
+              if (els && els.profileCountrySelect) {
+                els.profileCountrySelect.value = cc;
+              }
+            }
+          } catch (e) { /* ignore */ }
           return { user: user, profile: profile };
         } catch (e) {
           rqCurrentUser = null;
@@ -5846,10 +5907,34 @@ function moveEntryInList(listId, entryKeyValue, direction) {
         const countryLabel = document.createElement("label");
         countryLabel.className = "settings-label";
         countryLabel.textContent = "Country / region";
-        const countryInput = document.createElement("input");
-        countryInput.className = "search-input";
-        countryInput.placeholder = "e.g. UK";
-        countryLabel.appendChild(countryInput);
+        const countrySelect = document.createElement("select");
+        countrySelect.className = "controls-select";
+        countrySelect.style.width = "100%";
+        countrySelect.style.borderRadius = "14px";
+        countrySelect.style.padding = "10px 12px";
+
+        const COUNTRIES = rqGetCountryOptions();
+        for (let i = 0; i < COUNTRIES.length; i++) {
+          const opt = document.createElement("option");
+          opt.value = COUNTRIES[i][0];
+          opt.textContent = COUNTRIES[i][1];
+          countrySelect.appendChild(opt);
+        }
+
+        // Keep a reference for cross-panel syncing
+        els.profileCountrySelect = countrySelect;
+
+        countryLabel.appendChild(countrySelect);
+
+        countrySelect.addEventListener("change", function () {
+          const cc = normaliseCountryCode(countrySelect.value, state.country || "GB");
+          state.country = cc;
+          saveState();
+          if (els && els.prefCountrySelect) {
+            try { els.prefCountrySelect.value = cc; } catch (e) {}
+          }
+          // We do NOT auto-save the profile here — user still clicks “Save profile”.
+        });
 
         const saveRow = document.createElement("div");
         saveRow.style.display = "flex";
@@ -5886,7 +5971,7 @@ function moveEntryInList(listId, entryKeyValue, direction) {
             rqApplyAvatarToEl(avatarImg, "", "");
             displayNameInput.value = "";
             avatarUrlInput.value = "";
-            countryInput.value = "";
+            try { countrySelect.value = (state.country || "GB").toUpperCase(); } catch (e) {}
             saveHint.textContent = "";
             return;
           }
@@ -5897,7 +5982,8 @@ function moveEntryInList(listId, entryKeyValue, direction) {
           rqApplyAvatarToEl(avatarImg, profile ? profile.avatar_url : "", name);
           displayNameInput.value = profile && profile.display_name ? String(profile.display_name) : "";
           avatarUrlInput.value = profile && profile.avatar_url ? String(profile.avatar_url) : "";
-          countryInput.value = profile && profile.country_region ? String(profile.country_region) : "";
+          const cc = normaliseCountryCode((profile && profile.country_region) ? profile.country_region : "", state.country || "GB");
+          countrySelect.value = cc;
           saveHint.textContent = "";
         }
 
@@ -5912,7 +5998,7 @@ function moveEntryInList(listId, entryKeyValue, direction) {
               email: user.email || null,
               display_name: String(displayNameInput.value || "").trim() || null,
               avatar_url: String(avatarUrlInput.value || "").trim() || null,
-              country_region: String(countryInput.value || "").trim() || null
+              country_region: String(countrySelect.value || "").trim() || null
             };
             const res = await client.from("profiles")
               .upsert(payload, { onConflict: "id" })
@@ -5925,6 +6011,13 @@ function moveEntryInList(listId, entryKeyValue, direction) {
             rqSetHeaderUserChip(user, rqCurrentProfile);
             applyProfileToUi(user, rqCurrentProfile);
             saveHint.textContent = "Saved.";
+            // Keep Preferences country aligned with profile
+            try {
+              const cc = normaliseCountryCode((rqCurrentProfile && rqCurrentProfile.country_region) ? rqCurrentProfile.country_region : payload.country_region, state.country || "GB");
+              state.country = cc;
+              saveState();
+              if (els && els.prefCountrySelect) els.prefCountrySelect.value = cc;
+            } catch (e) {}
             toast("Profile saved");
           } catch (e) {
             console.error(e);
