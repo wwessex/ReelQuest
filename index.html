@@ -1197,57 +1197,6 @@
   margin: 0;
 }
 
-
-/* Settings: Competitive analysis */
-.rq-details{
-  margin-top:12px;
-  padding:12px 12px 10px;
-  border-radius:16px;
-  background: rgba(255,255,255,0.02);
-  border: 1px solid var(--border-subtle);
-}
-.rq-details > summary{
-  cursor:pointer;
-  font-weight:600;
-  user-select:none;
-  list-style:none;
-}
-.rq-details > summary::-webkit-details-marker{ display:none; }
-.rq-details > summary::before{
-  content:"▸";
-  display:inline-block;
-  margin-right:8px;
-  opacity:0.8;
-}
-.rq-details[open] > summary::before{ content:"▾"; }
-.rq-details-body{
-  margin-top:10px;
-}
-.rq-miniheading{
-  margin-top:12px;
-  font-weight:600;
-  font-size:14px;
-}
-.rq-table{
-  width:100%;
-  border-collapse:separate;
-  border-spacing:0;
-  margin-top:10px;
-  font-size:13px;
-}
-.rq-table th, .rq-table td{
-  padding:8px 10px;
-  border-top:1px solid var(--border-subtle);
-  vertical-align:top;
-}
-.rq-table th{
-  color: var(--text-muted);
-  font-weight:600;
-}
-.rq-table tr:first-child th{ border-top:none; }
-.rq-table td{
-  color: var(--text);
-}
 /* Micro-interactions */
 .pill-btn, .card-btn, .tab-btn, .menu-item {
   transition: transform 100ms ease, filter 100ms ease, border-color 120ms ease;
@@ -2360,7 +2309,8 @@ function alertNice(message) {
         } catch (e) {
           console.warn("Failed to save ReelQuest state", e);
         }
-      }
+        try { maybeAutoBackupSnapshot(); } catch (e) {}
+}
 
 
 function cacheSet(key, value) {
@@ -3671,6 +3621,460 @@ function downloadJson(filename, obj) {
   setTimeout(function () { URL.revokeObjectURL(url); }, 250);
 }
 
+function downloadText(filename, text, mime) {
+  const blob = new Blob([text], { type: mime || "text/plain" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(function () { URL.revokeObjectURL(url); }, 250);
+}
+
+function csvEscape(val) {
+  const s = String(val == null ? "" : val);
+  if (/[",\n\r]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+  return s;
+}
+
+function itemsToCsv(items) {
+  const headers = [
+    "mediaType",
+    "tmdbId",
+    "title",
+    "year",
+    "inWatchlist",
+    "watched",
+    "watchedAt",
+    "userRating",
+    "status",
+    "priority",
+    "tags",
+    "notes",
+    "createdAt"
+  ];
+
+  const lines = [headers.join(",")];
+
+  for (let i = 0; i < items.length; i++) {
+    const it = items[i] || {};
+    const tags = Array.isArray(it.tags) ? it.tags.join("|") : "";
+    const row = [
+      it.mediaType || "movie",
+      (it.tmdbId != null ? it.tmdbId : ""),
+      it.title || "",
+      it.year || "",
+      it.inWatchlist ? "1" : "0",
+      it.watched ? "1" : "0",
+      it.watchedAt ? new Date(it.watchedAt).toISOString() : "",
+      (typeof it.userRating === "number" ? it.userRating : ""),
+      it.status || "",
+      it.priority || "",
+      tags,
+      it.notes || "",
+      it.createdAt ? new Date(it.createdAt).toISOString() : ""
+    ];
+    lines.push(row.map(csvEscape).join(","));
+  }
+
+  return lines.join("\n");
+}
+
+function exportItemsToCsvFile() {
+  const stamp = new Date();
+  const yyyy = stamp.getFullYear();
+  const mm = String(stamp.getMonth() + 1).padStart(2, "0");
+  const dd = String(stamp.getDate()).padStart(2, "0");
+  const filename = "reelquest-items-" + yyyy + "-" + mm + "-" + dd + ".csv";
+
+  const csv = itemsToCsv(Array.isArray(state.items) ? state.items : []);
+  downloadText(filename, csv, "text/csv");
+  toast("Exported CSV.");
+}
+
+// --- CSV import (generic + IMDb) ---
+
+function parseCsv(text) {
+  // Minimal CSV parser that handles quoted fields and commas/newlines.
+  const rows = [];
+  let row = [];
+  let cur = "";
+  let i = 0;
+  let inQuotes = false;
+
+  while (i < text.length) {
+    const ch = text[i];
+
+    if (inQuotes) {
+      if (ch === '"') {
+        if (text[i + 1] === '"') { cur += '"'; i += 2; continue; }
+        inQuotes = false; i++; continue;
+      }
+      cur += ch; i++; continue;
+    }
+
+    if (ch === '"') { inQuotes = true; i++; continue; }
+    if (ch === ",") { row.push(cur); cur = ""; i++; continue; }
+    if (ch === "\r") { i++; continue; }
+    if (ch === "\n") { row.push(cur); rows.push(row); row = []; cur = ""; i++; continue; }
+
+    cur += ch; i++;
+  }
+  row.push(cur);
+  rows.push(row);
+
+  // Trim trailing empty rows
+  while (rows.length && rows[rows.length - 1].every(function (c) { return String(c || "").trim() === ""; })) {
+    rows.pop();
+  }
+  return rows;
+}
+
+function normaliseHeader(h) {
+  return String(h || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .replace(/[^a-z0-9 ]/g, "");
+}
+
+function detectImdbRatingsCsv(headers) {
+  // IMDb Ratings export usually includes "Title", "IMDb Rating", "Your Rating", "Title Type", "IMDb ID", "Year"
+  const h = headers.map(normaliseHeader);
+  const hasTitle = h.indexOf("title") !== -1;
+  const hasYourRating = h.indexOf("your rating") !== -1 || h.indexOf("yourrating") !== -1;
+  const hasImdbId = h.indexOf("imdb id") !== -1 || h.indexOf("imdbid") !== -1;
+  return hasTitle && (hasYourRating || hasImdbId);
+}
+
+async function tmdbSearchBestMatch(title, year, mediaTypeGuess) {
+  const t = String(title || "").trim();
+  if (!t) return null;
+
+  const isTv = mediaTypeGuess === "tv";
+  const url = new URL(isTv ? "https://api.themoviedb.org/3/search/tv" : "https://api.themoviedb.org/3/search/movie");
+  url.searchParams.set("api_key", TMDB_API_KEY);
+  url.searchParams.set("language", "en-GB");
+  url.searchParams.set("query", t);
+
+  const data = await tmdbFetch(url);
+  const results = Array.isArray(data && data.results) ? data.results : [];
+  if (!results.length) return null;
+
+  // Prefer exact year match if provided
+  const y = year ? (parseInt(year, 10) || 0) : 0;
+  if (y) {
+    for (let i = 0; i < results.length; i++) {
+      const r = results[i];
+      const d = isTv ? (r.first_air_date || "") : (r.release_date || "");
+      const ry = d ? (parseInt(String(d).slice(0, 4), 10) || 0) : 0;
+      if (ry === y) return r;
+    }
+  }
+
+  return results[0];
+}
+
+function upsertImportedItem(partial) {
+  const mt = normaliseMediaType(partial.mediaType || "movie");
+  const tid = toTmdbId(partial.tmdbId);
+  if (tid === null) return;
+
+  // Find existing
+  let existing = null;
+  for (let i = 0; i < state.items.length; i++) {
+    const it = state.items[i];
+    if (toTmdbId(it.tmdbId) === tid && normaliseMediaType(it.mediaType || "movie") === mt) {
+      existing = it;
+      break;
+    }
+  }
+
+  if (!existing) {
+    const fresh = {
+      id: safeId(),
+      tmdbId: tid,
+      mediaType: mt,
+      title: partial.title || "Untitled",
+      year: partial.year || "",
+      posterPath: partial.posterPath || null,
+      rating: partial.rating || null,
+      inWatchlist: !!partial.inWatchlist,
+      watched: !!partial.watched,
+      watchedAt: partial.watchedAt || (partial.watched ? Date.now() : null),
+      userRating: (typeof partial.userRating === "number" ? partial.userRating : null),
+      rewatch: !!partial.rewatch,
+      status: partial.status || null,
+      priority: partial.priority || "medium",
+      tags: Array.isArray(partial.tags) ? partial.tags : [],
+      notes: partial.notes || "",
+      createdAt: Date.now(),
+      addedAt: Date.now()
+    };
+    state.items.push(fresh);
+    return;
+  }
+
+  // Merge cautiously (don’t nuke existing notes/tags unless missing)
+  if (!existing.title && partial.title) existing.title = partial.title;
+  if (!existing.year && partial.year) existing.year = partial.year;
+  if (!existing.posterPath && partial.posterPath) existing.posterPath = partial.posterPath;
+
+  if (partial.inWatchlist) existing.inWatchlist = true;
+  if (partial.watched) {
+    existing.watched = true;
+    if (!existing.watchedAt) existing.watchedAt = partial.watchedAt || Date.now();
+    existing.inWatchlist = false;
+  }
+
+  if (typeof partial.userRating === "number" && typeof existing.userRating !== "number") {
+    existing.userRating = partial.userRating;
+  }
+
+  if (!existing.status && partial.status) existing.status = partial.status;
+  if (partial.priority && !existing.priority) existing.priority = partial.priority;
+
+  if ((!existing.tags || !existing.tags.length) && Array.isArray(partial.tags) && partial.tags.length) {
+    existing.tags = partial.tags;
+  }
+  if ((!existing.notes || !existing.notes.trim()) && partial.notes) existing.notes = partial.notes;
+}
+
+async function importFromCsvText(text) {
+  const rows = parseCsv(text);
+  if (!rows.length) {
+    alertNice("That CSV looks empty.");
+    return;
+  }
+
+  const headers = rows[0] || [];
+  const isImdb = detectImdbRatingsCsv(headers);
+
+  const mode = window.confirm(
+    isImdb
+      ? "IMDb CSV detected.\n\nOK = Import as Watched (rated items)\nCancel = Import as Watchlist"
+      : "How should we import this CSV?\n\nOK = Import as Watchlist\nCancel = Import as Watched"
+  );
+
+  const importAsWatched = isImdb ? mode : !mode;
+
+  // Build header map
+  const map = {};
+  for (let i = 0; i < headers.length; i++) {
+    map[normaliseHeader(headers[i])] = i;
+  }
+
+  function getCell(row, key) {
+    const idx = map[key];
+    if (typeof idx !== "number") return "";
+    return (row[idx] != null ? String(row[idx]) : "");
+  }
+
+  // IMDb-like columns
+  const keyTitle = "title";
+  const keyYear = map["year"] != null ? "year" : (map["release year"] != null ? "release year" : "year");
+  const keyTitleType = "title type";
+  const keyYourRating = "your rating";
+
+  // Generic ReelQuest CSV columns (we export these)
+  const hasTmdbId = map["tmdbid"] != null || map["tmdb id"] != null;
+  const tmdbKey = map["tmdb id"] != null ? "tmdb id" : "tmdbid";
+
+  let importedCount = 0;
+  let matchedCount = 0;
+
+  toast("Importing CSV…");
+
+  // Process rows sequentially (safer for rate limits)
+  for (let r = 1; r < rows.length; r++) {
+    const row = rows[r];
+    if (!row || !row.length) continue;
+
+    const rawTitle = getCell(row, keyTitle).trim();
+    const rawYear = getCell(row, keyYear).trim();
+
+    if (!rawTitle) continue;
+
+    // Guess media type
+    let mediaTypeGuess = "movie";
+    const tt = getCell(row, keyTitleType).toLowerCase();
+    if (tt.indexOf("tv") !== -1 || tt.indexOf("series") !== -1 || tt.indexOf("episode") !== -1) mediaTypeGuess = "tv";
+
+    // If the CSV has TMDB IDs (our own export), use them directly
+    if (hasTmdbId) {
+      const tmdbIdStr = getCell(row, tmdbKey).trim();
+      const tid = toTmdbId(tmdbIdStr);
+      if (tid !== null) {
+        upsertImportedItem({
+          tmdbId: tid,
+          mediaType: (getCell(row, "mediatype") || mediaTypeGuess || "movie"),
+          title: rawTitle,
+          year: rawYear,
+          inWatchlist: !!(getCell(row, "inwatchlist") === "1"),
+          watched: !!(getCell(row, "watched") === "1") || importAsWatched,
+          watchedAt: (function () {
+            const v = getCell(row, "watchedat");
+            const d = v ? Date.parse(v) : NaN;
+            return isFinite(d) ? d : null;
+          })(),
+          userRating: (function () {
+            const v = getCell(row, "userrating");
+            const n = parseFloat(v);
+            return isFinite(n) ? n : null;
+          })(),
+          status: getCell(row, "status") || null,
+          priority: getCell(row, "priority") || "medium",
+          tags: (function () {
+            const v = getCell(row, "tags");
+            return v ? v.split("|").map(function (x) { return x.trim(); }).filter(Boolean) : [];
+          })(),
+          notes: getCell(row, "notes") || ""
+        });
+        importedCount++;
+        matchedCount++;
+      }
+      continue;
+    }
+
+    // Otherwise, try to resolve via TMDB search
+    const best = await tmdbSearchBestMatch(rawTitle, rawYear, mediaTypeGuess);
+    if (!best) continue;
+
+    matchedCount++;
+
+    // IMDb "Your Rating" is 1–10
+    let userRating = null;
+    const yr = getCell(row, keyYourRating).trim();
+    if (yr) {
+      const n = parseFloat(yr);
+      if (isFinite(n)) userRating = n;
+    }
+
+    upsertImportedItem({
+      tmdbId: best.id,
+      mediaType: mediaTypeGuess,
+      title: (best.title || best.name || rawTitle),
+      year: rawYear || yearFromTmdb(best) || "",
+      posterPath: best.poster_path || null,
+      inWatchlist: !importAsWatched,
+      watched: importAsWatched,
+      watchedAt: importAsWatched ? Date.now() : null,
+      userRating: (importAsWatched ? userRating : null)
+    });
+
+    importedCount++;
+
+    // Tiny breather to be nice to TMDB rate limits
+    if (importedCount % 10 === 0) {
+      toast("Imported " + importedCount + "…");
+      await new Promise(function (res) { setTimeout(res, 200); });
+    }
+  }
+
+  saveState();
+  render();
+
+  toast("CSV import done (" + importedCount + " items, " + matchedCount + " matched).");
+}
+
+// --- Local snapshot backups (localStorage) ---
+
+function snapshotIndexKey() { return "rq_backup_index_v1"; }
+function snapshotKey(id) { return "rq_backup_" + id + "_v1"; }
+
+function readSnapshotIndex() {
+  try {
+    const raw = localStorage.getItem(snapshotIndexKey());
+    const arr = raw ? JSON.parse(raw) : [];
+    return Array.isArray(arr) ? arr : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+function writeSnapshotIndex(arr) {
+  try { localStorage.setItem(snapshotIndexKey(), JSON.stringify(arr)); } catch (e) {}
+}
+
+function createBackupSnapshot(label) {
+  try {
+    const id = String(Date.now()) + "_" + Math.random().toString(16).slice(2);
+    const payload = buildExportPayload();
+    payload.kind = "snapshot";
+    payload.label = label || "Snapshot";
+
+    // Store snapshot payload
+    localStorage.setItem(snapshotKey(id), JSON.stringify(payload));
+
+    // Update index (most recent first)
+    const idx = readSnapshotIndex();
+    idx.unshift({
+      id: id,
+      label: label || "Snapshot",
+      at: Date.now(),
+      count: (Array.isArray(state.items) ? state.items.length : 0)
+    });
+
+    // Keep last 5
+    while (idx.length > 5) {
+      const removed = idx.pop();
+      try { localStorage.removeItem(snapshotKey(removed.id)); } catch (e) {}
+    }
+
+    writeSnapshotIndex(idx);
+    return id;
+  } catch (e) {
+    return null;
+  }
+}
+
+function listBackupSnapshots() {
+  const idx = readSnapshotIndex();
+  const out = [];
+  for (let i = 0; i < idx.length; i++) {
+    const s = idx[i];
+    const when = s.at ? new Date(s.at) : null;
+    out.push({
+      id: s.id,
+      label: (s.label || "Snapshot") + (when ? (" — " + when.toLocaleString()) : ""),
+      meta: (typeof s.count === "number" ? (s.count + " items") : "")
+    });
+  }
+  return out;
+}
+
+function readBackupSnapshot(id) {
+  try {
+    const raw = localStorage.getItem(snapshotKey(id));
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch (e) {
+    return null;
+  }
+}
+
+function deleteBackupSnapshot(id) {
+  try { localStorage.removeItem(snapshotKey(id)); } catch (e) {}
+  const idx = readSnapshotIndex().filter(function (x) { return x && x.id !== id; });
+  writeSnapshotIndex(idx);
+}
+
+function maybeAutoBackupSnapshot() {
+  if (!state.autoBackupEnabled) return;
+
+  // Don’t snapshot *every* save; only if last snapshot is old enough or missing.
+  const idx = readSnapshotIndex();
+  if (idx.length) {
+    const lastAt = idx[0] && idx[0].at ? idx[0].at : 0;
+    // 6 hours minimum gap
+    if (Date.now() - lastAt < 1000 * 60 * 60 * 6) return;
+  }
+  createBackupSnapshot("Auto snapshot");
+}
+
+
 function exportSingleListToFile(listId) {
   const list = getListById(listId);
   if (!list) return;
@@ -4604,29 +5008,35 @@ tvBtn.addEventListener("click", function () {
 
         const toolsCopy = document.createElement("p");
         toolsCopy.className = "settings-copy";
-        toolsCopy.textContent = "Export your watchlist, watched list and preferences to a file, or import them later.";
+        toolsCopy.textContent =
+          "Export a full backup (JSON) or a portable CSV. You can also import a ReelQuest backup (.json) or a CSV (including IMDb Ratings export).";
 
         const toolsRow = document.createElement("div");
         toolsRow.style.display = "flex";
         toolsRow.style.flexWrap = "wrap";
         toolsRow.style.gap = "8px";
 
-        const exportBtn = document.createElement("button");
-        exportBtn.type = "button";
-        exportBtn.className = "pill-btn";
-        exportBtn.textContent = "Export data";
-        exportBtn.addEventListener("click", exportDataToFile);
+        const exportJsonBtn = document.createElement("button");
+        exportJsonBtn.type = "button";
+        exportJsonBtn.className = "pill-btn";
+        exportJsonBtn.textContent = "Export backup (JSON)";
+        exportJsonBtn.addEventListener("click", exportDataToFile);
+
+        const exportCsvBtn = document.createElement("button");
+        exportCsvBtn.type = "button";
+        exportCsvBtn.className = "pill-btn";
+        exportCsvBtn.textContent = "Export CSV";
+        exportCsvBtn.addEventListener("click", exportItemsToCsvFile);
 
         const importBtn = document.createElement("button");
         importBtn.type = "button";
         importBtn.className = "pill-btn";
-        importBtn.textContent = "Import data";
+        importBtn.textContent = "Import (JSON/CSV)";
         importBtn.addEventListener("click", function () {
           // iOS can block clicks on file inputs if they are display:none.
-          // Create a temporary input inside the user gesture for maximum compatibility.
           const temp = document.createElement("input");
           temp.type = "file";
-          temp.accept = "application/json";
+          temp.accept = ".json,.csv,application/json,text/csv";
           temp.style.position = "fixed";
           temp.style.left = "-9999px";
           temp.style.top = "-9999px";
@@ -4635,92 +5045,164 @@ tvBtn.addEventListener("click", function () {
           temp.style.opacity = "0";
           document.body.appendChild(temp);
 
-          temp.addEventListener("change", function (e) {
+          temp.addEventListener("change", function () {
             const files = temp.files;
-            if (files && files[0]) {
-              handleImportFile(files[0]);
-            }
+            if (files && files[0]) handleImportFile(files[0]);
             document.body.removeChild(temp);
           });
 
           temp.click();
         });
 
-        toolsRow.appendChild(exportBtn);
+        toolsRow.appendChild(exportJsonBtn);
+        toolsRow.appendChild(exportCsvBtn);
         toolsRow.appendChild(importBtn);
+
+        // Auto-backup toggle + snapshots
+        const snapWrap = document.createElement("div");
+        snapWrap.style.marginTop = "10px";
+
+        const autoRow = document.createElement("label");
+        autoRow.style.display = "flex";
+        autoRow.style.alignItems = "center";
+        autoRow.style.gap = "10px";
+        autoRow.style.marginTop = "8px";
+
+        const autoCb = document.createElement("input");
+        autoCb.type = "checkbox";
+        autoCb.checked = !!state.autoBackupEnabled;
+        autoCb.addEventListener("change", function () {
+          state.autoBackupEnabled = !!autoCb.checked;
+          saveState();
+          toast(state.autoBackupEnabled ? "Auto-backup enabled." : "Auto-backup disabled.");
+          renderSettings();
+        });
+
+        const autoTxt = document.createElement("div");
+        autoTxt.style.fontSize = "13px";
+        autoTxt.style.color = "var(--text-muted)";
+        autoTxt.textContent = "Auto-backup: keep the last 5 snapshots on this device (local only).";
+
+        autoRow.appendChild(autoCb);
+        autoRow.appendChild(autoTxt);
+
+        const snapHeading = document.createElement("div");
+        snapHeading.className = "settings-subheading";
+        snapHeading.style.marginTop = "12px";
+        snapHeading.textContent = "Local snapshots";
+
+        const snapCopy = document.createElement("p");
+        snapCopy.className = "settings-copy";
+        snapCopy.textContent = "Quick restore points stored in your browser storage.";
+
+        const snapList = document.createElement("div");
+        snapList.style.display = "flex";
+        snapList.style.flexDirection = "column";
+        snapList.style.gap = "8px";
+
+        const snaps = listBackupSnapshots();
+        if (!snaps.length) {
+          const empty = document.createElement("div");
+          empty.className = "settings-copy";
+          empty.textContent = "No snapshots yet.";
+          snapList.appendChild(empty);
+        } else {
+          for (let i = 0; i < snaps.length; i++) {
+            const s = snaps[i];
+            const row = document.createElement("div");
+            row.style.display = "flex";
+            row.style.alignItems = "center";
+            row.style.justifyContent = "space-between";
+            row.style.gap = "10px";
+            row.style.padding = "10px";
+            row.style.border = "1px solid var(--border-subtle)";
+            row.style.borderRadius = "14px";
+            row.style.background = "var(--bg)";
+
+            const left = document.createElement("div");
+            left.style.display = "flex";
+            left.style.flexDirection = "column";
+            left.style.minWidth = "0";
+
+            const title = document.createElement("div");
+            title.style.fontWeight = "700";
+            title.style.fontSize = "13px";
+            title.style.whiteSpace = "nowrap";
+            title.style.overflow = "hidden";
+            title.style.textOverflow = "ellipsis";
+            title.textContent = s.label;
+
+            const meta = document.createElement("div");
+            meta.style.fontSize = "12px";
+            meta.style.color = "var(--text-muted)";
+            meta.textContent = s.meta;
+
+            left.appendChild(title);
+            left.appendChild(meta);
+
+            const actions = document.createElement("div");
+            actions.style.display = "flex";
+            actions.style.gap = "8px";
+            actions.style.flex = "0 0 auto";
+
+            const restoreBtn = document.createElement("button");
+            restoreBtn.type = "button";
+            restoreBtn.className = "pill-btn";
+            restoreBtn.textContent = "Restore";
+            restoreBtn.addEventListener("click", function () {
+              const ok = window.confirm("Restore this snapshot? This will replace your current data.");
+              if (!ok) return;
+              const obj = readBackupSnapshot(s.id);
+              if (!obj) {
+                alertNice("Snapshot missing or unreadable.");
+                renderSettings();
+                return;
+              }
+              applyImportedData(obj);
+              toast("Snapshot restored.");
+            });
+
+            const delBtn = document.createElement("button");
+            delBtn.type = "button";
+            delBtn.className = "pill-btn";
+            delBtn.textContent = "Delete";
+            delBtn.addEventListener("click", function () {
+              deleteBackupSnapshot(s.id);
+              toast("Snapshot deleted.");
+              renderSettings();
+            });
+
+            actions.appendChild(restoreBtn);
+            actions.appendChild(delBtn);
+
+            row.appendChild(left);
+            row.appendChild(actions);
+            snapList.appendChild(row);
+          }
+        }
+
+        const snapNowBtn = document.createElement("button");
+        snapNowBtn.type = "button";
+        snapNowBtn.className = "pill-btn";
+        snapNowBtn.textContent = "Create snapshot now";
+        snapNowBtn.style.marginTop = "8px";
+        snapNowBtn.addEventListener("click", function () {
+          createBackupSnapshot("Manual snapshot");
+          toast("Snapshot saved.");
+          renderSettings();
+        });
+
+        snapWrap.appendChild(autoRow);
+        snapWrap.appendChild(snapHeading);
+        snapWrap.appendChild(snapCopy);
+        snapWrap.appendChild(snapList);
+        snapWrap.appendChild(snapNowBtn);
 
         panel.appendChild(toolsHeading);
         panel.appendChild(toolsCopy);
         panel.appendChild(toolsRow);
-
-        // --- Competitive Feature Analysis (planning notes) ---
-        const analysisHeading = document.createElement("div");
-        analysisHeading.className = "settings-subheading";
-        analysisHeading.textContent = "Product roadmap notes";
-
-        const analysisDetails = document.createElement("details");
-        analysisDetails.className = "rq-details";
-
-        const analysisSummary = document.createElement("summary");
-        analysisSummary.textContent = "ReelQuest Competitive Feature Analysis";
-        analysisDetails.appendChild(analysisSummary);
-
-        const analysisBody = document.createElement("div");
-        analysisBody.className = "rq-details-body";
-
-        const analysisIntro = document.createElement("p");
-        analysisIntro.className = "settings-copy";
-        analysisIntro.textContent = "Summary of proposed features inspired by leading tracking platforms.";
-        analysisBody.appendChild(analysisIntro);
-
-        const analysisTable = document.createElement("table");
-        analysisTable.className = "rq-table";
-
-        const thead = document.createElement("thead");
-        const hr = document.createElement("tr");
-        const th1 = document.createElement("th"); th1.textContent = "Feature";
-        const th2 = document.createElement("th"); th2.textContent = "Category";
-        const th3 = document.createElement("th"); th3.textContent = "Inspired by";
-        hr.appendChild(th1); hr.appendChild(th2); hr.appendChild(th3);
-        thead.appendChild(hr);
-        analysisTable.appendChild(thead);
-
-        const tbody = document.createElement("tbody");
-        const rows = [('Cross-Platform Sync & Open API', 'User Accounts & Sync', 'Trakt (multi-device + API)'), ('Multiple Custom Watchlists', 'Watchlist & History Tracking', 'IMDb (unlimited lists)'), ('Diary Logging & Rewatch History', 'Watchlist & History Tracking', 'Letterboxd (film diary)'), ('Episode Tracking & Calendar', 'Watchlist & History Tracking', 'Trakt (upcoming calendar)'), ('Streaming Availability Alerts', 'Watchlist & History Tracking', 'JustWatch (“Notify me” feature)'), ('Social Sharing & Friend Feeds', 'Social / Community Tools', 'Letterboxd (follow & feed)'), ('Collaborative Lists', 'Social / Community Tools', 'Trakt (shared lists)'), ('Personalized Recommendations', 'Search & Discovery', 'IMDb (Top Picks engine)'), ('Advanced Filtered Search', 'Search & Discovery', 'JustWatch/Letterboxd (filters)'), ('Modern, Ad-Free UI Design', 'UI/UX Enhancements', 'Letterboxd (clean interface)'), ('Offline PWA Support', 'Offline Access / PWA', 'Progressive Web App standard'), ('Streaming Guide Integration', 'Unique Standout Feature', 'JustWatch (where-to-watch)')];
-        for (let i = 0; i < rows.length; i++) {
-          const tr = document.createElement("tr");
-          for (let j = 0; j < 3; j++) {
-            const td = document.createElement("td");
-            td.textContent = rows[i][j];
-            tr.appendChild(td);
-          }
-          tbody.appendChild(tr);
-        }
-        analysisTable.appendChild(tbody);
-        analysisBody.appendChild(analysisTable);
-
-        const uaTitle = document.createElement("div");
-        uaTitle.className = "rq-miniheading";
-        uaTitle.textContent = "User accounts and sync features";
-        analysisBody.appendChild(uaTitle);
-
-        const uaP1 = document.createElement("p");
-        uaP1.className = "settings-copy";
-        uaP1.textContent =
-          "Cross-platform profiles & sync: keep watchlists, ratings, and preferences consistent across web + mobile so users are never locked to one device.";
-        analysisBody.appendChild(uaP1);
-
-        const uaP2 = document.createElement("p");
-        uaP2.className = "settings-copy";
-        uaP2.textContent =
-          "Open API & third-party integration: an API lets external apps (e.g., media centers) submit watches automatically so power users can aggregate viewing data effortlessly.";
-        analysisBody.appendChild(uaP2);
-
-        analysisDetails.appendChild(analysisBody);
-
-        panel.appendChild(analysisHeading);
-        panel.appendChild(analysisDetails);
-      }
+        panel.appendChild(snapWrap);
+}
 
 
       function getListById(listId) {
@@ -8294,6 +8776,7 @@ els.detailActions.appendChild(orgWrap);
             listsUi: state.listsUi,
             favouriteGenres: state.favouriteGenres,
             filters: state.filters,
+                        autoBackupEnabled: !!state.autoBackupEnabled,
             sortBy: state.sortBy,
             minRating: state.minRating,
             theme: state.theme,
@@ -8650,26 +9133,30 @@ function mergeImportedData(imported) {
 
 
 
-      function handleImportFile(file) {
+      async function handleImportFile(file) {
   if (!file) return;
+
+  const name = (file.name || "").toLowerCase();
+  const isCsv = name.endsWith(".csv") || (file.type && String(file.type).toLowerCase().indexOf("csv") !== -1);
+
   const reader = new FileReader();
-  reader.onload = function () {
+
+  reader.onload = async function () {
     try {
       const text = String(reader.result || "");
-      const parsed = JSON.parse(text);
 
-      const looksLikeReelQuest =
-        parsed && typeof parsed === "object" &&
-        (parsed.app === "ReelQuest" || parsed.version || parsed.data);
-
-      if (!looksLikeReelQuest) {
-        const ok = window.confirm(
-          "This file doesn’t look like a ReelQuest backup. Try importing anyway?"
-        );
-        if (!ok) return;
+      // CSV import (generic + IMDb)
+      if (isCsv) {
+        await importFromCsvText(text);
+        return;
       }
 
-      const wantMerge = window.confirm("How do you want to import this backup?\n\nOK = Merge into your existing data\nCancel = Replace everything");
+      // JSON import (ReelQuest backup)
+      const parsed = JSON.parse(text);
+
+      const wantMerge = window.confirm(
+        "How do you want to import this backup?\n\nOK = Merge into your existing data\nCancel = Replace everything"
+      );
 
       if (wantMerge) {
         mergeImportedData(parsed);
@@ -8687,11 +9174,14 @@ function mergeImportedData(imported) {
       alertNice("Sorry — we couldn’t import that file.");
     }
   };
+
   reader.onerror = function () {
     alertNice("Sorry — we couldn’t read that file.");
   };
+
   reader.readAsText(file);
 }
+
 
       // PWA (optional): service worker + install hint
 async function registerServiceWorker() {
