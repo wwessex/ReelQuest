@@ -3690,17 +3690,172 @@ function itemsToCsv(items) {
   return lines.join("\n");
 }
 
-function exportItemsToCsvFile() {
-  const stamp = new Date();
-  const yyyy = stamp.getFullYear();
-  const mm = String(stamp.getMonth() + 1).padStart(2, "0");
-  const dd = String(stamp.getDate()).padStart(2, "0");
-  const filename = "reelquest-items-" + yyyy + "-" + mm + "-" + dd + ".csv";
+function exportItemsToCsvFile(stamp) {
+  const d = stamp instanceof Date ? stamp : new Date();
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mi = String(d.getMinutes()).padStart(2, "0");
+  const filename = "reelquest-items-" + yyyy + "-" + mm + "-" + dd + "-" + hh + mi + ".csv";
 
   const csv = itemsToCsv(Array.isArray(state.items) ? state.items : []);
   downloadText(filename, csv, "text/csv");
-  toast("Exported CSV.");
+  toast("Exported items CSV.");
 }
+
+function listsToCsv(lists) {
+  const headers = [
+    "listId",
+    "type",
+    "name",
+    "description",
+    "pinned",
+    "sortMode",
+    "createdAt",
+    "updatedAt",
+    "customOrderJson",
+    "smartRulesJson"
+  ];
+  const lines = [headers.join(",")];
+
+  for (let i = 0; i < (lists || []).length; i++) {
+    const l = lists[i] || {};
+    const customOrderJson = l.customOrder ? JSON.stringify(l.customOrder) : "";
+    const smartRulesJson = l.smartRules ? JSON.stringify(l.smartRules) : "";
+    const row = [
+      l.id || "",
+      l.type || "",
+      l.name || "",
+      l.description || "",
+      l.pinned ? "1" : "0",
+      l.sortMode || "",
+      l.createdAt ? new Date(l.createdAt).toISOString() : "",
+      (l.updatedAt ? new Date(l.updatedAt).toISOString() : (l.createdAt ? new Date(l.createdAt).toISOString() : "")),
+      customOrderJson,
+      smartRulesJson
+    ];
+    lines.push(row.map(csvEscape).join(","));
+  }
+
+  return lines.join("\n");
+}
+
+function listEntriesToCsv(lists) {
+  const headers = [
+    "listId",
+    "listName",
+    "listType",
+    "orderIndex",
+    "tmdbId",
+    "mediaType",
+    "title",
+    "year",
+    "addedAt",
+    "posterPath",
+    "rating"
+  ];
+  const lines = [headers.join(",")];
+
+  const items = Array.isArray(state.items) ? state.items : [];
+
+  function findItem(tmdbId) {
+    const tid = toTmdbId(tmdbId);
+    if (tid === null) return null;
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i];
+      if (toTmdbId(it.tmdbId) === tid) return it;
+    }
+    return null;
+  }
+
+  for (let i = 0; i < (lists || []).length; i++) {
+    const l = lists[i];
+    if (!l) continue;
+
+    const order = Array.isArray(l.customOrder) ? l.customOrder : [];
+    const entries = Array.isArray(l.entries) ? l.entries : [];
+
+    // Build a quick lookup for entries by tmdbId
+    const entryMap = {};
+    for (let e = 0; e < entries.length; e++) {
+      const en = entries[e];
+      if (!en) continue;
+      const k = String(en.tmdbId);
+      if (!entryMap[k]) entryMap[k] = en;
+    }
+
+    // Prefer custom order; include any extras not in custom order at the end
+    const seen = {};
+    const allIds = [];
+    for (let o = 0; o < order.length; o++) {
+      allIds.push(order[o]);
+      seen[String(order[o])] = true;
+    }
+    for (let e = 0; e < entries.length; e++) {
+      const en = entries[e];
+      if (!en) continue;
+      const k = String(en.tmdbId);
+      if (!seen[k]) allIds.push(en.tmdbId);
+    }
+
+    for (let idx = 0; idx < allIds.length; idx++) {
+      const tmdbId = allIds[idx];
+      const en = entryMap[String(tmdbId)] || {};
+      const it = findItem(tmdbId);
+
+      const mediaType = (it && it.mediaType) ? it.mediaType : "";
+
+      const row = [
+        l.id || "",
+        l.name || "",
+        l.type || "",
+        String(idx),
+        (tmdbId != null ? tmdbId : ""),
+        mediaType,
+        en.title || (it ? it.title : "") || "",
+        en.year || (it ? it.year : "") || "",
+        en.addedAt ? new Date(en.addedAt).toISOString() : "",
+        en.posterPath || (it ? it.posterPath : "") || "",
+        (typeof en.rating === "number" ? en.rating : (it && typeof it.rating === "number" ? it.rating : ""))
+      ];
+      lines.push(row.map(csvEscape).join(","));
+    }
+  }
+
+  return lines.join("\n");
+}
+
+function exportListsToCsvFiles(stamp) {
+  const d = stamp instanceof Date ? stamp : new Date();
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mi = String(d.getMinutes()).padStart(2, "0");
+
+  const lists = Array.isArray(state.lists) ? state.lists : [];
+
+  const listsCsv = listsToCsv(lists);
+  const entriesCsv = listEntriesToCsv(lists);
+
+  downloadText("reelquest-lists-" + yyyy + "-" + mm + "-" + dd + "-" + hh + mi + ".csv", listsCsv, "text/csv");
+  // Slight delay to avoid Safari/iOS swallowing consecutive downloads
+  setTimeout(function () {
+    downloadText("reelquest-list-entries-" + yyyy + "-" + mm + "-" + dd + "-" + hh + mi + ".csv", entriesCsv, "text/csv");
+  }, 250);
+
+  toast("Exported lists CSVs.");
+}
+
+function exportFullCsvPack() {
+  const stamp = new Date();
+  exportItemsToCsvFile(stamp);
+  setTimeout(function () {
+    exportListsToCsvFiles(stamp);
+  }, 350);
+}
+
 
 // --- CSV import (generic + IMDb) ---
 
@@ -3747,11 +3902,59 @@ function normaliseHeader(h) {
 }
 
 function detectImdbRatingsCsv(headers) {
+  // IMDb "Ratings" export typically includes "Your Rating" (and often "Date Rated")
   const h = headers.map(normaliseHeader);
   const hasTitle = h.indexOf("title") !== -1;
   const hasYourRating = h.indexOf("your rating") !== -1 || h.indexOf("yourrating") !== -1;
-  const hasImdbId = h.indexOf("imdb id") !== -1 || h.indexOf("imdbid") !== -1;
-  return hasTitle && (hasYourRating || hasImdbId);
+  const hasDateRated = h.indexOf("date rated") !== -1 || h.indexOf("daterated") !== -1;
+  return hasTitle && (hasYourRating || hasDateRated);
+}
+
+function detectImdbListCsv(headers) {
+  // IMDb Watchlist / Lists export often includes "Const" and list-ish fields like Position/Created/Modified/URL.
+  const h = headers.map(normaliseHeader);
+  const hasTitle = h.indexOf("title") !== -1;
+  const hasConst = h.indexOf("const") !== -1 || h.indexOf("imdb id") !== -1 || h.indexOf("imdbid") !== -1;
+  const hasPosition = h.indexOf("position") !== -1;
+  const hasCreated = h.indexOf("created") !== -1;
+  const hasModified = h.indexOf("modified") !== -1;
+  const hasUrl = h.indexOf("url") !== -1;
+  const hasDesc = h.indexOf("description") !== -1;
+  return hasTitle && hasConst && (hasPosition || hasCreated || hasModified || hasUrl || hasDesc);
+}
+
+function buildHeaderMap(headers) {
+  const map = {};
+  for (let i = 0; i < headers.length; i++) {
+    map[normaliseHeader(headers[i])] = i;
+  }
+  return map;
+}
+
+function csvGet(row, map, key) {
+  const idx = map[key];
+  if (typeof idx !== "number") return "";
+  return (row[idx] != null ? String(row[idx]) : "");
+}
+
+function parseMaybeDate(s) {
+  const v = String(s || "").trim();
+  if (!v) return null;
+  const t = Date.parse(v);
+  if (isFinite(t)) return t;
+  return null;
+}
+
+function guessImportAsWatchedFromFilename(filename) {
+  const n = String(filename || "").toLowerCase();
+  // heuristics only; IMDb list exports don’t include an explicit watched flag
+  return n.indexOf("watched") !== -1 || n.indexOf("seen") !== -1 || n.indexOf("viewed") !== -1 || n.indexOf("watchedlist") !== -1;
+}
+
+function guessMediaTypeFromTitleType(titleType) {
+  const tt = String(titleType || "").toLowerCase();
+  if (tt.indexOf("tv") !== -1 || tt.indexOf("series") !== -1 || tt.indexOf("episode") !== -1 || tt.indexOf("mini") !== -1) return "tv";
+  return "movie";
 }
 
 async function tmdbSearchBestMatch(title, year, mediaTypeGuess) {
@@ -3780,6 +3983,30 @@ async function tmdbSearchBestMatch(title, year, mediaTypeGuess) {
 
   return results[0];
 }
+
+async function tmdbFindByImdbId(imdbId, mediaTypeGuess) {
+  const id = String(imdbId || "").trim();
+  if (!id) return null;
+
+  const url = new URL("https://api.themoviedb.org/3/find/" + encodeURIComponent(id));
+  url.searchParams.set("api_key", TMDB_API_KEY);
+  url.searchParams.set("external_source", "imdb_id");
+
+  const data = await tmdbFetch(url);
+  const movieRes = Array.isArray(data && data.movie_results) ? data.movie_results : [];
+  const tvRes = Array.isArray(data && data.tv_results) ? data.tv_results : [];
+
+  if (mediaTypeGuess === "tv") {
+    if (tvRes.length) return tvRes[0];
+    if (movieRes.length) return movieRes[0];
+  } else {
+    if (movieRes.length) return movieRes[0];
+    if (tvRes.length) return tvRes[0];
+  }
+
+  return null;
+}
+
 
 function upsertImportedItem(partial) {
   const mt = normaliseMediaType(partial.mediaType || "movie");
@@ -3843,7 +4070,7 @@ function upsertImportedItem(partial) {
   if ((!existing.notes || !existing.notes.trim()) && partial.notes) existing.notes = partial.notes;
 }
 
-async function importFromCsvText(text) {
+async function importFromCsvText(text, filename) {
   const rows = parseCsv(text);
   if (!rows.length) {
     alertNice("That CSV looks empty.");
@@ -3851,97 +4078,130 @@ async function importFromCsvText(text) {
   }
 
   const headers = rows[0] || [];
-  const isImdb = detectImdbRatingsCsv(headers);
+  const map = buildHeaderMap(headers);
 
-  const mode = window.confirm(
-    isImdb
-      ? "IMDb CSV detected.\n\nOK = Import as Watched (rated items)\nCancel = Import as Watchlist"
-      : "How should we import this CSV?\n\nOK = Import as Watchlist\nCancel = Import as Watched"
-  );
+  // Detect formats
+  const isImdbRatings = detectImdbRatingsCsv(headers);
+  const isImdbList = !isImdbRatings && detectImdbListCsv(headers);
 
-  const importAsWatched = isImdb ? mode : !mode;
+  // ReelQuest CSV export has tmdbId + mediaType
+  const isRqCsv = (map["tmdbid"] != null || map["tmdb id"] != null) && (map["mediatype"] != null || map["media type"] != null);
 
-  const map = {};
-  for (let i = 0; i < headers.length; i++) {
-    map[normaliseHeader(headers[i])] = i;
+  // Decide import mode automatically when we can
+  let importAsWatched = false;
+  let modeLabel = "CSV";
+
+  if (isImdbRatings) {
+    importAsWatched = true; // ratings imply watched
+    modeLabel = "IMDb Ratings";
+  } else if (isImdbList) {
+    importAsWatched = guessImportAsWatchedFromFilename(filename);
+    modeLabel = "IMDb List/Watchlist";
+  } else if (!isRqCsv) {
+    // Generic CSV: ask once
+    const ok = window.confirm("How should we import this CSV?\n\nOK = Import as Watchlist\nCancel = Import as Watched");
+    importAsWatched = !ok;
   }
 
-  function getCell(row, key) {
-    const idx = map[key];
-    if (typeof idx !== "number") return "";
-    return (row[idx] != null ? String(row[idx]) : "");
-  }
+  toast("Importing " + modeLabel + "…");
+
+  const tmdbKey = map["tmdb id"] != null ? "tmdb id" : "tmdbid";
+  const hasTmdbId = map[tmdbKey] != null;
+
+  // IMDb columns
+  const hasConst = map["const"] != null;
+  const hasImdbId = map["imdb id"] != null || map["imdbid"] != null;
+  const imdbKey = hasConst ? "const" : (map["imdb id"] != null ? "imdb id" : "imdbid");
 
   const keyTitle = "title";
   const keyYear = map["year"] != null ? "year" : (map["release year"] != null ? "release year" : "year");
   const keyTitleType = "title type";
   const keyYourRating = "your rating";
-
-  const hasTmdbId = map["tmdbid"] != null || map["tmdb id"] != null;
-  const tmdbKey = map["tmdb id"] != null ? "tmdb id" : "tmdbid";
+  const keyDateRated = "date rated";
+  const keyDateAdded = "date added";
 
   let importedCount = 0;
   let matchedCount = 0;
 
-  toast("Importing CSV…");
-
+  // Process rows sequentially (safer for rate limits)
   for (let r = 1; r < rows.length; r++) {
     const row = rows[r];
     if (!row || !row.length) continue;
 
-    const rawTitle = getCell(row, keyTitle).trim();
-    const rawYear = getCell(row, keyYear).trim();
-    if (!rawTitle) continue;
-
-    let mediaTypeGuess = "movie";
-    const tt = getCell(row, keyTitleType).toLowerCase();
-    if (tt.indexOf("tv") !== -1 || tt.indexOf("series") !== -1 || tt.indexOf("episode") !== -1) mediaTypeGuess = "tv";
-
+    // ReelQuest CSV path (has TMDB ids already)
     if (hasTmdbId) {
-      const tmdbIdStr = getCell(row, tmdbKey).trim();
+      const tmdbIdStr = csvGet(row, map, tmdbKey).trim();
       const tid = toTmdbId(tmdbIdStr);
-      if (tid !== null) {
-        upsertImportedItem({
-          tmdbId: tid,
-          mediaType: (getCell(row, "mediatype") || mediaTypeGuess || "movie"),
-          title: rawTitle,
-          year: rawYear,
-          inWatchlist: !!(getCell(row, "inwatchlist") === "1"),
-          watched: !!(getCell(row, "watched") === "1") || importAsWatched,
-          watchedAt: (function () {
-            const v = getCell(row, "watchedat");
-            const d = v ? Date.parse(v) : NaN;
-            return isFinite(d) ? d : null;
-          })(),
-          userRating: (function () {
-            const v = getCell(row, "userrating");
-            const n = parseFloat(v);
-            return isFinite(n) ? n : null;
-          })(),
-          status: getCell(row, "status") || null,
-          priority: getCell(row, "priority") || "medium",
-          tags: (function () {
-            const v = getCell(row, "tags");
-            return v ? v.split("|").map(function (x) { return x.trim(); }).filter(Boolean) : [];
-          })(),
-          notes: getCell(row, "notes") || ""
-        });
-        importedCount++;
-        matchedCount++;
-      }
+      if (tid === null) continue;
+
+      const mediaType = csvGet(row, map, "mediatype") || csvGet(row, map, "media type") || "movie";
+
+      upsertImportedItem({
+        tmdbId: tid,
+        mediaType: mediaType,
+        title: csvGet(row, map, keyTitle).trim(),
+        year: csvGet(row, map, keyYear).trim(),
+        inWatchlist: !!(csvGet(row, map, "inwatchlist") === "1") || !importAsWatched,
+        watched: !!(csvGet(row, map, "watched") === "1") || importAsWatched,
+        watchedAt: (function () {
+          const v = csvGet(row, map, "watchedat");
+          return parseMaybeDate(v);
+        })(),
+        userRating: (function () {
+          const v = csvGet(row, map, "userrating");
+          const n = parseFloat(v);
+          return isFinite(n) ? n : null;
+        })(),
+        status: csvGet(row, map, "status") || null,
+        priority: csvGet(row, map, "priority") || "medium",
+        tags: (function () {
+          const v = csvGet(row, map, "tags");
+          return v ? v.split("|").map(function (x) { return x.trim(); }).filter(Boolean) : [];
+        })(),
+        notes: csvGet(row, map, "notes") || ""
+      });
+
+      importedCount++;
+      matchedCount++;
       continue;
     }
 
-    const best = await tmdbSearchBestMatch(rawTitle, rawYear, mediaTypeGuess);
+    // IMDb / generic path: resolve to TMDB via IMDb ID if present, else title search
+    const rawTitle = csvGet(row, map, keyTitle).trim();
+    if (!rawTitle) continue;
+
+    const rawYear = csvGet(row, map, keyYear).trim();
+    const mediaTypeGuess = guessMediaTypeFromTitleType(csvGet(row, map, keyTitleType));
+
+    // Prefer IMDb ID lookup when possible
+    let best = null;
+    const imdbId = (hasConst || hasImdbId) ? csvGet(row, map, imdbKey).trim() : "";
+    if (imdbId && /^tt\d+/.test(imdbId)) {
+      best = await tmdbFindByImdbId(imdbId, mediaTypeGuess);
+    }
+
+    if (!best) {
+      best = await tmdbSearchBestMatch(rawTitle, rawYear, mediaTypeGuess);
+    }
+
     if (!best) continue;
     matchedCount++;
 
+    // IMDb "Your Rating" is 1–10
     let userRating = null;
-    const yr = getCell(row, keyYourRating).trim();
+    const yr = csvGet(row, map, keyYourRating).trim();
     if (yr) {
       const n = parseFloat(yr);
       if (isFinite(n)) userRating = n;
     }
+
+    const watchedAt = (function () {
+      // Prefer date rated > date added
+      const dr = parseMaybeDate(csvGet(row, map, keyDateRated));
+      if (dr) return dr;
+      const da = parseMaybeDate(csvGet(row, map, keyDateAdded));
+      return da || null;
+    })();
 
     upsertImportedItem({
       tmdbId: best.id,
@@ -3951,12 +4211,13 @@ async function importFromCsvText(text) {
       posterPath: best.poster_path || null,
       inWatchlist: !importAsWatched,
       watched: importAsWatched,
-      watchedAt: importAsWatched ? Date.now() : null,
+      watchedAt: importAsWatched ? (watchedAt || Date.now()) : null,
       userRating: (importAsWatched ? userRating : null)
     });
 
     importedCount++;
 
+    // Be kind to TMDB rate limits
     if (importedCount % 10 === 0) {
       toast("Imported " + importedCount + "…");
       await new Promise(function (res) { setTimeout(res, 200); });
@@ -3966,8 +4227,7 @@ async function importFromCsvText(text) {
   saveState();
   render();
 
-  toast("CSV import done (" + importedCount + " items, " + matchedCount + " matched)."
-  );
+  toast("CSV import done (" + importedCount + " items, " + matchedCount + " matched).");
 }
 
 // --- Local snapshot backups (localStorage) ---
@@ -4995,7 +5255,7 @@ tvBtn.addEventListener("click", function () {
         const toolsCopy = document.createElement("p");
         toolsCopy.className = "settings-copy";
         toolsCopy.textContent =
-          "Export a full backup (JSON) or a portable CSV. You can also import a ReelQuest backup (.json) or a CSV (including IMDb Ratings export).";
+          "Export a full backup (JSON) or a portable CSV. Import supports ReelQuest backups plus IMDb CSV exports (Ratings, Watchlist, and Lists).";
 
         const toolsRow = document.createElement("div");
         toolsRow.style.display = "flex";
@@ -5013,6 +5273,21 @@ tvBtn.addEventListener("click", function () {
         exportCsvBtn.className = "pill-btn";
         exportCsvBtn.textContent = "Export CSV";
         exportCsvBtn.addEventListener("click", exportItemsToCsvFile);
+
+        const exportListsCsvBtn = document.createElement("button");
+        exportListsCsvBtn.type = "button";
+        exportListsCsvBtn.className = "pill-btn";
+        exportListsCsvBtn.textContent = "Export Lists CSV";
+        exportListsCsvBtn.addEventListener("click", function () {
+          exportListsToCsvFiles(new Date());
+        });
+
+        const exportFullCsvBtn = document.createElement("button");
+        exportFullCsvBtn.type = "button";
+        exportFullCsvBtn.className = "pill-btn";
+        exportFullCsvBtn.textContent = "Export Full CSV Pack";
+        exportFullCsvBtn.addEventListener("click", exportFullCsvPack);
+
 
         const importBtn = document.createElement("button");
         importBtn.type = "button";
@@ -5042,6 +5317,8 @@ tvBtn.addEventListener("click", function () {
 
         toolsRow.appendChild(exportJsonBtn);
         toolsRow.appendChild(exportCsvBtn);
+        toolsRow.appendChild(exportListsCsvBtn);
+        toolsRow.appendChild(exportFullCsvBtn);
         toolsRow.appendChild(importBtn);
 
         // Auto-backup toggle + snapshots
@@ -9470,7 +9747,7 @@ function mergeImportedData(imported) {
 
       // CSV import (generic + IMDb)
       if (isCsv) {
-        await importFromCsvText(text);
+        await importFromCsvText(text, file && file.name ? file.name : "");
         return;
       }
 
