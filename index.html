@@ -126,103 +126,6 @@
       gap: 8px;
       margin-left: auto;
     }
-    .user-chip{
-      display: inline-flex;
-      align-items: center;
-      gap: 10px;
-      height: 32px;
-      padding: 0 12px 0 6px;
-      border-radius: 999px;
-      border: 1px solid var(--border-subtle);
-      background: var(--bg-elevated);
-      color: var(--text-main);
-      cursor: pointer;
-      box-shadow: 0 8px 24px rgba(0,0,0,0.12);
-      transition: transform 0.08s ease, border-color 0.15s ease, background 0.15s ease;
-    }
-    .user-chip:active{ transform: scale(0.98); }
-    .user-chip:focus-visible{
-      outline: 2px solid var(--accent-pill-bg);
-      outline-offset: 3px;
-    }
-    .user-avatar{
-      width: 24px;
-      height: 24px;
-      border-radius: 999px;
-      background: var(--bg-panel);
-      border: 1px solid var(--border-subtle);
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      font-weight: 800;
-      font-size: 12px;
-      letter-spacing: 0.5px;
-      overflow: hidden;
-      background-size: cover;
-      background-position: center;
-    }
-    .user-chip-name{
-      font-size: 13px;
-      font-weight: 700;
-      max-width: 160px;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-    @media (max-width: 520px){
-      .user-chip-name{ display:none; }
-      .user-chip{ padding-right: 10px; }
-    }
-
-    .account-identity{
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      padding: 10px 12px;
-      border: 1px solid var(--border-subtle);
-      border-radius: 14px;
-      background: var(--bg-elevated);
-      box-shadow: 0 10px 28px rgba(0,0,0,0.10);
-      margin-top: 12px;
-    }
-    .account-identity .account-avatar{
-      width: 44px;
-      height: 44px;
-      border-radius: 999px;
-      background: var(--bg-panel);
-      border: 1px solid var(--border-subtle);
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      font-weight: 900;
-      font-size: 14px;
-      overflow: hidden;
-      background-size: cover;
-      background-position: center;
-      flex: 0 0 auto;
-    }
-    .account-identity .account-who{
-      display: flex;
-      flex-direction: column;
-      gap: 2px;
-      min-width: 0;
-    }
-    .account-identity .account-name{
-      font-weight: 800;
-      font-size: 14px;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-    .account-identity .account-email,
-    .account-identity .account-country{
-      font-size: 12px;
-      color: var(--text-muted);
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-
 
     .theme-toggle {
       border-radius: 999px;
@@ -1483,6 +1386,74 @@
         padding-bottom: 12px;
       }
     }
+
+    /* --- Account/Profile avatar + header chip --- */
+    .user-chip{
+      display:none;
+      align-items:center;
+      gap:8px;
+      border:1px solid rgba(255,255,255,.14);
+      background:rgba(255,255,255,.06);
+      color:inherit;
+      padding:6px 10px;
+      border-radius:999px;
+      cursor:pointer;
+      max-width:220px;
+    }
+    .user-chip:focus{
+      outline:2px solid rgba(255,255,255,.35);
+      outline-offset:2px;
+    }
+    .user-chip img{
+      width:22px;
+      height:22px;
+      border-radius:50%;
+      object-fit:cover;
+      background:rgba(255,255,255,.12);
+      flex:0 0 auto;
+    }
+    .user-chip span{
+      font-size:13px;
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+      max-width:160px;
+    }
+
+    .profile-card{
+      margin-top:10px;
+      padding:12px;
+      border-radius:14px;
+      border:1px solid rgba(255,255,255,.10);
+      background:rgba(255,255,255,.04);
+    }
+    .profile-head{
+      display:flex;
+      gap:12px;
+      align-items:center;
+      margin-bottom:10px;
+    }
+    .profile-avatar{
+      width:56px;
+      height:56px;
+      border-radius:50%;
+      object-fit:cover;
+      background:rgba(255,255,255,.12);
+      border:1px solid rgba(255,255,255,.10);
+      flex:0 0 auto;
+    }
+    .profile-name{
+      font-weight:700;
+      font-size:15px;
+      line-height:1.2;
+      margin-bottom:2px;
+    }
+    .profile-email{
+      opacity:.8;
+      font-size:13px;
+      line-height:1.2;
+    }
+
 </style>
 <link href="./manifest.webmanifest" rel="manifest"/>
 <meta content="#0b1220" name="theme-color"/>
@@ -1500,10 +1471,11 @@
 <div class="brand-text">ReelQuest</div>
 </button>
 <div class="topbar-actions">
-<button aria-label="Account" class="user-chip" id="user-chip" type="button" style="display:none">
-  <span aria-hidden="true" class="user-avatar" id="user-chip-avatar"></span>
-  <span class="user-chip-name" id="user-chip-name"></span>
+<button type="button" class="user-chip" id="user-chip" aria-label="Account">
+  <img id="user-chip-avatar" alt="" />
+  <span id="user-chip-name"></span>
 </button>
+
 <button aria-label="Menu" class="theme-toggle burger-btn" id="menu-toggle" type="button">
           ☰
         </button>
@@ -5500,6 +5472,115 @@ function moveEntryInList(listId, entryKeyValue, direction) {
       let rqSupabaseLoading = null;
       let rqSupabaseAuthListenerAttached = false;
 
+      // Current signed-in user + profile cache (used for header chip + Account UI)
+      let rqCurrentUser = null;
+      let rqCurrentProfile = null;
+
+      function rqGetDisplayName(user, profile) {
+        const dn = profile && profile.display_name ? String(profile.display_name).trim() : "";
+        if (dn) return dn;
+        if (user && user.email) return String(user.email).split("@")[0];
+        return "Account";
+      }
+
+      function rqApplyAvatarToEl(imgEl, url, altText) {
+        if (!imgEl) return;
+        const u = String(url || "").trim();
+        if (!u) {
+          imgEl.removeAttribute("src");
+          imgEl.alt = "";
+          return;
+        }
+        imgEl.src = u;
+        imgEl.alt = altText ? String(altText) : "Profile photo";
+      }
+
+      function rqSetHeaderUserChip(user, profile) {
+        if (!els || !els.userChip) return;
+        if (!user) {
+          els.userChip.style.display = "none";
+          if (els.userChipName) els.userChipName.textContent = "";
+          rqApplyAvatarToEl(els.userChipAvatar, "", "");
+          return;
+        }
+        els.userChip.style.display = "inline-flex";
+        const name = rqGetDisplayName(user, profile);
+        if (els.userChipName) els.userChipName.textContent = name;
+        rqApplyAvatarToEl(els.userChipAvatar, profile ? profile.avatar_url : "", name || (user.email || ""));
+      }
+
+      async function rqFetchUserProfile(client, userId) {
+        if (!client || !client.from) return null;
+        try {
+          const res = await client.from("profiles")
+            .select("id, display_name, avatar_url, country_region")
+            .eq("id", userId)
+            .maybeSingle();
+          if (res && res.error) throw res.error;
+          return res ? res.data : null;
+        } catch (e) {
+          return null;
+        }
+      }
+
+      async function rqEnsureUserProfile(client, user) {
+        if (!client || !user || !user.id) return null;
+        let profile = await rqFetchUserProfile(client, user.id);
+        if (profile) return profile;
+
+        // Create a profile row if missing (safe if table doesn't exist: will be caught)
+        try {
+          const ins = await client.from("profiles").upsert({
+            id: user.id,
+            email: user.email || null
+          }, { onConflict: "id" }).select("id, display_name, avatar_url, country_region").maybeSingle();
+          if (ins && ins.error) throw ins.error;
+          return ins ? ins.data : null;
+        } catch (e) {
+          return null;
+        }
+      }
+
+      async function rqRefreshAuthState(reason) {
+        // Returns { user, profile } without throwing (so auth can never break the app)
+        try {
+          const client = await getSupabaseClient();
+          if (!client || !client.auth) {
+            rqCurrentUser = null;
+            rqCurrentProfile = null;
+            rqSetHeaderUserChip(null, null);
+            return { user: null, profile: null };
+          }
+
+          // Prefer local session (immediately after redirect), fall back to getUser().
+          let user = null;
+          try {
+            const sessRes = await client.auth.getSession();
+            user = sessRes && sessRes.data && sessRes.data.session && sessRes.data.session.user ? sessRes.data.session.user : null;
+          } catch (e) {}
+          if (!user) {
+            const userRes = await client.auth.getUser();
+            user = userRes && userRes.data ? userRes.data.user : null;
+          }
+
+          let profile = null;
+          if (user && user.id) {
+            profile = await rqEnsureUserProfile(client, user);
+          }
+
+          rqCurrentUser = user;
+          rqCurrentProfile = profile;
+          rqSetHeaderUserChip(user, profile);
+          return { user: user, profile: profile };
+        } catch (e) {
+          rqCurrentUser = null;
+          rqCurrentProfile = null;
+          rqSetHeaderUserChip(null, null);
+          return { user: null, profile: null };
+        }
+      }
+
+
       function getSupabaseConfig() {
         // Use baked-in defaults, but allow overrides for development via localStorage.
         const url = String(localStorage.getItem("rq_supabase_url") || "").trim() || DEFAULT_SUPABASE_URL;
@@ -5550,103 +5631,7 @@ function moveEntryInList(listId, entryKeyValue, direction) {
       // lands on a non-Account tab after clicking the email link.
       let rqSupabaseInitStarted = false;
 
-      
-      // -------- Auth/profile globals (used for header + Account) --------
-      let rqAuthUser = null;
-      let rqUserProfile = null; // { display_name, avatar_url, country_region, ... }
-
-      function rqGetInitials(nameOrEmail) {
-        const s = String(nameOrEmail || "").trim();
-        if (!s) return "RQ";
-        // If email, take the part before @
-        const base = s.indexOf("@") !== -1 ? s.split("@")[0] : s;
-        const parts = base.replace(/[^a-zA-Z0-9 ]/g, " ").trim().split(/\s+/).filter(Boolean);
-        if (parts.length === 0) return base.slice(0,2).toUpperCase();
-        if (parts.length === 1) return parts[0].slice(0,2).toUpperCase();
-        return (parts[0][0] + parts[1][0]).toUpperCase();
-      }
-
-      function rqApplyAvatarToEl(el, avatarUrl, fallbackText) {
-        if (!el) return;
-        const url = String(avatarUrl || "").trim();
-        if (url) {
-          el.style.backgroundImage = "url('" + url.replace(/'/g, "%27") + "')";
-          el.textContent = "";
-        } else {
-          el.style.backgroundImage = "";
-          el.textContent = rqGetInitials(fallbackText);
-        }
-      }
-
-      function rqGetDisplayName(user, profile) {
-        const dn = profile && profile.display_name ? String(profile.display_name).trim() : "";
-        if (dn) return dn;
-        if (user && user.email) return String(user.email).split("@")[0];
-        return "Account";
-      }
-
-      function rqSetHeaderUserChip(user, profile) {
-        if (!els || !els.userChip) return;
-        if (!user) {
-          els.userChip.style.display = "none";
-          if (els.userChipName) els.userChipName.textContent = "";
-          rqApplyAvatarToEl(els.userChipAvatar, "", "");
-          return;
-        }
-        els.userChip.style.display = "inline-flex";
-        const name = rqGetDisplayName(user, profile);
-        if (els.userChipName) els.userChipName.textContent = name;
-        rqApplyAvatarToEl(els.userChipAvatar, profile ? profile.avatar_url : "", name || (user.email || ""));
-      }
-
-      async function rqFetchUserProfile(client, userId) {
-        if (!client || !client.from) return null;
-        try {
-          const res = await client.from("profiles")
-            .select("id, display_name, avatar_url, country_region")
-            .eq("id", userId)
-            .maybeSingle();
-          if (res && res.error) throw res.error;
-          return res ? res.data : null;
-        } catch (e) {
-          return null;
-        }
-      }
-
-      async function rqRefreshAuthState(reason) {
-        try {
-          const client = await getSupabaseClient();
-          if (!client || !client.auth) return;
-
-          // Resolve user
-          let user = null;
-          try {
-            const sessRes = await client.auth.getSession();
-            user = sessRes && sessRes.data && sessRes.data.session && sessRes.data.session.user ? sessRes.data.session.user : null;
-          } catch (e) {}
-          if (!user) {
-            const userRes = await client.auth.getUser();
-            user = userRes && userRes.data ? userRes.data.user : null;
-          }
-
-          rqAuthUser = user || null;
-
-          // Try profile (non-fatal if table not present)
-          if (rqAuthUser) {
-            const prof = await rqFetchUserProfile(client, rqAuthUser.id);
-            rqUserProfile = prof || rqUserProfile || null;
-          } else {
-            rqUserProfile = null;
-          }
-
-          rqSetHeaderUserChip(rqAuthUser, rqUserProfile);
-        } catch (e) {
-          // Don't crash the app if auth refresh fails.
-          console.warn("Auth refresh failed:", e);
-        }
-      }
-
-async function initSupabaseAuthOnLoad() {
+      async function initSupabaseAuthOnLoad() {
         if (rqSupabaseInitStarted) return;
         rqSupabaseInitStarted = true;
 
@@ -5659,9 +5644,8 @@ async function initSupabaseAuthOnLoad() {
             rqSupabaseAuthListenerAttached = true;
             try {
               client.auth.onAuthStateChange(function () {
-                try { rqRefreshAuthState("auth-change"); 
-          try { await rqRefreshAuthState("init"); } catch (e) {}
-} catch (e) {}
+                // Refresh cached user/profile + header chip, and update Account UI if visible.
+                rqRefreshAuthState("auth-change");
                 if (state && state.activeTab === "account") renderAccount();
               });
             } catch (e) { /* ignore */ }
@@ -5714,31 +5698,6 @@ async function initSupabaseAuthOnLoad() {
         status.style.marginTop = "10px";
         status.textContent = "Status: Checking sign-in…";
 
-        const identityRow = document.createElement("div");
-        identityRow.className = "account-identity";
-        identityRow.style.display = "none";
-
-        const identAvatar = document.createElement("div");
-        identAvatar.className = "account-avatar";
-
-        const who = document.createElement("div");
-        who.className = "account-who";
-
-        const identName = document.createElement("div");
-        identName.className = "account-name";
-
-        const identEmail = document.createElement("div");
-        identEmail.className = "account-email";
-
-        const identCountry = document.createElement("div");
-        identCountry.className = "account-country";
-
-        who.appendChild(identName);
-        who.appendChild(identEmail);
-        who.appendChild(identCountry);
-        identityRow.appendChild(identAvatar);
-        identityRow.appendChild(who);
-
         const authSub = document.createElement("div");
         authSub.className = "settings-subheading";
         authSub.style.marginTop = "14px";
@@ -5767,276 +5726,24 @@ async function initSupabaseAuthOnLoad() {
         signOutBtn.className = "pill-btn";
         signOutBtn.textContent = "Sign out";
         signOutBtn.style.display = "none";
+            profileWrap.style.display = "none";
 
-        // ---- Profile UI (only visible when signed in) ----
-        const profileSub = document.createElement("div");
-        profileSub.className = "settings-subheading";
-        profileSub.style.marginTop = "16px";
-        profileSub.textContent = "Profile";
+        // Avoid “flash” of the email box when already signed in.
+        emailInput.style.display = "none";
+        linkBtn.style.display = "none";
 
-        const profileCard = document.createElement("div");
-        profileCard.className = "settings-card";
-        profileCard.style.marginTop = "10px";
-        profileCard.style.display = "none";
-
-        const profileMsg = document.createElement("div");
-        profileMsg.className = "settings-copy";
-        profileMsg.style.marginTop = "6px";
-        profileMsg.textContent = "";
-
-        const nameLabel = document.createElement("label");
-        nameLabel.className = "settings-label";
-        nameLabel.textContent = "Display name";
-
-        const nameInput = document.createElement("input");
-        nameInput.className = "search-input";
-        nameInput.placeholder = "e.g. William";
-        nameLabel.appendChild(nameInput);
-
-        const avatarLabel = document.createElement("label");
-        avatarLabel.className = "settings-label";
-        avatarLabel.textContent = "Avatar image URL (optional)";
-
-        const avatarInput = document.createElement("input");
-        avatarInput.className = "search-input";
-        avatarInput.placeholder = "https://…";
-        avatarInput.inputMode = "url";
-        avatarLabel.appendChild(avatarInput);
-
-        const avatarPreviewWrap = document.createElement("div");
-        avatarPreviewWrap.style.display = "flex";
-        avatarPreviewWrap.style.alignItems = "center";
-        avatarPreviewWrap.style.gap = "10px";
-        avatarPreviewWrap.style.marginTop = "10px";
-
-        const avatarImg = document.createElement("img");
-        avatarImg.alt = "Avatar preview";
-        avatarImg.style.width = "48px";
-        avatarImg.style.height = "48px";
-        avatarImg.style.borderRadius = "999px";
-        avatarImg.style.objectFit = "cover";
-        avatarImg.style.display = "none";
-
-        const avatarHint = document.createElement("div");
-        avatarHint.className = "settings-copy";
-        avatarHint.textContent = "Tip: use a square image for best results.";
-
-        const countryLabel = document.createElement("label");
-        countryLabel.className = "settings-label";
-        countryLabel.textContent = "Country / region";
-
-        const countryInput = document.createElement("input");
-        countryInput.className = "search-input";
-        countryInput.placeholder = "e.g., GB";
-        countryInput.autocomplete = "country";
-        countryInput.maxLength = 8;
-        countryLabel.appendChild(countryInput);
-
-        const countryHint = document.createElement("div");
-        countryHint.className = "settings-copy";
-        countryHint.textContent = "Used for streaming availability and future sharing. Tip: use ISO code like GB, US, JP.";
-
-        const countryList = document.createElement("datalist");
-        countryList.id = "rq-country-list";
-        countryInput.setAttribute("list", countryList.id);
-        // Build country list if supported (falls back quietly)
-        try {
-          if (Intl && Intl.supportedValuesOf && Intl.supportedValuesOf("region")) {
-            const regions = Intl.supportedValuesOf("region");
-            const dn = (Intl.DisplayNames ? new Intl.DisplayNames([navigator.language || "en"], { type: "region" }) : null);
-            for (let r = 0; r < regions.length; r++) {
-              const code = regions[r];
-              const opt = document.createElement("option");
-              const name = dn ? dn.of(code) : code;
-              opt.value = code;
-              opt.label = name;
-              countryList.appendChild(opt);
-            }
-          }
-        } catch (e) {}
-
-
-        avatarPreviewWrap.appendChild(avatarImg);
-        avatarPreviewWrap.appendChild(avatarHint);
-
-        const profileActions = document.createElement("div");
-        profileActions.style.display = "flex";
-        profileActions.style.flexWrap = "wrap";
-        profileActions.style.gap = "10px";
-        profileActions.style.marginTop = "12px";
-
-        const saveProfileBtn = document.createElement("button");
-        saveProfileBtn.type = "button";
-        saveProfileBtn.className = "pill-btn";
-        saveProfileBtn.textContent = "Save profile";
-
-        profileActions.appendChild(saveProfileBtn);
-
-        profileCard.appendChild(nameLabel);
-        profileCard.appendChild(avatarLabel);
-        profileCard.appendChild(avatarPreviewWrap);
-        profileCard.appendChild(profileActions);
-        profileCard.appendChild(profileMsg);
-
-        emailWrap.appendChild(emailInput);
-        emailWrap.appendChild(linkBtn);
-        emailWrap.appendChild(signOutBtn);
-
-        panel.appendChild(heading);
-        panel.appendChild(copy);
-        panel.appendChild(authSub);
-        panel.appendChild(emailWrap);
-        panel.appendChild(status);
-        panel.appendChild(profileSub);
-        panel.appendChild(profileCard);
-
-        let profileLoadedFor = null;
-        let profilesAvailable = true;
-
-        function setAvatarPreview(url) {
-          const u = String(url || "").trim();
-          if (!u) {
-            avatarImg.src = "";
-            avatarImg.style.display = "none";
-            return;
-          }
-          avatarImg.src = u;
-          avatarImg.style.display = "inline-block";
-        }
-
-        avatarInput.addEventListener("input", function () {
-          setAvatarPreview(avatarInput.value);
-        });
-
-        async function ensureProfileLoaded(user) {
-          if (!user || !user.id) return;
-          if (profileLoadedFor === user.id) return;
-          profileLoadedFor = user.id;
-
-          profileMsg.textContent = "Loading profile…";
-          try {
-            const client = await getSupabaseClient();
-            if (!client) throw new Error("Supabase client not available");
-
-            // If the table/policies aren’t set up yet, this will throw/return an error.
-            let data = null;
-
-            if (client.from && client.from("profiles").select) {
-              try {
-                const res = await client.from("profiles")
-                  .select("id, display_name, avatar_url, country_region")
-                  .eq("id", user.id)
-                  .maybeSingle();
-                if (res && res.error) throw res.error;
-                data = res ? res.data : null;
-              } catch (e) {
-                // If no row exists, create it. If the table doesn’t exist, show setup hint.
-                const msg = (e && e.message) ? String(e.message) : "";
-                if (msg.toLowerCase().indexOf("relation") !== -1 || msg.toLowerCase().indexOf("does not exist") !== -1) {
-                  profilesAvailable = false;
-                  profileMsg.textContent = "Profiles table not found in Supabase. Run the setup SQL in Supabase → SQL editor.";
-                  saveProfileBtn.disabled = true;
-                  return;
-                }
-                // Try create row via upsert (requires policies)
-                try {
-                  const up = await client.from("profiles").upsert({ id: user.id }, { onConflict: "id" }).select("id, display_name, avatar_url, country_region").maybeSingle();
-                  if (up && up.error) throw up.error;
-                  data = up ? up.data : null;
-                } catch (e2) {
-                  profilesAvailable = false;
-                  profileMsg.textContent = "Profile storage isn’t ready (RLS/policies). Run the setup SQL in Supabase → SQL editor.";
-                  saveProfileBtn.disabled = true;
-                  return;
-                }
-              }
-            }
-
-            nameInput.value = (data && data.display_name) ? data.display_name : "";
-            avatarInput.value = (data && data.avatar_url) ? data.avatar_url : "";
-              countryInput.value = data && data.country_region ? String(data.country_region) : "";
-            setAvatarPreview(avatarInput.value);
-              try {
-                // Keep global state + header + account identity in sync
-                const loadedProfile = {
-                  id: user.id,
-                  display_name: String(nameInput.value || "").trim(),
-                  avatar_url: String(avatarInput.value || "").trim(),
-                  country_region: String(countryInput.value || "").trim().toUpperCase()
-                };
-                rqUserProfile = loadedProfile;
-                rqAuthUser = user;
-                rqSetHeaderUserChip(user, loadedProfile);
-
-                const dn = loadedProfile.display_name || (user && user.email ? String(user.email).split("@")[0] : "Account");
-                identName.textContent = dn;
-                identEmail.textContent = user && user.email ? user.email : "";
-                identCountry.textContent = loadedProfile.country_region ? ("Region: " + loadedProfile.country_region) : "";
-                rqApplyAvatarToEl(identAvatar, loadedProfile.avatar_url, dn || (user.email || ""));
-              } catch (e) {}
-
-            profileMsg.textContent = "Profile loaded.";
-            saveProfileBtn.disabled = false;
-          } catch (e) {
-            profilesAvailable = false;
-            console.error(e);
-            profileMsg.textContent = "Couldn’t load profile.";
-            saveProfileBtn.disabled = true;
-          }
-        }
-
-        async function saveProfile(user) {
-          if (!profilesAvailable) {
-            alertNice("Profiles aren’t set up in Supabase yet.");
-            return;
-          }
-          try {
-            const client = await getSupabaseClient();
-            if (!client) throw new Error("Supabase client not available");
-            const payload = {
-              id: user.id,
-              display_name: String(nameInput.value || "").trim(),
-              avatar_url: String(avatarInput.value || "").trim(),
-              country_region: String(countryInput.value || "").trim().toUpperCase(),
-              updated_at: new Date().toISOString()
-            };
-            const res = await client.from("profiles").upsert(payload, { onConflict: "id" });
-            if (res && res.error) throw res.error;
-            setAvatarPreview(payload.avatar_url);
-            toast("Profile saved.");
-            try { rqUserProfile = Object.assign({}, rqUserProfile || {}, payload); rqSetHeaderUserChip(rqAuthUser || user, payload); } catch (e) {}
-            profileMsg.textContent = "Saved.";
-          } catch (e) {
-            console.error(e);
-            alertNice("Couldn’t save profile: " + (e && e.message ? e.message : "unknown error"));
-          }
-        }
-
-        function setAuthUi(isSignedIn, user) {
+        function setAuthUi(isSignedIn, email) {
           if (isSignedIn) {
-            status.textContent = "Status: Signed in as " + (user && user.email ? user.email : "your account");
-            identityRow.style.display = "flex";
-            const baseName = (user && user.email) ? String(user.email).split("@")[0] : "Account";
-            identName.textContent = baseName;
-            identEmail.textContent = (user && user.email) ? user.email : "";
-            identCountry.textContent = "";
-            rqApplyAvatarToEl(identAvatar, "", baseName);
-            try { rqSetHeaderUserChip(user, rqUserProfile); } catch (e) {}
+            status.textContent = "Status: Signed in as " + (email || "your account");
             emailInput.style.display = "none";
             linkBtn.style.display = "none";
             signOutBtn.style.display = "inline-flex";
-            profileCard.style.display = "block";
-            // Load the user's profile from Supabase
-            ensureProfileLoaded(user);
+            profileWrap.style.display = "block";
           } else {
             status.textContent = "Status: Not signed in.";
-            identityRow.style.display = "none";
             emailInput.style.display = "";
             linkBtn.style.display = "";
             signOutBtn.style.display = "none";
-            profileCard.style.display = "none";
-            profileMsg.textContent = "";
-            profileLoadedFor = null;
           }
         }
 
@@ -6056,7 +5763,7 @@ async function initSupabaseAuthOnLoad() {
             toast("Magic link sent.");
             try {
               if (isIos && typeof isIos === "function" && isStandalone && typeof isStandalone === "function" && isIos() && isStandalone()) {
-                alertNice("If ReelQuest is installed on your Home Screen, the email link may open in Safari instead of the installed app. That won’t log the installed app in. If that happens, open ReelQuest in Safari, sign in once, then reinstall.");
+                alertNice("If ReelQuest is installed on your Home Screen, the email link may open in Safari. For the sign-in to apply, open the magic link in the same place you use ReelQuest (Safari vs installed app).");
               }
             } catch (e) {}
           } catch (e) {
@@ -6071,63 +5778,188 @@ async function initSupabaseAuthOnLoad() {
             if (!client) return;
             await client.auth.signOut();
             toast("Signed out.");
-            setAuthUi(false, null);
-            try { rqAuthUser = null; rqUserProfile = null; rqSetHeaderUserChip(null, null); } catch (e) {}
+            renderAccount();
           } catch (e) {
             console.error(e);
             alertNice("Couldn’t sign out: " + (e && e.message ? e.message : "unknown error"));
           }
         });
 
-        saveProfileBtn.addEventListener("click", async function () {
+        emailWrap.appendChild(emailInput);
+        emailWrap.appendChild(linkBtn);
+        emailWrap.appendChild(signOutBtn);
+
+        panel.appendChild(heading);
+        panel.appendChild(copy);
+        panel.appendChild(authSub);
+        panel.appendChild(emailWrap);
+        panel.appendChild(status);
+
+        
+        // Profile (only visible when signed in)
+        const profileSub = document.createElement("div");
+        profileSub.className = "settings-subheading";
+        profileSub.style.marginTop = "14px";
+        profileSub.textContent = "Profile";
+
+        const profileWrap = document.createElement("div");
+        profileWrap.className = "profile-card";
+        profileWrap.style.display = "none";
+
+        const profileHead = document.createElement("div");
+        profileHead.className = "profile-head";
+
+        const avatarImg = document.createElement("img");
+        avatarImg.className = "profile-avatar";
+        avatarImg.alt = "Profile photo";
+        avatarImg.referrerPolicy = "no-referrer";
+        avatarImg.loading = "lazy";
+
+        const headText = document.createElement("div");
+
+        const headName = document.createElement("div");
+        headName.className = "profile-name";
+
+        const headEmail = document.createElement("div");
+        headEmail.className = "profile-email";
+
+        headText.appendChild(headName);
+        headText.appendChild(headEmail);
+        profileHead.appendChild(avatarImg);
+        profileHead.appendChild(headText);
+
+        const displayNameLabel = document.createElement("label");
+        displayNameLabel.className = "settings-label";
+        displayNameLabel.textContent = "Display name";
+        const displayNameInput = document.createElement("input");
+        displayNameInput.className = "search-input";
+        displayNameInput.placeholder = "e.g. William";
+        displayNameLabel.appendChild(displayNameInput);
+
+        const avatarUrlLabel = document.createElement("label");
+        avatarUrlLabel.className = "settings-label";
+        avatarUrlLabel.textContent = "Profile photo URL";
+        const avatarUrlInput = document.createElement("input");
+        avatarUrlInput.className = "search-input";
+        avatarUrlInput.placeholder = "https://… (optional)";
+        avatarUrlLabel.appendChild(avatarUrlInput);
+
+        const countryLabel = document.createElement("label");
+        countryLabel.className = "settings-label";
+        countryLabel.textContent = "Country / region";
+        const countryInput = document.createElement("input");
+        countryInput.className = "search-input";
+        countryInput.placeholder = "e.g. UK";
+        countryLabel.appendChild(countryInput);
+
+        const saveRow = document.createElement("div");
+        saveRow.style.display = "flex";
+        saveRow.style.flexWrap = "wrap";
+        saveRow.style.gap = "10px";
+        saveRow.style.alignItems = "center";
+        saveRow.style.marginTop = "10px";
+
+        const saveBtn = document.createElement("button");
+        saveBtn.type = "button";
+        saveBtn.className = "pill-btn";
+        saveBtn.textContent = "Save profile";
+
+        const saveHint = document.createElement("div");
+        saveHint.className = "settings-copy";
+        saveHint.textContent = "";
+
+        saveRow.appendChild(saveBtn);
+        saveRow.appendChild(saveHint);
+
+        profileWrap.appendChild(profileHead);
+        profileWrap.appendChild(displayNameLabel);
+        profileWrap.appendChild(avatarUrlLabel);
+        profileWrap.appendChild(countryLabel);
+        profileWrap.appendChild(saveRow);
+
+        panel.appendChild(profileSub);
+        panel.appendChild(profileWrap);
+
+        function applyProfileToUi(user, profile) {
+          if (!user) {
+            profileWrap.style.display = "none";
+            headName.textContent = "";
+            headEmail.textContent = "";
+            rqApplyAvatarToEl(avatarImg, "", "");
+            displayNameInput.value = "";
+            avatarUrlInput.value = "";
+            countryInput.value = "";
+            saveHint.textContent = "";
+            return;
+          }
+          profileWrap.style.display = "block";
+          const name = rqGetDisplayName(user, profile);
+          headName.textContent = name;
+          headEmail.textContent = user.email || "";
+          rqApplyAvatarToEl(avatarImg, profile ? profile.avatar_url : "", name);
+          displayNameInput.value = profile && profile.display_name ? String(profile.display_name) : "";
+          avatarUrlInput.value = profile && profile.avatar_url ? String(profile.avatar_url) : "";
+          countryInput.value = profile && profile.country_region ? String(profile.country_region) : "";
+          saveHint.textContent = "";
+        }
+
+        async function saveProfile(user) {
+          if (!user) return;
           try {
             const client = await getSupabaseClient();
-            if (!client) throw new Error("Supabase client not available");
-
-            let user = null;
-            try {
-              const sessRes = await client.auth.getSession();
-              user = sessRes && sessRes.data && sessRes.data.session && sessRes.data.session.user ? sessRes.data.session.user : null;
-            } catch (e) {}
-            if (!user) {
-              const userRes = await client.auth.getUser();
-              user = userRes && userRes.data ? userRes.data.user : null;
-            }
-            if (!user) {
-              alertNice("You’re not signed in.");
-              return;
-            }
-            await saveProfile(user);
+            if (!client) throw new Error("Supabase not available");
+            saveHint.textContent = "Saving…";
+            const payload = {
+              id: user.id,
+              email: user.email || null,
+              display_name: String(displayNameInput.value || "").trim() || null,
+              avatar_url: String(avatarUrlInput.value || "").trim() || null,
+              country_region: String(countryInput.value || "").trim() || null
+            };
+            const res = await client.from("profiles")
+              .upsert(payload, { onConflict: "id" })
+              .select("id, display_name, avatar_url, country_region")
+              .maybeSingle();
+            if (res && res.error) throw res.error;
+            const updated = res ? res.data : null;
+            // Update cache + header chip
+            rqCurrentProfile = updated || rqCurrentProfile;
+            rqSetHeaderUserChip(user, rqCurrentProfile);
+            applyProfileToUi(user, rqCurrentProfile);
+            saveHint.textContent = "Saved.";
+            toast("Profile saved");
           } catch (e) {
             console.error(e);
-            alertNice("Couldn’t save profile.");
+            saveHint.textContent = "Couldn’t save (check you ran the profiles SQL + RLS).";
+            alertNice("Couldn’t save profile. Make sure the profiles table exists and RLS policies are in place.");
           }
+        }
+
+        saveBtn.addEventListener("click", function () {
+          const u = rqCurrentUser;
+          if (!u) { alertNice("You need to be signed in."); return; }
+          saveProfile(u);
         });
 
-        // Check sign-in status immediately
+
+        // Async: update sign-in status (+ profile) safely
         (async function () {
           try {
-            const client = await getSupabaseClient();
-            if (!client) throw new Error("Supabase client not available");
+            const authState = await rqRefreshAuthState("account");
+            const user = authState && authState.user ? authState.user : null;
+            const profile = authState && authState.profile ? authState.profile : null;
 
-            let user = null;
-            try {
-              const sessRes = await client.auth.getSession();
-              user = sessRes && sessRes.data && sessRes.data.session && sessRes.data.session.user ? sessRes.data.session.user : null;
-            } catch (e) {}
-            if (!user) {
-              const userRes = await client.auth.getUser();
-              user = userRes && userRes.data ? userRes.data.user : null;
-            }
-
-            setAuthUi(!!(user && user.email), user);
+            setAuthUi(!!(user && user.email), user && user.email ? user.email : "");
+            applyProfileToUi(user, profile);
           } catch (e) {
             console.error(e);
             status.textContent = "Status: Couldn’t check sign-in.";
-            setAuthUi(false, null);
+            setAuthUi(false);
+            applyProfileToUi(null, null);
           }
         })();
       }
+
 
 function renderListsPanel() {
   const panel = els.listsPanel;
@@ -8713,6 +8545,9 @@ function init() {
           settingsPanel: document.getElementById("settings-panel"),
           listsPanel: document.getElementById("lists-panel"),
           accountPanel: document.getElementById("account-panel"),
+          userChip: document.getElementById("user-chip"),
+          userChipAvatar: document.getElementById("user-chip-avatar"),
+          userChipName: document.getElementById("user-chip-name"),
           debug: document.getElementById("debug"),
           controlsBar: document.getElementById("controls-bar"),
           sortSelect: document.getElementById("sort-select"),
@@ -8736,10 +8571,7 @@ function init() {
           menuOverlay: document.getElementById("menu-overlay"),
           menuClose: document.getElementById("menu-close"),
           menuItems: document.querySelectorAll(".menu-item"),
-          brandHome: document.getElementById("brand-home"),
-          userChip: document.getElementById("user-chip"),
-          userChipAvatar: document.getElementById("user-chip-avatar"),
-          userChipName: document.getElementById("user-chip-name")
+          brandHome: document.getElementById("brand-home")
         };
 
         loadState();
@@ -8751,6 +8583,7 @@ function init() {
         migrateItemsMediaType();
         applyTheme();
         try { initSupabaseAuthOnLoad(); } catch (e) {}
+        try { rqRefreshAuthState("init"); } catch (e) {}
         render();
 
         // Initial load for the starting tab
@@ -8779,12 +8612,6 @@ function init() {
             } else {
               try {
                 window.scrollTo({ top: 0, behavior: "smooth" });
-        if (els.userChip) {
-          els.userChip.addEventListener("click", function () {
-            try { setActiveTab("account"); } catch (e) { state.activeTab = "account"; render(); }
-          });
-        }
-
               } catch (e) {
                 window.scrollTo(0, 0);
               }
@@ -8818,6 +8645,18 @@ function init() {
             switchToTab("settings");
           });
         }
+
+        if (els.userChip) {
+          const goAccount = function () {
+            try { switchToTab("account"); } catch (e) {}
+            try { closeMenu(); } catch (e) {}
+          };
+          els.userChip.addEventListener("click", goAccount);
+          els.userChip.addEventListener("keydown", function (e) {
+            if (e.key === "Enter" || e.key === " ") { e.preventDefault(); goAccount(); }
+          });
+        }
+
 
         if (els.menuToggle) {
           els.menuToggle.addEventListener("click", function () {
