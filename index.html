@@ -5726,7 +5726,6 @@ function moveEntryInList(listId, entryKeyValue, direction) {
         signOutBtn.className = "pill-btn";
         signOutBtn.textContent = "Sign out";
         signOutBtn.style.display = "none";
-            profileWrap.style.display = "none";
 
         // Avoid “flash” of the email box when already signed in.
         emailInput.style.display = "none";
@@ -5738,12 +5737,12 @@ function moveEntryInList(listId, entryKeyValue, direction) {
             emailInput.style.display = "none";
             linkBtn.style.display = "none";
             signOutBtn.style.display = "inline-flex";
-            profileWrap.style.display = "block";
           } else {
             status.textContent = "Status: Not signed in.";
             emailInput.style.display = "";
             linkBtn.style.display = "";
             signOutBtn.style.display = "none";
+            try { profileWrap.style.display = "none"; } catch (e) {}
           }
         }
 
@@ -5882,7 +5881,6 @@ function moveEntryInList(listId, entryKeyValue, direction) {
 
         function applyProfileToUi(user, profile) {
           if (!user) {
-            profileWrap.style.display = "none";
             headName.textContent = "";
             headEmail.textContent = "";
             rqApplyAvatarToEl(avatarImg, "", "");
@@ -8696,7 +8694,7 @@ function init() {
           });
         }
 
-        updateDebug("ReelQuest ready (JS initialised) • build v11-magiclink-fix");
+        updateDebug("ReelQuest ready (JS initialised) • build v15-profile-account-fix");
       }
 
       document.addEventListener("DOMContentLoaded", init);
