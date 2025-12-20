@@ -5445,140 +5445,229 @@ function moveEntryInList(listId, entryKeyValue, direction) {
       }
 
       
-      function renderAccount() {
-        const panel = els.accountPanel;
-        if (!panel) return;
-        panel.innerHTML = "";
+      
+function renderAccount() {
+  const panel = els.accountPanel;
+  if (!panel) return;
+  panel.innerHTML = "";
 
-        const heading = document.createElement("h2");
-        heading.className = "settings-heading";
-        heading.textContent = "Account";
+  const heading = document.createElement("h2");
+  heading.className = "settings-heading";
+  heading.textContent = "Account";
 
-        const copy = document.createElement("p");
-        copy.className = "settings-copy";
-        copy.textContent = "Sign in to sync your ReelQuest across devices.";
+  const copy = document.createElement("p");
+  copy.className = "settings-copy";
+  copy.textContent = "Sign in to sync your ReelQuest across devices.";
 
-        const status = document.createElement("div");
-        status.className = "settings-copy";
-        status.style.marginTop = "10px";
-        status.textContent = "Status: Checking sign-in…";
+  const status = document.createElement("div");
+  status.className = "settings-copy";
+  status.style.marginTop = "10px";
+  status.textContent = "Status: Checking sign-in…";
 
-        const authSub = document.createElement("div");
-        authSub.className = "settings-subheading";
-        authSub.style.marginTop = "14px";
-        authSub.textContent = "Sign in";
+  const authSub = document.createElement("div");
+  authSub.className = "settings-subheading";
+  authSub.style.marginTop = "14px";
+  authSub.textContent = "Sign in";
 
-        const emailWrap = document.createElement("div");
-        emailWrap.style.display = "flex";
-        emailWrap.style.flexWrap = "wrap";
-        emailWrap.style.gap = "10px";
-        emailWrap.style.alignItems = "center";
+  const wrap = document.createElement("div");
+  wrap.style.display = "flex";
+  wrap.style.flexWrap = "wrap";
+  wrap.style.gap = "10px";
+  wrap.style.alignItems = "center";
 
-        const emailInput = document.createElement("input");
-        emailInput.className = "search-input";
-        emailInput.placeholder = "Email address";
-        emailInput.inputMode = "email";
-        emailInput.autocomplete = "email";
-        emailInput.style.flex = "1 1 240px";
+  const emailInput = document.createElement("input");
+  emailInput.className = "search-input";
+  emailInput.placeholder = "Email address";
+  emailInput.inputMode = "email";
+  emailInput.autocomplete = "email";
+  emailInput.style.flex = "1 1 240px";
 
-        const linkBtn = document.createElement("button");
-        linkBtn.type = "button";
-        linkBtn.className = "pill-btn";
-        linkBtn.textContent = "Send magic link";
+  const magicBtn = document.createElement("button");
+  magicBtn.type = "button";
+  magicBtn.className = "pill-btn";
+  magicBtn.textContent = "Send magic link";
 
-        const signOutBtn = document.createElement("button");
-        signOutBtn.type = "button";
-        signOutBtn.className = "pill-btn";
-        signOutBtn.textContent = "Sign out";
-        signOutBtn.style.display = "none";
+  const passkeyBtn = document.createElement("button");
+  passkeyBtn.type = "button";
+  passkeyBtn.className = "pill-btn";
+  passkeyBtn.textContent = "Sign in with passkey";
 
-        // Avoid “flash” of the email box when already signed in.
-        emailInput.style.display = "none";
-        linkBtn.style.display = "none";
+  const appleBtn = document.createElement("button");
+  appleBtn.type = "button";
+  appleBtn.className = "pill-btn";
+  appleBtn.textContent = "Sign in with Apple";
 
-        function setAuthUi(isSignedIn, email) {
-          if (isSignedIn) {
-            status.textContent = "Status: Signed in as " + (email || "your account");
-            emailInput.style.display = "none";
-            linkBtn.style.display = "none";
-            signOutBtn.style.display = "inline-flex";
-          } else {
-            status.textContent = "Status: Not signed in.";
-            emailInput.style.display = "";
-            linkBtn.style.display = "";
-            signOutBtn.style.display = "none";
-          }
-        }
+  const googleBtn = document.createElement("button");
+  googleBtn.type = "button";
+  googleBtn.className = "pill-btn";
+  googleBtn.textContent = "Sign in with Google";
 
-        linkBtn.addEventListener("click", async function () {
-          const email = String(emailInput.value || "").trim();
-          if (!email || email.indexOf("@") === -1) {
-            alertNice("Enter a valid email address.");
-            return;
-          }
-          try {
-            const client = await getSupabaseClient();
-            if (!client) throw new Error("Supabase client not available");
-            await client.auth.signInWithOtp({
-              email: email,
-              options: { emailRedirectTo: (location.origin + location.pathname) }
-            });
-            toast("Magic link sent.");
-          } catch (e) {
-            console.error(e);
-            alertNice("Couldn’t send the magic link: " + (e && e.message ? e.message : "unknown error"));
-          }
-        });
+  const signOutBtn = document.createElement("button");
+  signOutBtn.type = "button";
+  signOutBtn.className = "pill-btn";
+  signOutBtn.textContent = "Sign out";
+  signOutBtn.style.display = "none";
 
-        signOutBtn.addEventListener("click", async function () {
-          try {
-            const client = await getSupabaseClient();
-            if (!client) return;
-            await client.auth.signOut();
-            toast("Signed out.");
-            renderAccount();
-          } catch (e) {
-            console.error(e);
-            alertNice("Couldn’t sign out: " + (e && e.message ? e.message : "unknown error"));
-          }
-        });
+  // Avoid “flash” of the email box when already signed in.
+  emailInput.style.display = "none";
+  magicBtn.style.display = "none";
+  passkeyBtn.style.display = "none";
+  appleBtn.style.display = "none";
+  googleBtn.style.display = "none";
 
-        emailWrap.appendChild(emailInput);
-        emailWrap.appendChild(linkBtn);
-        emailWrap.appendChild(signOutBtn);
+  function setAuthUi(isSignedIn, email) {
+    if (isSignedIn) {
+      status.textContent = "Status: Signed in as " + (email || "your account");
+      emailInput.style.display = "none";
+      magicBtn.style.display = "none";
+      passkeyBtn.style.display = "none";
+      appleBtn.style.display = "none";
+      googleBtn.style.display = "none";
+      signOutBtn.style.display = "inline-flex";
+    } else {
+      status.textContent = "Status: Not signed in.";
+      emailInput.style.display = "";
+      magicBtn.style.display = "inline-flex";
+      // “Passkey” here means SSO / IdP passkeys (enterprise) OR provider passkeys (Apple/Google).
+      passkeyBtn.style.display = "inline-flex";
+      appleBtn.style.display = "inline-flex";
+      googleBtn.style.display = "inline-flex";
+      signOutBtn.style.display = "none";
+    }
+  }
 
-        panel.appendChild(heading);
-        panel.appendChild(copy);
-        panel.appendChild(authSub);
-        panel.appendChild(emailWrap);
-        panel.appendChild(status);
+  function getEmailDomain(email) {
+    const at = String(email || "").lastIndexOf("@");
+    if (at === -1) return "";
+    return String(email || "").slice(at + 1).trim().toLowerCase();
+  }
 
-        // Async: update sign-in status and wire an auth-change listener.
-        (async function () {
-          try {
-            const client = await getSupabaseClient();
-            if (!client) { status.textContent = "Status: Sign-in unavailable."; setAuthUi(false); return; }
+  async function startOAuth(provider) {
+    const client = await getSupabaseClient();
+    if (!client) throw new Error("Supabase client not available");
+    await client.auth.signInWithOAuth({
+      provider: provider,
+      options: { redirectTo: (location.origin + location.pathname) }
+    });
+  }
 
-            if (!rqSupabaseAuthListenerAttached && client.auth && client.auth.onAuthStateChange) {
-              rqSupabaseAuthListenerAttached = true;
-              try {
-                client.auth.onAuthStateChange(function () {
-                  if (state && state.activeTab === "account") renderAccount();
-                });
-              } catch (e) { /* ignore */ }
-            }
+  async function startSSOWithDomain(domain) {
+    const client = await getSupabaseClient();
+    if (!client) throw new Error("Supabase client not available");
+    await client.auth.signInWithSSO({ domain: domain });
+  }
 
-            const userRes = await client.auth.getUser();
-            const user = userRes && userRes.data ? userRes.data.user : null;
-            setAuthUi(!!(user && user.email), user && user.email ? user.email : "");
-          } catch (e) {
-            console.error(e);
-            status.textContent = "Status: Couldn’t check sign-in.";
-            // Allow retry by showing fields.
-            setAuthUi(false);
-          }
-        })();
+  magicBtn.addEventListener("click", async function () {
+    const email = String(emailInput.value || "").trim();
+    if (!email || email.indexOf("@") === -1) {
+      alertNice("Enter a valid email address.");
+      return;
+    }
+    try {
+      const client = await getSupabaseClient();
+      if (!client) throw new Error("Supabase client not available");
+      await client.auth.signInWithOtp({
+        email: email,
+        options: { emailRedirectTo: (location.origin + location.pathname) }
+      });
+      toast("Magic link sent.");
+    } catch (e) {
+      console.error(e);
+      alertNice("Couldn’t send the magic link: " + (e && e.message ? e.message : "unknown error"));
+    }
+  });
+
+  passkeyBtn.addEventListener("click", async function () {
+    // Best-effort “passkey login” route:
+    // 1) Try Supabase Enterprise SSO using the email domain (your IdP can enforce passkeys).
+    // 2) If not configured, the user can use Apple/Google buttons (those providers may use passkeys).
+    const email = String(emailInput.value || "").trim();
+    const domain = getEmailDomain(email);
+    if (!domain) {
+      alertNice("Enter your email address first (so we can route you to your SSO provider).");
+      return;
+    }
+    try {
+      await startSSOWithDomain(domain);
+      // Redirect happens; no further UI update needed.
+    } catch (e) {
+      console.error(e);
+      alertNice(
+        "Passkey sign-in via SSO isn’t available for this email domain. " +
+        "Try “Sign in with Apple” or “Sign in with Google”, or configure SSO in Supabase."
+      );
+    }
+  });
+
+  appleBtn.addEventListener("click", async function () {
+    try {
+      await startOAuth("apple");
+    } catch (e) {
+      console.error(e);
+      alertNice("Apple sign-in failed: " + (e && e.message ? e.message : "unknown error"));
+    }
+  });
+
+  googleBtn.addEventListener("click", async function () {
+    try {
+      await startOAuth("google");
+    } catch (e) {
+      console.error(e);
+      alertNice("Google sign-in failed: " + (e && e.message ? e.message : "unknown error"));
+    }
+  });
+
+  signOutBtn.addEventListener("click", async function () {
+    try {
+      const client = await getSupabaseClient();
+      if (!client) return;
+      await client.auth.signOut();
+      toast("Signed out.");
+      renderAccount();
+    } catch (e) {
+      console.error(e);
+      alertNice("Couldn’t sign out: " + (e && e.message ? e.message : "unknown error"));
+    }
+  });
+
+  wrap.appendChild(emailInput);
+  wrap.appendChild(magicBtn);
+  wrap.appendChild(passkeyBtn);
+  wrap.appendChild(appleBtn);
+  wrap.appendChild(googleBtn);
+  wrap.appendChild(signOutBtn);
+
+  panel.appendChild(heading);
+  panel.appendChild(copy);
+  panel.appendChild(authSub);
+  panel.appendChild(wrap);
+  panel.appendChild(status);
+
+  // Async: update sign-in status and wire an auth-change listener.
+  (async function () {
+    try {
+      const client = await getSupabaseClient();
+      if (!client) { status.textContent = "Status: Sign-in unavailable."; setAuthUi(false); return; }
+
+      if (!rqSupabaseAuthListenerAttached && client.auth && client.auth.onAuthStateChange) {
+        rqSupabaseAuthListenerAttached = true;
+        try {
+          client.auth.onAuthStateChange(function () {
+            if (state && state.activeTab === "account") renderAccount();
+          });
+        } catch (e) { /* ignore */ }
       }
+
+      const userRes = await client.auth.getUser();
+      const user = userRes && userRes.data ? userRes.data.user : null;
+      setAuthUi(!!(user && user.email), user && user.email ? user.email : "");
+    } catch (e) {
+      console.error(e);
+      status.textContent = "Status: Couldn’t check sign-in.";
+      setAuthUi(false);
+    }
+  })();
+}
 
 function renderListsPanel() {
   const panel = els.listsPanel;
