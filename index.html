@@ -2077,6 +2077,8 @@ function moodMatchesTmdb(tmdbObj) {
         detailsCache: {},
         ui: { selectionMode: false, selectedKeys: [] },
         lastTmdbStatus: "",
+        autoBackupEnabled: false,
+        syncMeta: { rev: 0, lastPushedAt: 0, lastPulledAt: 0, lastRemoteRev: 0 },
         syncEnabled: true
       };
 
@@ -2116,55 +2118,68 @@ function formatDateUK(ts) {
           const raw = localStorage.getItem(STORAGE_KEY);
           if (!raw) return;
           const parsed = JSON.parse(raw);
+          if (!parsed || typeof parsed !== "object") return;
+
           if (Array.isArray(parsed.items)) {
             state.items = parsed.items;
-          }
-          if (Array.isArray(parsed.favouriteGenres)) {
-            state.favouriteGenres = parsed.favouriteGenres;
-          }
-          if (parsed.sortBy) {
-            state.sortBy = parsed.sortBy;
-          }
-          if (typeof parsed.minRating === "number") {
-            state.minRating = parsed.minRating;
           }
           if (Array.isArray(parsed.lists)) {
             state.lists = parsed.lists;
           }
           if (parsed.listsUi && typeof parsed.listsUi === "object") {
             state.listsUi = {
-              mode: parsed.listsUi.mode === "detail" ? "detail" : "index",
-              activeListId: parsed.listsUi.activeListId || null
+              mode: (parsed.listsUi.mode === "detail") ? "detail" : (state.listsUi && state.listsUi.mode ? state.listsUi.mode : "index"),
+              activeListId: (typeof parsed.listsUi.activeListId === "string") ? parsed.listsUi.activeListId : (state.listsUi ? state.listsUi.activeListId : null),
+              reorderMode: !!parsed.listsUi.reorderMode
             };
           }
-          if (typeof parsed.country === "string" && parsed.country.length === 2) {
-            state.country = parsed.country.toUpperCase();
+
+          if (parsed.filters && typeof parsed.filters === "object") {
+            state.filters = parsed.filters;
           }
 
+          if (Array.isArray(parsed.favouriteGenres)) {
+            state.favouriteGenres = parsed.favouriteGenres;
+          }
+          if (typeof parsed.sortBy === "string") {
+            state.sortBy = parsed.sortBy;
+          }
+          if (typeof parsed.minRating === "number") {
+            state.minRating = parsed.minRating;
+          }
+          if (typeof parsed.country === "string" && parsed.country.length) {
+            state.country = parsed.country;
+          }
           if (typeof parsed.includeTv === "boolean") {
             state.includeTv = parsed.includeTv;
           }
-          
-           if (typeof parsed.syncEnabled === "boolean") {
-             state.syncEnabled = parsed.syncEnabled;
-           }
-if (typeof parsed.mood === "string" && MOODS[parsed.mood]) {
+          if (typeof parsed.mood === "string" && MOODS && MOODS[parsed.mood]) {
             state.mood = parsed.mood;
           }
-
           if (typeof parsed.streamingMode === "string") {
             const sm = parsed.streamingMode;
             state.streamingMode = (sm === "first" || sm === "only") ? sm : "any";
           }
 
-if (parsed.ui && typeof parsed.ui === "object") {
-  state.ui = {
-    selectionMode: !!parsed.ui.selectionMode,
-    selectedKeys: Array.isArray(parsed.ui.selectedKeys)
-      ? parsed.ui.selectedKeys.filter(function (n) { return typeof n === "string" && n.length; })
-      : []
-  };
-}
+          if (parsed.ui && typeof parsed.ui === "object") {
+            state.ui = {
+              selectionMode: !!parsed.ui.selectionMode,
+              selectedKeys: Array.isArray(parsed.ui.selectedKeys)
+                ? parsed.ui.selectedKeys.filter(function (n) { return typeof n === "string" && n.length; })
+                : []
+            };
+          }
+
+          if (typeof parsed.autoBackupEnabled === "boolean") {
+            state.autoBackupEnabled = parsed.autoBackupEnabled;
+          }
+
+          if (typeof parsed.syncEnabled === "boolean") {
+            state.syncEnabled = parsed.syncEnabled;
+          }
+          if (parsed.syncMeta && typeof parsed.syncMeta === "object") {
+            state.syncMeta = Object.assign({}, state.syncMeta || {}, parsed.syncMeta);
+          }
 
           if (parsed.theme === "light" || parsed.theme === "dark") {
             state.theme = parsed.theme;
@@ -2296,7 +2311,7 @@ function alertNice(message) {
           localStorage.setItem(
             STORAGE_KEY,
             JSON.stringify({
-              items: state.items,
+items: state.items,
               lists: state.lists,
               listsUi: state.listsUi,
               filters: state.filters,
@@ -2305,13 +2320,14 @@ function alertNice(message) {
               minRating: state.minRating,
               country: state.country,
               includeTv: state.includeTv,
+              autoBackupEnabled: !!state.autoBackupEnabled,
                syncEnabled: state.syncEnabled,
+              syncMeta: state.syncMeta,
                mood: state.mood,
               streamingMode: state.streamingMode,
               ui: state.ui,
               theme: state.theme
-            })
-          );
+            });
         } catch (e) {
           console.warn("Failed to save ReelQuest state", e);
         }
@@ -7057,6 +7073,165 @@ const authSub = document.createElement("div");
         
         
         panel.appendChild(syncRow);
+
+        // Preferences shortcuts (so key settings don’t feel “missing” on the Account page)
+        const prefsSub = document.createElement("div");
+        prefsSub.className = "settings-subheading";
+        prefsSub.style.marginTop = "14px";
+        prefsSub.textContent = "Preferences";
+
+        const prefsWrap = document.createElement("div");
+        prefsWrap.className = "profile-card";
+
+        const prefsNote = document.createElement("div");
+        prefsNote.className = "settings-copy";
+        prefsNote.style.marginBottom = "10px";
+        prefsNote.textContent = "Quick shortcuts — same settings as the Preferences page.";
+        prefsWrap.appendChild(prefsNote);
+
+        // Country / region
+        const prefCountryLabel = document.createElement("label");
+        prefCountryLabel.className = "settings-label";
+        prefCountryLabel.textContent = "Country / region";
+        const prefCountrySelect = document.createElement("select");
+        prefCountrySelect.className = "controls-select";
+        prefCountrySelect.style.width = "100%";
+        prefCountrySelect.style.borderRadius = "14px";
+        prefCountrySelect.style.padding = "10px 12px";
+
+        const PREF_COUNTRIES = rqGetCountryOptions();
+        for (let i = 0; i < PREF_COUNTRIES.length; i++) {
+          const opt = document.createElement("option");
+          opt.value = PREF_COUNTRIES[i][0];
+          opt.textContent = PREF_COUNTRIES[i][1];
+          prefCountrySelect.appendChild(opt);
+        }
+
+        try { prefCountrySelect.value = (state.country || "GB").toUpperCase(); } catch (e) {}
+        prefCountryLabel.appendChild(prefCountrySelect);
+        prefsWrap.appendChild(prefCountryLabel);
+
+        prefCountrySelect.addEventListener("change", function () {
+          const cc = normaliseCountryCode(prefCountrySelect.value, state.country || "GB");
+          state.country = cc;
+          saveState();
+
+          // Keep other country dropdowns aligned (Preferences panel + Profile panel)
+          try { if (els && els.prefCountrySelect) els.prefCountrySelect.value = cc; } catch (e) {}
+          try { if (els && els.profileCountrySelect) els.profileCountrySelect.value = cc; } catch (e) {}
+
+          // Best-effort: sync to signed-in profile too
+          try { rqTrySyncCountryToProfile(cc); } catch (e) {}
+
+          if (state.activeTab === "radar") loadRadarUpcoming();
+          else render();
+        });
+
+        // TV series toggle
+        const tvBtn2 = document.createElement("button");
+        tvBtn2.type = "button";
+        tvBtn2.className = "pill-btn";
+        tvBtn2.style.marginTop = "10px";
+        tvBtn2.textContent = state.includeTv ? "TV series: Shown" : "TV series: Hidden";
+        tvBtn2.addEventListener("click", function () {
+          state.includeTv = !state.includeTv;
+          tvBtn2.textContent = state.includeTv ? "TV series: Shown" : "TV series: Hidden";
+          saveState();
+          if (state.activeTab === "for-you") loadForYouRecommendations();
+          else if (state.activeTab === "discover") loadPopularForDiscover();
+          else if (state.activeTab === "radar") loadRadarUpcoming();
+          else render();
+        });
+        prefsWrap.appendChild(tvBtn2);
+
+        // Backup & restore shortcuts
+        const backupTitle = document.createElement("div");
+        backupTitle.className = "settings-subheading";
+        backupTitle.style.marginTop = "12px";
+        backupTitle.textContent = "Backup & restore";
+        prefsWrap.appendChild(backupTitle);
+
+        const backupCopy = document.createElement("div");
+        backupCopy.className = "settings-copy";
+        backupCopy.textContent = "Export a full backup (JSON) or a portable CSV. Import supports ReelQuest backups and CSV (including IMDb exports).";
+        prefsWrap.appendChild(backupCopy);
+
+        const backupRow = document.createElement("div");
+        backupRow.style.display = "flex";
+        backupRow.style.flexWrap = "wrap";
+        backupRow.style.gap = "8px";
+        backupRow.style.marginTop = "8px";
+
+        const exportJsonBtn2 = document.createElement("button");
+        exportJsonBtn2.type = "button";
+        exportJsonBtn2.className = "pill-btn";
+        exportJsonBtn2.textContent = "Export backup (JSON)";
+        exportJsonBtn2.addEventListener("click", exportDataToFile);
+
+        const exportCsvBtn2 = document.createElement("button");
+        exportCsvBtn2.type = "button";
+        exportCsvBtn2.className = "pill-btn";
+        exportCsvBtn2.textContent = "Export CSV";
+        exportCsvBtn2.addEventListener("click", exportItemsToCsvFile);
+
+        const importBtn2 = document.createElement("button");
+        importBtn2.type = "button";
+        importBtn2.className = "pill-btn";
+        importBtn2.textContent = "Import (JSON/CSV)";
+        importBtn2.addEventListener("click", function () {
+          const temp = document.createElement("input");
+          temp.type = "file";
+          temp.accept = ".json,.csv,application/json,text/csv";
+          temp.style.position = "fixed";
+          temp.style.left = "-9999px";
+          temp.style.top = "-9999px";
+          temp.style.width = "1px";
+          temp.style.height = "1px";
+          temp.style.opacity = "0";
+          document.body.appendChild(temp);
+
+          temp.addEventListener("change", function () {
+            const files = temp.files;
+            if (files && files[0]) handleImportFile(files[0]);
+            try { document.body.removeChild(temp); } catch (e) {}
+          });
+
+          temp.click();
+        });
+
+        backupRow.appendChild(exportJsonBtn2);
+        backupRow.appendChild(exportCsvBtn2);
+        backupRow.appendChild(importBtn2);
+        prefsWrap.appendChild(backupRow);
+
+        // Local auto-backup toggle (keeps the last 5 snapshots on this device)
+        const autoRow2 = document.createElement("label");
+        autoRow2.style.display = "flex";
+        autoRow2.style.alignItems = "center";
+        autoRow2.style.gap = "10px";
+        autoRow2.style.marginTop = "10px";
+
+        const autoCb2 = document.createElement("input");
+        autoCb2.type = "checkbox";
+        autoCb2.checked = !!state.autoBackupEnabled;
+        autoCb2.addEventListener("change", function () {
+          state.autoBackupEnabled = !!autoCb2.checked;
+          saveState();
+          toast(state.autoBackupEnabled ? "Auto-backup enabled." : "Auto-backup disabled.");
+        });
+
+        const autoTxt2 = document.createElement("div");
+        autoTxt2.style.fontSize = "13px";
+        autoTxt2.style.color = "var(--text-muted)";
+        autoTxt2.textContent = "Auto-backup: keep the last 5 snapshots on this device.";
+
+        autoRow2.appendChild(autoCb2);
+        autoRow2.appendChild(autoTxt2);
+        prefsWrap.appendChild(autoRow2);
+
+        panel.appendChild(prefsSub);
+        panel.appendChild(prefsWrap);
+
 // Profile (only visible when signed in)
         const profileSub = document.createElement("div");
         profileSub.className = "settings-subheading";
@@ -9382,7 +9557,11 @@ els.detailActions.appendChild(orgWrap);
             theme: state.theme,
             country: state.country,
             includeTv: state.includeTv,
-            mood: state.mood
+            mood: state.mood,
+            streamingMode: state.streamingMode,
+            ui: state.ui,
+            syncEnabled: !!state.syncEnabled,
+            syncMeta: state.syncMeta
           }
         };
         return payload;
@@ -9555,6 +9734,11 @@ els.detailActions.appendChild(orgWrap);
         const theme = data && (data.theme === "light" || data.theme === "dark") ? data.theme : state.theme;
         const includeTv = data && typeof data.includeTv === "boolean" ? data.includeTv : state.includeTv;
         const mood = data && typeof data.mood === "string" && MOODS[data.mood] ? data.mood : state.mood;
+        const streamingMode = data && typeof data.streamingMode === "string" ? data.streamingMode : state.streamingMode;
+        const autoBackupEnabled = data && typeof data.autoBackupEnabled === "boolean" ? data.autoBackupEnabled : !!state.autoBackupEnabled;
+        const syncEnabled = data && typeof data.syncEnabled === "boolean" ? data.syncEnabled : !!state.syncEnabled;
+        const syncMeta = data && data.syncMeta && typeof data.syncMeta === "object" ? data.syncMeta : (state.syncMeta || {});
+        const ui = data && data.ui && typeof data.ui === "object" ? data.ui : (state.ui || {});
 
         state.items = items;
         state.lists = lists;
