@@ -8972,6 +8972,15 @@ container.appendChild(pickBtn);
         if (els.moodSelect) els.moodSelect.value = state.mood || "any";
         if (els.streamingSelect) els.streamingSelect.value = state.streamingMode || "any";
 
+        // Always hide all panels first (prevents tab panels "sticking" when navigating)
+        if (els.settingsPanel) els.settingsPanel.style.display = "none";
+        if (els.accountPanel) els.accountPanel.style.display = "none";
+        if (els.listsPanel) els.listsPanel.style.display = "none";
+        if (els.grid) els.grid.style.display = "grid";
+        if (els.controlsBar) els.controlsBar.style.display = "flex";
+        if (els.message) els.message.style.display = "none";
+
+
 
         if (state.activeTab === "account") {
           els.searchForm.style.display = "none";
