@@ -5490,7 +5490,7 @@ function renderAccount() {
   const passkeyBtn = document.createElement("button");
   passkeyBtn.type = "button";
   passkeyBtn.className = "pill-btn";
-  passkeyBtn.textContent = "Sign in with passkey";
+  passkeyBtn.textContent = "Sign in with passkey (work email)";
 
   const appleBtn = document.createElement("button");
   appleBtn.type = "button";
@@ -5542,22 +5542,50 @@ function renderAccount() {
     return String(email || "").slice(at + 1).trim().toLowerCase();
   }
 
+  function isPublicEmailDomain(domain) {
+    // Supabase Enterprise SSO is intended for organization domains, not public mail providers.
+    // (e.g. gmail.com is not eligible for SSO routing.)
+    const d = String(domain || "").toLowerCase();
+    if (!d) return true;
+    const publicDomains = new Set([
+      "gmail.com","googlemail.com",
+      "yahoo.com","yahoo.co.uk","ymail.com",
+      "outlook.com","hotmail.com","live.com","msn.com",
+      "icloud.com","me.com","mac.com",
+      "aol.com","proton.me","protonmail.com",
+      "gmx.com","gmx.co.uk"
+    ]);
+    return publicDomains.has(d);
+  }
+
   async function startOAuth(provider) {
     const client = await getSupabaseClient();
     if (!client) throw new Error("Supabase client not available");
-    await client.auth.signInWithOAuth({
+    const { data, error } = await client.auth.signInWithOAuth({
       provider: provider,
       options: { redirectTo: (location.origin + location.pathname) }
     });
+    if (error) throw error;
+    // Normally Supabase redirects automatically in the browser. This is here for completeness.
+    if (data && data.url) window.location.href = data.url;
   }
 
   async function startSSOWithDomain(domain) {
     const client = await getSupabaseClient();
     if (!client) throw new Error("Supabase client not available");
-    await client.auth.signInWithSSO({ domain: domain });
+    const { data, error } = await client.auth.signInWithSSO({
+      domain: domain,
+      options: { redirectTo: (location.origin + location.pathname) }
+    });
+    if (error) throw error;
+    if (data && data.url) {
+      window.location.href = data.url; // required for JS SSO flow
+      return;
+    }
+    throw new Error("SSO did not return a redirect URL.");
   }
 
-  magicBtn.addEventListener("click", async function () {
+magicBtn.addEventListener("click", async function () {
     const email = String(emailInput.value || "").trim();
     if (!email || email.indexOf("@") === -1) {
       alertNice("Enter a valid email address.");
@@ -5578,23 +5606,34 @@ function renderAccount() {
   });
 
   passkeyBtn.addEventListener("click", async function () {
-    // Best-effort “passkey login” route:
-    // 1) Try Supabase Enterprise SSO using the email domain (your IdP can enforce passkeys).
-    // 2) If not configured, the user can use Apple/Google buttons (those providers may use passkeys).
+    // “Passkey” here means: your organization IdP uses passkeys (WebAuthn) and
+    // Supabase routes you there via Enterprise SSO (domain-based).
     const email = String(emailInput.value || "").trim();
     const domain = getEmailDomain(email);
     if (!domain) {
       alertNice("Enter your email address first (so we can route you to your SSO provider).");
       return;
     }
+
+    if (isPublicEmailDomain(domain)) {
+      alertNice(
+        "This button is for work/school accounts (Enterprise SSO). " +
+        "Public email domains like " + domain + " won’t route through SSO. " +
+        "Use Magic Link, Apple, or Google instead."
+      );
+      return;
+    }
+
     try {
       await startSSOWithDomain(domain);
       // Redirect happens; no further UI update needed.
     } catch (e) {
       console.error(e);
+      const msg = (e && (e.msg || e.message)) ? (e.msg || e.message) : "unknown error";
       alertNice(
-        "Passkey sign-in via SSO isn’t available for this email domain. " +
-        "Try “Sign in with Apple” or “Sign in with Google”, or configure SSO in Supabase."
+        "SSO passkey sign-in failed for " + domain + ". " +
+        "This usually means Enterprise SSO isn’t set up for that domain in Supabase. " +
+        "Error: " + msg
       );
     }
   });
@@ -5604,7 +5643,18 @@ function renderAccount() {
       await startOAuth("apple");
     } catch (e) {
       console.error(e);
-      alertNice("Apple sign-in failed: " + (e && e.message ? e.message : "unknown error"));
+      const msg = (e && (e.msg || e.message)) ? (e.msg || e.message) : "unknown error";
+      if (String(msg).toLowerCase().indexOf("not enabled") !== -1 || String(msg).toLowerCase().indexOf("unsupported provider") !== -1) {
+        alertNice(
+          "Apple sign-in isn’t enabled in your Supabase project yet. " +
+          "In Supabase Dashboard → Authentication → Providers, enable Apple and add its credentials + redirect URLs. " +
+          "Then try again.
+
+Error: " + msg
+        );
+      } else {
+        alertNice("Apple sign-in failed: " + msg);
+      }
     }
   });
 
@@ -5613,7 +5663,18 @@ function renderAccount() {
       await startOAuth("google");
     } catch (e) {
       console.error(e);
-      alertNice("Google sign-in failed: " + (e && e.message ? e.message : "unknown error"));
+      const msg = (e && (e.msg || e.message)) ? (e.msg || e.message) : "unknown error";
+      if (String(msg).toLowerCase().indexOf("not enabled") !== -1 || String(msg).toLowerCase().indexOf("unsupported provider") !== -1) {
+        alertNice(
+          "Google sign-in isn’t enabled in your Supabase project yet. " +
+          "In Supabase Dashboard → Authentication → Providers, enable Google and add its credentials + redirect URLs. " +
+          "Then try again.
+
+Error: " + msg
+        );
+      } else {
+        alertNice("Google sign-in failed: " + msg);
+      }
     }
   });
 
