@@ -126,6 +126,103 @@
       gap: 8px;
       margin-left: auto;
     }
+    .user-chip{
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      height: 32px;
+      padding: 0 12px 0 6px;
+      border-radius: 999px;
+      border: 1px solid var(--border-subtle);
+      background: var(--bg-elevated);
+      color: var(--text-main);
+      cursor: pointer;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+      transition: transform 0.08s ease, border-color 0.15s ease, background 0.15s ease;
+    }
+    .user-chip:active{ transform: scale(0.98); }
+    .user-chip:focus-visible{
+      outline: 2px solid var(--accent-pill-bg);
+      outline-offset: 3px;
+    }
+    .user-avatar{
+      width: 24px;
+      height: 24px;
+      border-radius: 999px;
+      background: var(--bg-panel);
+      border: 1px solid var(--border-subtle);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      font-size: 12px;
+      letter-spacing: 0.5px;
+      overflow: hidden;
+      background-size: cover;
+      background-position: center;
+    }
+    .user-chip-name{
+      font-size: 13px;
+      font-weight: 700;
+      max-width: 160px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    @media (max-width: 520px){
+      .user-chip-name{ display:none; }
+      .user-chip{ padding-right: 10px; }
+    }
+
+    .account-identity{
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 12px;
+      border: 1px solid var(--border-subtle);
+      border-radius: 14px;
+      background: var(--bg-elevated);
+      box-shadow: 0 10px 28px rgba(0,0,0,0.10);
+      margin-top: 12px;
+    }
+    .account-identity .account-avatar{
+      width: 44px;
+      height: 44px;
+      border-radius: 999px;
+      background: var(--bg-panel);
+      border: 1px solid var(--border-subtle);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 900;
+      font-size: 14px;
+      overflow: hidden;
+      background-size: cover;
+      background-position: center;
+      flex: 0 0 auto;
+    }
+    .account-identity .account-who{
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      min-width: 0;
+    }
+    .account-identity .account-name{
+      font-weight: 800;
+      font-size: 14px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .account-identity .account-email,
+    .account-identity .account-country{
+      font-size: 12px;
+      color: var(--text-muted);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
 
     .theme-toggle {
       border-radius: 999px;
@@ -1403,6 +1500,10 @@
 <div class="brand-text">ReelQuest</div>
 </button>
 <div class="topbar-actions">
+<button aria-label="Account" class="user-chip" id="user-chip" type="button" style="display:none">
+  <span aria-hidden="true" class="user-avatar" id="user-chip-avatar"></span>
+  <span class="user-chip-name" id="user-chip-name"></span>
+</button>
 <button aria-label="Menu" class="theme-toggle burger-btn" id="menu-toggle" type="button">
           ☰
         </button>
@@ -5449,7 +5550,103 @@ function moveEntryInList(listId, entryKeyValue, direction) {
       // lands on a non-Account tab after clicking the email link.
       let rqSupabaseInitStarted = false;
 
-      async function initSupabaseAuthOnLoad() {
+      
+      // -------- Auth/profile globals (used for header + Account) --------
+      let rqAuthUser = null;
+      let rqUserProfile = null; // { display_name, avatar_url, country_region, ... }
+
+      function rqGetInitials(nameOrEmail) {
+        const s = String(nameOrEmail || "").trim();
+        if (!s) return "RQ";
+        // If email, take the part before @
+        const base = s.indexOf("@") !== -1 ? s.split("@")[0] : s;
+        const parts = base.replace(/[^a-zA-Z0-9 ]/g, " ").trim().split(/\s+/).filter(Boolean);
+        if (parts.length === 0) return base.slice(0,2).toUpperCase();
+        if (parts.length === 1) return parts[0].slice(0,2).toUpperCase();
+        return (parts[0][0] + parts[1][0]).toUpperCase();
+      }
+
+      function rqApplyAvatarToEl(el, avatarUrl, fallbackText) {
+        if (!el) return;
+        const url = String(avatarUrl || "").trim();
+        if (url) {
+          el.style.backgroundImage = "url('" + url.replace(/'/g, "%27") + "')";
+          el.textContent = "";
+        } else {
+          el.style.backgroundImage = "";
+          el.textContent = rqGetInitials(fallbackText);
+        }
+      }
+
+      function rqGetDisplayName(user, profile) {
+        const dn = profile && profile.display_name ? String(profile.display_name).trim() : "";
+        if (dn) return dn;
+        if (user && user.email) return String(user.email).split("@")[0];
+        return "Account";
+      }
+
+      function rqSetHeaderUserChip(user, profile) {
+        if (!els || !els.userChip) return;
+        if (!user) {
+          els.userChip.style.display = "none";
+          if (els.userChipName) els.userChipName.textContent = "";
+          rqApplyAvatarToEl(els.userChipAvatar, "", "");
+          return;
+        }
+        els.userChip.style.display = "inline-flex";
+        const name = rqGetDisplayName(user, profile);
+        if (els.userChipName) els.userChipName.textContent = name;
+        rqApplyAvatarToEl(els.userChipAvatar, profile ? profile.avatar_url : "", name || (user.email || ""));
+      }
+
+      async function rqFetchUserProfile(client, userId) {
+        if (!client || !client.from) return null;
+        try {
+          const res = await client.from("profiles")
+            .select("id, display_name, avatar_url, country_region")
+            .eq("id", userId)
+            .maybeSingle();
+          if (res && res.error) throw res.error;
+          return res ? res.data : null;
+        } catch (e) {
+          return null;
+        }
+      }
+
+      async function rqRefreshAuthState(reason) {
+        try {
+          const client = await getSupabaseClient();
+          if (!client || !client.auth) return;
+
+          // Resolve user
+          let user = null;
+          try {
+            const sessRes = await client.auth.getSession();
+            user = sessRes && sessRes.data && sessRes.data.session && sessRes.data.session.user ? sessRes.data.session.user : null;
+          } catch (e) {}
+          if (!user) {
+            const userRes = await client.auth.getUser();
+            user = userRes && userRes.data ? userRes.data.user : null;
+          }
+
+          rqAuthUser = user || null;
+
+          // Try profile (non-fatal if table not present)
+          if (rqAuthUser) {
+            const prof = await rqFetchUserProfile(client, rqAuthUser.id);
+            rqUserProfile = prof || rqUserProfile || null;
+          } else {
+            rqUserProfile = null;
+          }
+
+          rqSetHeaderUserChip(rqAuthUser, rqUserProfile);
+        } catch (e) {
+          // Don't crash the app if auth refresh fails.
+          console.warn("Auth refresh failed:", e);
+        }
+      }
+
+async function initSupabaseAuthOnLoad() {
         if (rqSupabaseInitStarted) return;
         rqSupabaseInitStarted = true;
 
@@ -5462,6 +5659,9 @@ function moveEntryInList(listId, entryKeyValue, direction) {
             rqSupabaseAuthListenerAttached = true;
             try {
               client.auth.onAuthStateChange(function () {
+                try { rqRefreshAuthState("auth-change"); 
+          try { await rqRefreshAuthState("init"); } catch (e) {}
+} catch (e) {}
                 if (state && state.activeTab === "account") renderAccount();
               });
             } catch (e) { /* ignore */ }
@@ -5513,6 +5713,31 @@ function moveEntryInList(listId, entryKeyValue, direction) {
         status.className = "settings-copy";
         status.style.marginTop = "10px";
         status.textContent = "Status: Checking sign-in…";
+
+        const identityRow = document.createElement("div");
+        identityRow.className = "account-identity";
+        identityRow.style.display = "none";
+
+        const identAvatar = document.createElement("div");
+        identAvatar.className = "account-avatar";
+
+        const who = document.createElement("div");
+        who.className = "account-who";
+
+        const identName = document.createElement("div");
+        identName.className = "account-name";
+
+        const identEmail = document.createElement("div");
+        identEmail.className = "account-email";
+
+        const identCountry = document.createElement("div");
+        identCountry.className = "account-country";
+
+        who.appendChild(identName);
+        who.appendChild(identEmail);
+        who.appendChild(identCountry);
+        identityRow.appendChild(identAvatar);
+        identityRow.appendChild(who);
 
         const authSub = document.createElement("div");
         authSub.className = "settings-subheading";
@@ -5596,6 +5821,41 @@ function moveEntryInList(listId, entryKeyValue, direction) {
         avatarHint.className = "settings-copy";
         avatarHint.textContent = "Tip: use a square image for best results.";
 
+        const countryLabel = document.createElement("label");
+        countryLabel.className = "settings-label";
+        countryLabel.textContent = "Country / region";
+
+        const countryInput = document.createElement("input");
+        countryInput.className = "search-input";
+        countryInput.placeholder = "e.g., GB";
+        countryInput.autocomplete = "country";
+        countryInput.maxLength = 8;
+        countryLabel.appendChild(countryInput);
+
+        const countryHint = document.createElement("div");
+        countryHint.className = "settings-copy";
+        countryHint.textContent = "Used for streaming availability and future sharing. Tip: use ISO code like GB, US, JP.";
+
+        const countryList = document.createElement("datalist");
+        countryList.id = "rq-country-list";
+        countryInput.setAttribute("list", countryList.id);
+        // Build country list if supported (falls back quietly)
+        try {
+          if (Intl && Intl.supportedValuesOf && Intl.supportedValuesOf("region")) {
+            const regions = Intl.supportedValuesOf("region");
+            const dn = (Intl.DisplayNames ? new Intl.DisplayNames([navigator.language || "en"], { type: "region" }) : null);
+            for (let r = 0; r < regions.length; r++) {
+              const code = regions[r];
+              const opt = document.createElement("option");
+              const name = dn ? dn.of(code) : code;
+              opt.value = code;
+              opt.label = name;
+              countryList.appendChild(opt);
+            }
+          }
+        } catch (e) {}
+
+
         avatarPreviewWrap.appendChild(avatarImg);
         avatarPreviewWrap.appendChild(avatarHint);
 
@@ -5664,7 +5924,7 @@ function moveEntryInList(listId, entryKeyValue, direction) {
             if (client.from && client.from("profiles").select) {
               try {
                 const res = await client.from("profiles")
-                  .select("id, display_name, avatar_url")
+                  .select("id, display_name, avatar_url, country_region")
                   .eq("id", user.id)
                   .maybeSingle();
                 if (res && res.error) throw res.error;
@@ -5680,7 +5940,7 @@ function moveEntryInList(listId, entryKeyValue, direction) {
                 }
                 // Try create row via upsert (requires policies)
                 try {
-                  const up = await client.from("profiles").upsert({ id: user.id }, { onConflict: "id" }).select("id, display_name, avatar_url").maybeSingle();
+                  const up = await client.from("profiles").upsert({ id: user.id }, { onConflict: "id" }).select("id, display_name, avatar_url, country_region").maybeSingle();
                   if (up && up.error) throw up.error;
                   data = up ? up.data : null;
                 } catch (e2) {
@@ -5694,7 +5954,26 @@ function moveEntryInList(listId, entryKeyValue, direction) {
 
             nameInput.value = (data && data.display_name) ? data.display_name : "";
             avatarInput.value = (data && data.avatar_url) ? data.avatar_url : "";
+              countryInput.value = data && data.country_region ? String(data.country_region) : "";
             setAvatarPreview(avatarInput.value);
+              try {
+                // Keep global state + header + account identity in sync
+                const loadedProfile = {
+                  id: user.id,
+                  display_name: String(nameInput.value || "").trim(),
+                  avatar_url: String(avatarInput.value || "").trim(),
+                  country_region: String(countryInput.value || "").trim().toUpperCase()
+                };
+                rqUserProfile = loadedProfile;
+                rqAuthUser = user;
+                rqSetHeaderUserChip(user, loadedProfile);
+
+                const dn = loadedProfile.display_name || (user && user.email ? String(user.email).split("@")[0] : "Account");
+                identName.textContent = dn;
+                identEmail.textContent = user && user.email ? user.email : "";
+                identCountry.textContent = loadedProfile.country_region ? ("Region: " + loadedProfile.country_region) : "";
+                rqApplyAvatarToEl(identAvatar, loadedProfile.avatar_url, dn || (user.email || ""));
+              } catch (e) {}
 
             profileMsg.textContent = "Profile loaded.";
             saveProfileBtn.disabled = false;
@@ -5718,12 +5997,14 @@ function moveEntryInList(listId, entryKeyValue, direction) {
               id: user.id,
               display_name: String(nameInput.value || "").trim(),
               avatar_url: String(avatarInput.value || "").trim(),
+              country_region: String(countryInput.value || "").trim().toUpperCase(),
               updated_at: new Date().toISOString()
             };
             const res = await client.from("profiles").upsert(payload, { onConflict: "id" });
             if (res && res.error) throw res.error;
             setAvatarPreview(payload.avatar_url);
             toast("Profile saved.");
+            try { rqUserProfile = Object.assign({}, rqUserProfile || {}, payload); rqSetHeaderUserChip(rqAuthUser || user, payload); } catch (e) {}
             profileMsg.textContent = "Saved.";
           } catch (e) {
             console.error(e);
@@ -5734,6 +6015,13 @@ function moveEntryInList(listId, entryKeyValue, direction) {
         function setAuthUi(isSignedIn, user) {
           if (isSignedIn) {
             status.textContent = "Status: Signed in as " + (user && user.email ? user.email : "your account");
+            identityRow.style.display = "flex";
+            const baseName = (user && user.email) ? String(user.email).split("@")[0] : "Account";
+            identName.textContent = baseName;
+            identEmail.textContent = (user && user.email) ? user.email : "";
+            identCountry.textContent = "";
+            rqApplyAvatarToEl(identAvatar, "", baseName);
+            try { rqSetHeaderUserChip(user, rqUserProfile); } catch (e) {}
             emailInput.style.display = "none";
             linkBtn.style.display = "none";
             signOutBtn.style.display = "inline-flex";
@@ -5742,6 +6030,7 @@ function moveEntryInList(listId, entryKeyValue, direction) {
             ensureProfileLoaded(user);
           } else {
             status.textContent = "Status: Not signed in.";
+            identityRow.style.display = "none";
             emailInput.style.display = "";
             linkBtn.style.display = "";
             signOutBtn.style.display = "none";
@@ -5783,6 +6072,7 @@ function moveEntryInList(listId, entryKeyValue, direction) {
             await client.auth.signOut();
             toast("Signed out.");
             setAuthUi(false, null);
+            try { rqAuthUser = null; rqUserProfile = null; rqSetHeaderUserChip(null, null); } catch (e) {}
           } catch (e) {
             console.error(e);
             alertNice("Couldn’t sign out: " + (e && e.message ? e.message : "unknown error"));
@@ -8446,7 +8736,10 @@ function init() {
           menuOverlay: document.getElementById("menu-overlay"),
           menuClose: document.getElementById("menu-close"),
           menuItems: document.querySelectorAll(".menu-item"),
-          brandHome: document.getElementById("brand-home")
+          brandHome: document.getElementById("brand-home"),
+          userChip: document.getElementById("user-chip"),
+          userChipAvatar: document.getElementById("user-chip-avatar"),
+          userChipName: document.getElementById("user-chip-name")
         };
 
         loadState();
@@ -8486,6 +8779,12 @@ function init() {
             } else {
               try {
                 window.scrollTo({ top: 0, behavior: "smooth" });
+        if (els.userChip) {
+          els.userChip.addEventListener("click", function () {
+            try { setActiveTab("account"); } catch (e) { state.activeTab = "account"; render(); }
+          });
+        }
+
               } catch (e) {
                 window.scrollTo(0, 0);
               }
