@@ -1197,6 +1197,57 @@
   margin: 0;
 }
 
+
+/* Settings: Competitive analysis */
+.rq-details{
+  margin-top:12px;
+  padding:12px 12px 10px;
+  border-radius:16px;
+  background: rgba(255,255,255,0.02);
+  border: 1px solid var(--border-subtle);
+}
+.rq-details > summary{
+  cursor:pointer;
+  font-weight:600;
+  user-select:none;
+  list-style:none;
+}
+.rq-details > summary::-webkit-details-marker{ display:none; }
+.rq-details > summary::before{
+  content:"▸";
+  display:inline-block;
+  margin-right:8px;
+  opacity:0.8;
+}
+.rq-details[open] > summary::before{ content:"▾"; }
+.rq-details-body{
+  margin-top:10px;
+}
+.rq-miniheading{
+  margin-top:12px;
+  font-weight:600;
+  font-size:14px;
+}
+.rq-table{
+  width:100%;
+  border-collapse:separate;
+  border-spacing:0;
+  margin-top:10px;
+  font-size:13px;
+}
+.rq-table th, .rq-table td{
+  padding:8px 10px;
+  border-top:1px solid var(--border-subtle);
+  vertical-align:top;
+}
+.rq-table th{
+  color: var(--text-muted);
+  font-weight:600;
+}
+.rq-table tr:first-child th{ border-top:none; }
+.rq-table td{
+  color: var(--text);
+}
 /* Micro-interactions */
 .pill-btn, .card-btn, .tab-btn, .menu-item {
   transition: transform 100ms ease, filter 100ms ease, border-color 120ms ease;
@@ -4601,6 +4652,74 @@ tvBtn.addEventListener("click", function () {
         panel.appendChild(toolsHeading);
         panel.appendChild(toolsCopy);
         panel.appendChild(toolsRow);
+
+        // --- Competitive Feature Analysis (planning notes) ---
+        const analysisHeading = document.createElement("div");
+        analysisHeading.className = "settings-subheading";
+        analysisHeading.textContent = "Product roadmap notes";
+
+        const analysisDetails = document.createElement("details");
+        analysisDetails.className = "rq-details";
+
+        const analysisSummary = document.createElement("summary");
+        analysisSummary.textContent = "ReelQuest Competitive Feature Analysis";
+        analysisDetails.appendChild(analysisSummary);
+
+        const analysisBody = document.createElement("div");
+        analysisBody.className = "rq-details-body";
+
+        const analysisIntro = document.createElement("p");
+        analysisIntro.className = "settings-copy";
+        analysisIntro.textContent = "Summary of proposed features inspired by leading tracking platforms.";
+        analysisBody.appendChild(analysisIntro);
+
+        const analysisTable = document.createElement("table");
+        analysisTable.className = "rq-table";
+
+        const thead = document.createElement("thead");
+        const hr = document.createElement("tr");
+        const th1 = document.createElement("th"); th1.textContent = "Feature";
+        const th2 = document.createElement("th"); th2.textContent = "Category";
+        const th3 = document.createElement("th"); th3.textContent = "Inspired by";
+        hr.appendChild(th1); hr.appendChild(th2); hr.appendChild(th3);
+        thead.appendChild(hr);
+        analysisTable.appendChild(thead);
+
+        const tbody = document.createElement("tbody");
+        const rows = [('Cross-Platform Sync & Open API', 'User Accounts & Sync', 'Trakt (multi-device + API)'), ('Multiple Custom Watchlists', 'Watchlist & History Tracking', 'IMDb (unlimited lists)'), ('Diary Logging & Rewatch History', 'Watchlist & History Tracking', 'Letterboxd (film diary)'), ('Episode Tracking & Calendar', 'Watchlist & History Tracking', 'Trakt (upcoming calendar)'), ('Streaming Availability Alerts', 'Watchlist & History Tracking', 'JustWatch (“Notify me” feature)'), ('Social Sharing & Friend Feeds', 'Social / Community Tools', 'Letterboxd (follow & feed)'), ('Collaborative Lists', 'Social / Community Tools', 'Trakt (shared lists)'), ('Personalized Recommendations', 'Search & Discovery', 'IMDb (Top Picks engine)'), ('Advanced Filtered Search', 'Search & Discovery', 'JustWatch/Letterboxd (filters)'), ('Modern, Ad-Free UI Design', 'UI/UX Enhancements', 'Letterboxd (clean interface)'), ('Offline PWA Support', 'Offline Access / PWA', 'Progressive Web App standard'), ('Streaming Guide Integration', 'Unique Standout Feature', 'JustWatch (where-to-watch)')];
+        for (let i = 0; i < rows.length; i++) {
+          const tr = document.createElement("tr");
+          for (let j = 0; j < 3; j++) {
+            const td = document.createElement("td");
+            td.textContent = rows[i][j];
+            tr.appendChild(td);
+          }
+          tbody.appendChild(tr);
+        }
+        analysisTable.appendChild(tbody);
+        analysisBody.appendChild(analysisTable);
+
+        const uaTitle = document.createElement("div");
+        uaTitle.className = "rq-miniheading";
+        uaTitle.textContent = "User accounts and sync features";
+        analysisBody.appendChild(uaTitle);
+
+        const uaP1 = document.createElement("p");
+        uaP1.className = "settings-copy";
+        uaP1.textContent =
+          "Cross-platform profiles & sync: keep watchlists, ratings, and preferences consistent across web + mobile so users are never locked to one device.";
+        analysisBody.appendChild(uaP1);
+
+        const uaP2 = document.createElement("p");
+        uaP2.className = "settings-copy";
+        uaP2.textContent =
+          "Open API & third-party integration: an API lets external apps (e.g., media centers) submit watches automatically so power users can aggregate viewing data effortlessly.";
+        analysisBody.appendChild(uaP2);
+
+        analysisDetails.appendChild(analysisBody);
+
+        panel.appendChild(analysisHeading);
+        panel.appendChild(analysisDetails);
       }
 
 
