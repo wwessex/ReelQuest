@@ -1494,6 +1494,7 @@
 <button class="tab-btn" data-tab="watchlist">Watchlist</button>
 <button class="tab-btn" data-tab="watched">Watched</button>
 <button class="tab-btn" data-tab="rewatch">Rewatch</button>
+<button class="tab-btn" data-tab="social">Social</button>
 <button class="tab-btn" data-tab="lists">Lists</button>
 <button class="tab-btn" data-tab="account">Account</button>
 </nav>
@@ -1560,6 +1561,7 @@
 <div class="settings-panel" id="settings-panel"></div>
 <div class="settings-panel" id="lists-panel"></div>
 <div class="settings-panel" id="account-panel"></div>
+<div class="settings-panel" id="social-panel"></div>
 <input accept="application/json" class="file-input-hidden" id="import-input" type="file"/>
 <div class="grid" id="card-grid"></div>
 <div class="debug" id="debug"></div>
@@ -1600,6 +1602,7 @@
 <button class="menu-item" data-tab="discover" type="button">Discover</button>
 <button class="menu-item" data-tab="watchlist" type="button">Watchlist</button>
 <button class="menu-item" data-tab="watched" type="button">Watched</button>
+<button class="menu-item" data-tab="social" type="button">Social</button>
 <button class="menu-item" data-tab="lists" type="button">Lists</button>
 <button class="menu-item" data-tab="account" type="button">Account</button>
 <button class="menu-item" data-tab="settings" type="button">Settings</button>
@@ -7919,10 +7922,8 @@ const authSub = document.createElement("div");
 
 // Profile (only visible when signed in)
         
-        // Social (friends + activity feed)
-        const socialWrap = document.createElement("div");
-        socialWrap.style.marginTop = "10px";
-        panel.appendChild(socialWrap);
+        // Social moved to dedicated Social page
+        const socialWrap = null;
 
 const profileSub = document.createElement("div");
         profileSub.className = "settings-subheading";
@@ -8141,7 +8142,7 @@ const profileSub = document.createElement("div");
 
             setAuthUi(!!(user && user.email), user && user.email ? user.email : "");
             applyProfileToUi(user, profile);
-            try { await rqRenderSocialPanel(socialWrap); } catch (e) {}
+            // Social now lives on the Social page
           } catch (e) {
             console.error(e);
             status.textContent = "Status: Couldn’t check sign-in.";
@@ -8152,6 +8153,42 @@ const profileSub = document.createElement("div");
           }
         })();
       }
+
+      function renderSocialPage() {
+        const panel = els.socialPanel;
+        if (!panel) return;
+        panel.innerHTML = "";
+
+        const heading = document.createElement("h2");
+        heading.className = "settings-heading";
+        heading.textContent = "Social";
+
+        const copy = document.createElement("p");
+        copy.className = "settings-copy";
+        copy.textContent = "Follow friends, see activity, and share what you’re watching.";
+
+        panel.appendChild(heading);
+        panel.appendChild(copy);
+
+        // Gate: must be signed in
+        try {
+          if (!rqIsSignedIn || !rqIsSignedIn()) {
+            const msg = document.createElement("div");
+            msg.className = "settings-copy";
+            msg.style.marginTop = "12px";
+            msg.textContent = "Please sign in for Social features!";
+            panel.appendChild(msg);
+            return;
+          }
+        } catch (e) {}
+
+        const wrap = document.createElement("div");
+        wrap.style.marginTop = "10px";
+        panel.appendChild(wrap);
+
+        try { rqRenderSocialPanel(wrap); } catch (e) { rqSocialMarkMissingIfNeeded(e); }
+      }
+
 
 
 function renderListsPanel() {
@@ -9164,15 +9201,34 @@ container.appendChild(pickBtn);
         if (els.moodSelect) els.moodSelect.value = state.mood || "any";
         if (els.streamingSelect) els.streamingSelect.value = state.streamingMode || "any";
 
+        // If someone tries to land on Social while signed out, bounce back
+        try {
+          if (state.activeTab === "social" && (!rqIsSignedIn || !rqIsSignedIn())) {
+            toast("Please sign in for Social features!");
+            state.activeTab = "for-you";
+          }
+        } catch (e) {}
+
         // Always hide all panels first (prevents tab panels "sticking" when navigating)
         if (els.settingsPanel) els.settingsPanel.style.display = "none";
         if (els.accountPanel) els.accountPanel.style.display = "none";
         if (els.listsPanel) els.listsPanel.style.display = "none";
+        if (els.socialPanel) els.socialPanel.style.display = "none";
         if (els.grid) els.grid.style.display = "grid";
         if (els.controlsBar) els.controlsBar.style.display = "flex";
         if (els.message) els.message.style.display = "none";
 
 
+
+        if (state.activeTab === "social") {
+          els.searchForm.style.display = "none";
+          if (els.grid) els.grid.style.display = "none";
+          if (els.controlsBar) els.controlsBar.style.display = "none";
+          if (els.message) els.message.style.display = "none";
+          if (els.socialPanel) els.socialPanel.style.display = "block";
+          renderSocialPage();
+          return;
+        }
 
         if (state.activeTab === "account") {
           els.searchForm.style.display = "none";
@@ -10250,6 +10306,19 @@ els.detailActions.appendChild(orgWrap);
 
       function switchToTab(tab) {
         if (!tab) return;
+        // Gate Social: require sign-in
+        if (tab === "social") {
+          try {
+            if (!rqIsSignedIn || !rqIsSignedIn()) {
+              toast("Please sign in for Social features!");
+              return;
+            }
+          } catch (e) {
+            toast("Please sign in for Social features!");
+            return;
+          }
+        }
+
         if (tab === state.activeTab) {
           render();
           return;
@@ -10766,6 +10835,7 @@ function init() {
           settingsPanel: document.getElementById("settings-panel"),
           listsPanel: document.getElementById("lists-panel"),
           accountPanel: document.getElementById("account-panel"),
+          socialPanel: document.getElementById("social-panel"),
           userChip: document.getElementById("user-chip"),
           userChipAvatar: document.getElementById("user-chip-avatar"),
           userChipName: document.getElementById("user-chip-name"),
