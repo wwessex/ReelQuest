@@ -2309,8 +2309,9 @@ function alertNice(message) {
         } catch (e) {
           console.warn("Failed to save ReelQuest state", e);
         }
-        try { maybeAutoBackupSnapshot(); } catch (e) {}
+              try { maybeAutoBackupSnapshot(); } catch (e) {}
 }
+
 
 
 function cacheSet(key, value) {
@@ -3635,7 +3636,7 @@ function downloadText(filename, text, mime) {
 
 function csvEscape(val) {
   const s = String(val == null ? "" : val);
-  if (/[",\n\r]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+  if (/[\",\n\r]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
   return s;
 }
 
@@ -3697,7 +3698,6 @@ function exportItemsToCsvFile() {
 // --- CSV import (generic + IMDb) ---
 
 function parseCsv(text) {
-  // Minimal CSV parser that handles quoted fields and commas/newlines.
   const rows = [];
   let row = [];
   let cur = "";
@@ -3716,16 +3716,15 @@ function parseCsv(text) {
     }
 
     if (ch === '"') { inQuotes = true; i++; continue; }
-    if (ch === ",") { row.push(cur); cur = ""; i++; continue; }
-    if (ch === "\r") { i++; continue; }
-    if (ch === "\n") { row.push(cur); rows.push(row); row = []; cur = ""; i++; continue; }
+    if (ch === ',') { row.push(cur); cur = ""; i++; continue; }
+    if (ch === '\r') { i++; continue; }
+    if (ch === '\n') { row.push(cur); rows.push(row); row = []; cur = ""; i++; continue; }
 
     cur += ch; i++;
   }
   row.push(cur);
   rows.push(row);
 
-  // Trim trailing empty rows
   while (rows.length && rows[rows.length - 1].every(function (c) { return String(c || "").trim() === ""; })) {
     rows.pop();
   }
@@ -3741,7 +3740,6 @@ function normaliseHeader(h) {
 }
 
 function detectImdbRatingsCsv(headers) {
-  // IMDb Ratings export usually includes "Title", "IMDb Rating", "Your Rating", "Title Type", "IMDb ID", "Year"
   const h = headers.map(normaliseHeader);
   const hasTitle = h.indexOf("title") !== -1;
   const hasYourRating = h.indexOf("your rating") !== -1 || h.indexOf("yourrating") !== -1;
@@ -3763,7 +3761,6 @@ async function tmdbSearchBestMatch(title, year, mediaTypeGuess) {
   const results = Array.isArray(data && data.results) ? data.results : [];
   if (!results.length) return null;
 
-  // Prefer exact year match if provided
   const y = year ? (parseInt(year, 10) || 0) : 0;
   if (y) {
     for (let i = 0; i < results.length; i++) {
@@ -3782,7 +3779,6 @@ function upsertImportedItem(partial) {
   const tid = toTmdbId(partial.tmdbId);
   if (tid === null) return;
 
-  // Find existing
   let existing = null;
   for (let i = 0; i < state.items.length; i++) {
     const it = state.items[i];
@@ -3817,7 +3813,6 @@ function upsertImportedItem(partial) {
     return;
   }
 
-  // Merge cautiously (don’t nuke existing notes/tags unless missing)
   if (!existing.title && partial.title) existing.title = partial.title;
   if (!existing.year && partial.year) existing.year = partial.year;
   if (!existing.posterPath && partial.posterPath) existing.posterPath = partial.posterPath;
@@ -3834,7 +3829,6 @@ function upsertImportedItem(partial) {
   }
 
   if (!existing.status && partial.status) existing.status = partial.status;
-  if (partial.priority && !existing.priority) existing.priority = partial.priority;
 
   if ((!existing.tags || !existing.tags.length) && Array.isArray(partial.tags) && partial.tags.length) {
     existing.tags = partial.tags;
@@ -3860,7 +3854,6 @@ async function importFromCsvText(text) {
 
   const importAsWatched = isImdb ? mode : !mode;
 
-  // Build header map
   const map = {};
   for (let i = 0; i < headers.length; i++) {
     map[normaliseHeader(headers[i])] = i;
@@ -3872,13 +3865,11 @@ async function importFromCsvText(text) {
     return (row[idx] != null ? String(row[idx]) : "");
   }
 
-  // IMDb-like columns
   const keyTitle = "title";
   const keyYear = map["year"] != null ? "year" : (map["release year"] != null ? "release year" : "year");
   const keyTitleType = "title type";
   const keyYourRating = "your rating";
 
-  // Generic ReelQuest CSV columns (we export these)
   const hasTmdbId = map["tmdbid"] != null || map["tmdb id"] != null;
   const tmdbKey = map["tmdb id"] != null ? "tmdb id" : "tmdbid";
 
@@ -3887,22 +3878,18 @@ async function importFromCsvText(text) {
 
   toast("Importing CSV…");
 
-  // Process rows sequentially (safer for rate limits)
   for (let r = 1; r < rows.length; r++) {
     const row = rows[r];
     if (!row || !row.length) continue;
 
     const rawTitle = getCell(row, keyTitle).trim();
     const rawYear = getCell(row, keyYear).trim();
-
     if (!rawTitle) continue;
 
-    // Guess media type
     let mediaTypeGuess = "movie";
     const tt = getCell(row, keyTitleType).toLowerCase();
     if (tt.indexOf("tv") !== -1 || tt.indexOf("series") !== -1 || tt.indexOf("episode") !== -1) mediaTypeGuess = "tv";
 
-    // If the CSV has TMDB IDs (our own export), use them directly
     if (hasTmdbId) {
       const tmdbIdStr = getCell(row, tmdbKey).trim();
       const tid = toTmdbId(tmdbIdStr);
@@ -3938,13 +3925,10 @@ async function importFromCsvText(text) {
       continue;
     }
 
-    // Otherwise, try to resolve via TMDB search
     const best = await tmdbSearchBestMatch(rawTitle, rawYear, mediaTypeGuess);
     if (!best) continue;
-
     matchedCount++;
 
-    // IMDb "Your Rating" is 1–10
     let userRating = null;
     const yr = getCell(row, keyYourRating).trim();
     if (yr) {
@@ -3966,7 +3950,6 @@ async function importFromCsvText(text) {
 
     importedCount++;
 
-    // Tiny breather to be nice to TMDB rate limits
     if (importedCount % 10 === 0) {
       toast("Imported " + importedCount + "…");
       await new Promise(function (res) { setTimeout(res, 200); });
@@ -3976,7 +3959,8 @@ async function importFromCsvText(text) {
   saveState();
   render();
 
-  toast("CSV import done (" + importedCount + " items, " + matchedCount + " matched).");
+  toast("CSV import done (" + importedCount + " items, " + matchedCount + " matched)."
+  );
 }
 
 // --- Local snapshot backups (localStorage) ---
@@ -4005,10 +3989,8 @@ function createBackupSnapshot(label) {
     payload.kind = "snapshot";
     payload.label = label || "Snapshot";
 
-    // Store snapshot payload
     localStorage.setItem(snapshotKey(id), JSON.stringify(payload));
 
-    // Update index (most recent first)
     const idx = readSnapshotIndex();
     idx.unshift({
       id: id,
@@ -4017,7 +3999,6 @@ function createBackupSnapshot(label) {
       count: (Array.isArray(state.items) ? state.items.length : 0)
     });
 
-    // Keep last 5
     while (idx.length > 5) {
       const removed = idx.pop();
       try { localStorage.removeItem(snapshotKey(removed.id)); } catch (e) {}
@@ -4064,11 +4045,9 @@ function deleteBackupSnapshot(id) {
 function maybeAutoBackupSnapshot() {
   if (!state.autoBackupEnabled) return;
 
-  // Don’t snapshot *every* save; only if last snapshot is old enough or missing.
   const idx = readSnapshotIndex();
   if (idx.length) {
     const lastAt = idx[0] && idx[0].at ? idx[0].at : 0;
-    // 6 hours minimum gap
     if (Date.now() - lastAt < 1000 * 60 * 60 * 6) return;
   }
   createBackupSnapshot("Auto snapshot");
@@ -9401,6 +9380,26 @@ function init() {
 
       document.addEventListener("DOMContentLoaded", init);
     })();
+
+
+(function hideCompetitiveFeatureAnalysis(){
+  try {
+    const phrase = "ReelQuest Competitive Feature Analysis";
+    // Look for any element whose text contains the phrase.
+    const all = document.querySelectorAll("body *");
+    for (let i = 0; i < all.length; i++) {
+      const el = all[i];
+      if (!el || !el.textContent) continue;
+      if (el.textContent.indexOf(phrase) === -1) continue;
+
+      // Hide the most reasonable container so we don't break layouts.
+      const container = el.closest("section, article, .card, .panel, .settings-panel, .page, .modal, div") || el;
+      container.style.display = "none";
+      return;
+    }
+  } catch (e) {}
+})();
+
 </script>
 <div aria-atomic="true" aria-live="polite" id="toast-host"></div>
 </body>
