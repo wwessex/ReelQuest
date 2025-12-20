@@ -2076,9 +2076,8 @@ function moodMatchesTmdb(tmdbObj) {
         theme: "dark",
         detailsCache: {},
         ui: { selectionMode: false, selectedKeys: [] },
-        syncEnabled: true,
-        syncMeta: { rev: 0, lastPushedAt: 0, lastPulledAt: 0, lastRemoteRev: 0 },
-        lastTmdbStatus: ""
+        lastTmdbStatus: "",
+        syncEnabled: true
       };
 
       function updateDebug(msg) {
@@ -2145,7 +2144,11 @@ function formatDateUK(ts) {
           if (typeof parsed.includeTv === "boolean") {
             state.includeTv = parsed.includeTv;
           }
-          if (typeof parsed.mood === "string" && MOODS[parsed.mood]) {
+          
+           if (typeof parsed.syncEnabled === "boolean") {
+             state.syncEnabled = parsed.syncEnabled;
+           }
+if (typeof parsed.mood === "string" && MOODS[parsed.mood]) {
             state.mood = parsed.mood;
           }
 
@@ -2166,14 +2169,6 @@ if (parsed.ui && typeof parsed.ui === "object") {
           if (parsed.theme === "light" || parsed.theme === "dark") {
             state.theme = parsed.theme;
           }
-
-          if (typeof parsed.syncEnabled === "boolean") {
-            state.syncEnabled = parsed.syncEnabled;
-          }
-          if (parsed.syncMeta && typeof parsed.syncMeta === "object") {
-            state.syncMeta = Object.assign({}, state.syncMeta || {}, parsed.syncMeta);
-          }
-
         } catch (e) {
           console.warn("Failed to load ReelQuest state", e);
         }
@@ -2310,19 +2305,18 @@ function alertNice(message) {
               minRating: state.minRating,
               country: state.country,
               includeTv: state.includeTv,
-              mood: state.mood,
+               syncEnabled: state.syncEnabled,
+               mood: state.mood,
               streamingMode: state.streamingMode,
               ui: state.ui,
-              syncEnabled: state.syncEnabled,
-              syncMeta: state.syncMeta,
               theme: state.theme
             })
           );
         } catch (e) {
           console.warn("Failed to save ReelQuest state", e);
         }
-              try { maybeAutoBackupSnapshot(); } catch (e) {}
-        try { if (rqIsSignedIn && rqIsSignedIn() && rqGetSyncEnabled && rqGetSyncEnabled() && !rqSyncApplyingRemote) rqQueueCloudPush("local_save"); } catch (e) {}
+              try { if (typeof rqSyncApplyingRemote === "boolean" && rqSyncApplyingRemote) { /* skip */ } else { try { rqSetLocalWriteMs(Date.now()); } catch (e) {} try { rqNotifyLocalStateChanged(); } catch (e) {} } } catch (e) {}
+               try { maybeAutoBackupSnapshot(); } catch (e) {}
 }
 
 
@@ -3439,8 +3433,6 @@ const now = Date.now();
     tags: [],
     notes: "",
 
-    updatedAt: now,
-
     createdAt: now,
     addedAt: now
   };
@@ -3452,8 +3444,6 @@ const now = Date.now();
 
 
 function toggleWatchlistForItem(item) {
-  try { item.updatedAt = Date.now(); } catch (e) {}
-
   const was = !!item.inWatchlist;
 
   if (!was) {
@@ -3461,7 +3451,6 @@ function toggleWatchlistForItem(item) {
     if (!item.priority) item.priority = "medium";
     item.status = normaliseWatchStatus(item.status);
     saveState();
-    try { rqQueueCloudPush("item_change"); } catch (e) {}
     render();
     toast("Added to your watchlist.");
     return;
@@ -3473,7 +3462,6 @@ function toggleWatchlistForItem(item) {
   item.status = null;
 
   saveState();
-    try { rqQueueCloudPush("item_change"); } catch (e) {}
   render();
   toast("Removed from your watchlist.", {
     actionText: "Undo",
@@ -3482,7 +3470,6 @@ function toggleWatchlistForItem(item) {
       if (!item.priority) item.priority = "medium";
       item.status = normaliseWatchStatus(prevStatus);
       saveState();
-    try { rqQueueCloudPush("item_change"); } catch (e) {}
       render();
     }
   });
@@ -3490,8 +3477,6 @@ function toggleWatchlistForItem(item) {
 
 
 function toggleWatchedForItem(item) {
-  try { item.updatedAt = Date.now(); } catch (e) {}
-
   const was = !!item.watched;
 
   if (!was) {
@@ -3505,7 +3490,6 @@ function toggleWatchedForItem(item) {
     if (!item.watchedAt) item.watchedAt = Date.now();
 
     saveState();
-    try { rqQueueCloudPush("item_change"); } catch (e) {}
     render();
     toast("Marked as watched.");
     return;
@@ -3525,7 +3509,6 @@ function toggleWatchedForItem(item) {
   item.userRating = null;
 
   saveState();
-    try { rqQueueCloudPush("item_change"); } catch (e) {}
   render();
 
   toast("Marked as not watched.", {
@@ -3537,7 +3520,6 @@ function toggleWatchedForItem(item) {
       item.inWatchlist = prev.inWatchlist;
       item.rewatch = prev.rewatch;
       saveState();
-    try { rqQueueCloudPush("item_change"); } catch (e) {}
       render();
     }
   });
@@ -4198,7 +4180,6 @@ function importSingleListObject(obj, mode) {
   if (!Array.isArray(incoming.customOrder)) incoming.customOrder = [];
 
   ensureCustomOrder(incoming);
-  if (!incoming.updatedAt) incoming.updatedAt = Date.now();
   state.lists.push(incoming);
   saveState();
   toast("Imported “" + (incoming.name || "List") + "”.");
@@ -5248,9 +5229,7 @@ function getListCoverPosterPaths(list) {
 
 function togglePinList(listId) {
   const list = getListById(listId);
-  
-        try { if (list) list.updatedAt = Date.now(); } catch (e) {}
-if (!list) return;
+  if (!list) return;
   list.pinned = !list.pinned;
   saveState();
   render();
@@ -5426,9 +5405,7 @@ function editListDescription(listId) {
 
 function setListSortMode(listId, mode) {
   const list = getListById(listId);
-  
-        try { if (list) list.updatedAt = Date.now(); } catch (e) {}
-if (!list || list.type !== "manual") return;
+  if (!list || list.type !== "manual") return;
   list.sortMode = mode;
   if (mode === "custom" && (!Array.isArray(list.customOrder) || !list.customOrder.length)) {
     // initialise custom order from current entries
@@ -5934,7 +5911,6 @@ function createSmartListPreset() {
 
   const list = {
     id: safeId(),
-    updatedAt: Date.now(),
     type: "smart",
     name: clean,
     description: String(desc || "").trim(),
@@ -5957,9 +5933,7 @@ function createSmartListPreset() {
 
 function moveEntryInList(listId, entryKeyValue, direction) {
   const list = getListById(listId);
-  
-        try { if (list) list.updatedAt = Date.now(); } catch (e) {}
-if (!list || list.type !== "manual") return;
+  if (!list || list.type !== "manual") return;
   ensureCustomOrder(list);
 
   const key = typeof entryKeyValue === "string"
@@ -5986,7 +5960,6 @@ if (!list || list.type !== "manual") return;
   }
   const list = {
     id: safeId(),
-    updatedAt: Date.now(),
     type: "manual",
     name: clean,
     description: (description || "").trim(),
@@ -6004,9 +5977,7 @@ if (!list || list.type !== "manual") return;
 
       function renameList(listId) {
         const list = getListById(listId);
-        
-        try { if (list) list.updatedAt = Date.now(); } catch (e) {}
-if (!list) return;
+        if (!list) return;
         const next = window.prompt("Rename list", list.name);
         if (next === null) return;
         const clean = next.trim();
@@ -6232,17 +6203,6 @@ if (!list) return;
           rqCurrentUser = user;
           rqCurrentProfile = profile;
           rqSetHeaderUserChip(user, profile);
-
-          // Cross-device sync (instant-ish)
-          try {
-            if (user && user.id) {
-              // Default: sync enabled unless user turned it off
-              if (typeof state.syncEnabled !== "boolean") state.syncEnabled = true;
-              rqStartRealtimeSync().catch(function () {});
-            } else {
-              rqStopRealtimeSync();
-            }
-          } catch (e) {}
           // Keep Preferences country in sync with the signed-in profile (if present).
           try {
             if (profile && profile.country_region) {
@@ -6267,6 +6227,294 @@ if (!list) return;
           return { user: null, profile: null };
         }
       }
+
+      // ------------------------------
+      // Instant cross-device sync (Supabase realtime + conflict handling)
+      // Safe-by-default: if Supabase isn't configured, user isn't signed in, or the table doesn't exist, the app still works locally.
+      // Table expected (create in Supabase):
+      //   public.rq_user_state_v1 (user_id uuid primary key references auth.users(id) on delete cascade,
+      //                            state_json jsonb not null,
+      //                            client_updated_at_ms bigint not null,
+      //                            device_id text,
+      //                            updated_at timestamptz not null default now())
+      // Enable Realtime on this table in Supabase if you want live updates.
+      const RQ_SYNC_TABLE = "rq_user_state_v1";
+      const RQ_SYNC_LOCAL_WRITE_KEY = "rq_sync_local_write_ms_v1";
+      const RQ_SYNC_DEVICE_ID_KEY = "rq_sync_device_id_v1";
+
+      function rqGetDeviceId() {
+        try {
+          let id = localStorage.getItem(RQ_SYNC_DEVICE_ID_KEY);
+          if (id && id.length >= 8) return id;
+          id = "dev_" + Math.random().toString(16).slice(2) + "_" + Date.now().toString(16);
+          localStorage.setItem(RQ_SYNC_DEVICE_ID_KEY, id);
+          return id;
+        } catch (e) {
+          return "dev_ephemeral";
+        }
+      }
+
+      function rqGetLocalWriteMs() {
+        try { return parseInt(localStorage.getItem(RQ_SYNC_LOCAL_WRITE_KEY) || "0", 10) || 0; } catch (e) { return 0; }
+      }
+
+      function rqSetLocalWriteMs(ms) {
+        try { localStorage.setItem(RQ_SYNC_LOCAL_WRITE_KEY, String(ms || 0)); } catch (e) {}
+      }
+
+      let rqSyncClient = null;
+      let rqSyncUserId = null;
+      let rqSyncChannel = null;
+      let rqSyncApplyingRemote = false;
+      let rqSyncPushTimer = null;
+      let rqSyncPollTimer = null;
+
+      const rqSyncInfo = {
+        status: "off",          // off | starting | ready | error
+        lastError: "",
+        lastPullMs: 0,
+        lastPushMs: 0
+      };
+
+      function rqGetSyncStatusText() {
+        const bits = [];
+        if (!state || state.syncEnabled === false) return "Off";
+        if (!rqCurrentUser || !rqCurrentUser.id) return "Off (not signed in)";
+        if (rqSyncInfo.status === "ready") bits.push("On (connected)");
+        else if (rqSyncInfo.status === "starting") bits.push("On (connecting)");
+        else if (rqSyncInfo.status === "error") bits.push("On (problem)");
+        else bits.push("On");
+        if (rqSyncInfo.lastPullMs) bits.push("last pull " + formatDate(rqSyncInfo.lastPullMs));
+        if (rqSyncInfo.lastPushMs) bits.push("last push " + formatDate(rqSyncInfo.lastPushMs));
+        return bits.join(" · ");
+      }
+
+      async function rqCloudSyncOnAuthChange() {
+        try {
+          // ensure we have the latest user cached
+          if (!rqCurrentUser || !rqCurrentUser.id) {
+            rqStopCloudSync();
+            return;
+          }
+          if (state && state.syncEnabled === false) {
+            rqStopCloudSync();
+            return;
+          }
+          await rqStartCloudSync(rqCurrentUser.id);
+        } catch (e) {
+          // never break app
+        }
+      }
+
+      async function rqStartCloudSync(userId) {
+        if (!userId) return;
+        if (rqSyncUserId === userId && rqSyncClient) return;
+
+        rqStopCloudSync(); // clean slate
+        rqSyncInfo.status = "starting";
+        rqSyncInfo.lastError = "";
+
+        const client = await getSupabaseClient();
+        if (!client) { rqSyncInfo.status = "error"; rqSyncInfo.lastError = "Supabase not configured"; return; }
+
+        rqSyncClient = client;
+        rqSyncUserId = userId;
+
+        // Initial pull (conflict handled)
+        await rqPullFromCloud("start");
+
+        // Realtime subscription (best-effort)
+        try {
+          if (client.channel && client.channel.length !== 0) {
+            const deviceId = rqGetDeviceId();
+            rqSyncChannel = client
+              .channel("rq_sync_" + userId)
+              .on("postgres_changes",
+                { event: "*", schema: "public", table: RQ_SYNC_TABLE, filter: "user_id=eq." + userId },
+                function (payload) {
+                  try {
+                    if (!payload || !payload.new) return;
+                    // Ignore our own echo
+                    if (payload.new.device_id && payload.new.device_id === deviceId) return;
+
+                    const remoteMs = parseInt(payload.new.client_updated_at_ms || "0", 10) || 0;
+                    const localMs = rqGetLocalWriteMs();
+                    if (remoteMs > localMs) {
+                      rqApplyRemoteSnapshot(payload.new.state_json, remoteMs, "realtime");
+                    }
+                  } catch (e) {}
+                }
+              )
+              .subscribe(function (status) {
+                // status can be "SUBSCRIBED", "CHANNEL_ERROR", etc.
+                if (String(status || "").toUpperCase().indexOf("SUBSCRIBED") !== -1) {
+                  rqSyncInfo.status = "ready";
+                }
+              });
+          }
+        } catch (e) {
+          // Realtime is optional; fall back to polling
+        }
+
+        // Poll as a safety net (covers missed realtime events)
+        try {
+          rqSyncPollTimer = window.setInterval(function () {
+            rqPullFromCloud("poll").catch(function () {});
+          }, 30000);
+        } catch (e) {}
+
+        rqSyncInfo.status = "ready";
+      }
+
+      function rqStopCloudSync() {
+        try { if (rqSyncPushTimer) window.clearTimeout(rqSyncPushTimer); } catch (e) {}
+        rqSyncPushTimer = null;
+
+        try { if (rqSyncPollTimer) window.clearInterval(rqSyncPollTimer); } catch (e) {}
+        rqSyncPollTimer = null;
+
+        try {
+          if (rqSyncClient && rqSyncChannel && rqSyncClient.removeChannel) {
+            rqSyncClient.removeChannel(rqSyncChannel);
+          } else if (rqSyncChannel && rqSyncChannel.unsubscribe) {
+            rqSyncChannel.unsubscribe();
+          }
+        } catch (e) {}
+
+        rqSyncChannel = null;
+        rqSyncClient = null;
+        rqSyncUserId = null;
+
+        rqSyncInfo.status = "off";
+        rqSyncInfo.lastError = "";
+      }
+
+      function rqNotifyLocalStateChanged() {
+        try {
+          if (!state || state.syncEnabled === false) return;
+          if (rqSyncApplyingRemote) return;
+          if (!rqCurrentUser || !rqCurrentUser.id) return;
+          // Debounce pushes so rapid taps feel instant without spamming.
+          if (rqSyncPushTimer) window.clearTimeout(rqSyncPushTimer);
+          rqSyncPushTimer = window.setTimeout(function () {
+            rqPushToCloud("debounced").catch(function () {});
+          }, 600);
+        } catch (e) {}
+      }
+
+      async function rqPullFromCloud(reason) {
+        try {
+          if (!rqSyncClient || !rqSyncUserId) return;
+          const res = await rqSyncClient
+            .from(RQ_SYNC_TABLE)
+            .select("state_json, client_updated_at_ms, device_id")
+            .eq("user_id", rqSyncUserId)
+            .maybeSingle();
+
+          if (res && res.error) throw res.error;
+          if (!res || !res.data) { rqSyncInfo.lastPullMs = Date.now(); return; }
+
+          const remoteMs = parseInt(res.data.client_updated_at_ms || "0", 10) || 0;
+          const localMs = rqGetLocalWriteMs();
+
+          rqSyncInfo.lastPullMs = Date.now();
+
+          if (remoteMs > localMs) {
+            rqApplyRemoteSnapshot(res.data.state_json, remoteMs, reason || "pull");
+          } else if (localMs > remoteMs) {
+            // Our local state is newer — push it up so other devices catch up.
+            await rqPushToCloud("catch-up");
+          }
+        } catch (e) {
+          rqSyncInfo.status = "error";
+          rqSyncInfo.lastError = String(e && e.message ? e.message : e);
+        }
+      }
+
+      function rqBuildCloudSnapshot() {
+        // Keep this aligned with saveState()/loadState() fields.
+        return {
+          items: state.items,
+          lists: state.lists,
+          listsUi: state.listsUi,
+          filters: state.filters,
+          favouriteGenres: state.favouriteGenres,
+          sortBy: state.sortBy,
+          minRating: state.minRating,
+          country: state.country,
+          includeTv: state.includeTv,
+          syncEnabled: state.syncEnabled,
+          mood: state.mood,
+          streamingMode: state.streamingMode,
+          ui: state.ui,
+          theme: state.theme
+        };
+      }
+
+      async function rqPushToCloud(reason) {
+        try {
+          if (!rqSyncClient || !rqSyncUserId) return;
+          if (!state || state.syncEnabled === false) return;
+          if (!rqCurrentUser || rqCurrentUser.id !== rqSyncUserId) return;
+
+          const nowMs = rqGetLocalWriteMs() || Date.now();
+          const payload = {
+            user_id: rqSyncUserId,
+            state_json: rqBuildCloudSnapshot(),
+            client_updated_at_ms: nowMs,
+            device_id: rqGetDeviceId()
+          };
+
+          const up = await rqSyncClient.from(RQ_SYNC_TABLE).upsert(payload, { onConflict: "user_id" });
+          if (up && up.error) throw up.error;
+
+          rqSyncInfo.lastPushMs = Date.now();
+          rqSyncInfo.status = "ready";
+          rqSyncInfo.lastError = "";
+        } catch (e) {
+          rqSyncInfo.status = "error";
+          rqSyncInfo.lastError = String(e && e.message ? e.message : e);
+        }
+      }
+
+      function rqApplyRemoteSnapshot(snapshot, remoteMs, reason) {
+        try {
+          if (!snapshot || typeof snapshot !== "object") return;
+
+          rqSyncApplyingRemote = true;
+
+          // Apply only known fields to avoid surprising schema clashes.
+          if (Array.isArray(snapshot.items)) state.items = snapshot.items;
+          if (Array.isArray(snapshot.lists)) state.lists = snapshot.lists;
+          if (snapshot.listsUi && typeof snapshot.listsUi === "object") state.listsUi = snapshot.listsUi;
+          if (snapshot.filters && typeof snapshot.filters === "object") state.filters = snapshot.filters;
+          if (Array.isArray(snapshot.favouriteGenres)) state.favouriteGenres = snapshot.favouriteGenres;
+          if (snapshot.sortBy) state.sortBy = snapshot.sortBy;
+          if (typeof snapshot.minRating === "number") state.minRating = snapshot.minRating;
+          if (typeof snapshot.country === "string" && snapshot.country.length === 2) state.country = snapshot.country.toUpperCase();
+          if (typeof snapshot.includeTv === "boolean") state.includeTv = snapshot.includeTv;
+          if (typeof snapshot.syncEnabled === "boolean") state.syncEnabled = snapshot.syncEnabled;
+          if (typeof snapshot.mood === "string") state.mood = snapshot.mood;
+          if (typeof snapshot.streamingMode === "string") state.streamingMode = snapshot.streamingMode;
+          if (snapshot.ui && typeof snapshot.ui === "object") state.ui = snapshot.ui;
+          if (snapshot.theme === "light" || snapshot.theme === "dark") state.theme = snapshot.theme;
+
+          // Mark local write time to remote so we don't "win" immediately after pulling.
+          rqSetLocalWriteMs(remoteMs || Date.now());
+
+          // Persist + refresh UI
+          try { saveState(); } catch (e) {}
+          try { applyTheme(); } catch (e) {}
+          try { render(); } catch (e) {}
+
+          rqSyncInfo.lastPullMs = Date.now();
+          rqSyncInfo.status = "ready";
+          rqSyncInfo.lastError = "";
+        } finally {
+          rqSyncApplyingRemote = false;
+        }
+      }
+
 
 
       function getSupabaseConfig() {
@@ -6314,345 +6562,6 @@ if (!list) return;
         return rqSupabaseClient;
       }
 
-      // ------------------------------
-      // Cross-device sync (Supabase)
-      // Realtime updates + simple conflict handling (per-item updatedAt)
-      // ------------------------------
-
-      const RQ_SYNC_TABLE = "rq_user_state_v1";
-
-      const RQ_SYNC_SQL = `
--- ReelQuest cross-device sync table + RLS (run once in Supabase SQL editor)
-
-create table if not exists public.${RQ_SYNC_TABLE} (
-  user_id uuid primary key references auth.users (id) on delete cascade,
-  rev bigint not null default 0,
-  device_id text,
-  updated_at timestamptz not null default now(),
-  data jsonb not null default '{}'::jsonb
-);
-
-alter table public.${RQ_SYNC_TABLE} enable row level security;
-
--- Only allow users to read/write their own row
-create policy if not exists "read own state" on public.${RQ_SYNC_TABLE}
-for select to authenticated
-using (auth.uid() = user_id);
-
-create policy if not exists "upsert own state" on public.${RQ_SYNC_TABLE}
-for insert to authenticated
-with check (auth.uid() = user_id);
-
-create policy if not exists "update own state" on public.${RQ_SYNC_TABLE}
-for update to authenticated
-using (auth.uid() = user_id)
-with check (auth.uid() = user_id);
-`.trim();
-
-      let rqSyncChannel = null;
-      let rqSyncDebounceT = null;
-      let rqSyncApplyingRemote = false;
-      let rqDeviceId = null;
-
-      function rqGetDeviceId() {
-        if (rqDeviceId) return rqDeviceId;
-        try {
-          const k = "rq_device_id_v1";
-          const existing = localStorage.getItem(k);
-          if (existing) {
-            rqDeviceId = existing;
-            return rqDeviceId;
-          }
-          // RFC4122-ish without deps
-          const id = "dev_" + Math.random().toString(16).slice(2) + "_" + Date.now().toString(16);
-          localStorage.setItem(k, id);
-          rqDeviceId = id;
-          return rqDeviceId;
-        } catch (e) {
-          rqDeviceId = "dev_" + Math.random().toString(16).slice(2);
-          return rqDeviceId;
-        }
-      }
-
-      function rqIsSignedIn() {
-        try { return !!(rqCurrentUser && rqCurrentUser.id); } catch (e) { return false; }
-      }
-
-      function rqEnsureUpdatedAtOnItem(it) {
-        if (!it) return;
-        if (!it.updatedAt) it.updatedAt = Date.now();
-      }
-
-      function rqTouchAllItems() {
-        try {
-          if (!state || !Array.isArray(state.items)) return;
-          for (let i = 0; i < state.items.length; i++) {
-            rqEnsureUpdatedAtOnItem(state.items[i]);
-          }
-        } catch (e) {}
-      }
-
-      function rqTouchAllLists() {
-        try {
-          if (!state || !Array.isArray(state.lists)) return;
-          for (let i = 0; i < state.lists.length; i++) {
-            const l = state.lists[i];
-            if (l && !l.updatedAt) l.updatedAt = Date.now();
-          }
-        } catch (e) {}
-      }
-
-      function rqGetSyncEnabled() {
-        return !!(state && state.syncEnabled);
-      }
-
-      function rqSetSyncEnabled(v) {
-        state.syncEnabled = !!v;
-        saveState();
-        if (rqGetSyncEnabled()) {
-          rqStartRealtimeSync().catch(function () {});
-          rqQueueCloudPush("sync_enabled");
-        } else {
-          rqStopRealtimeSync();
-        }
-      }
-
-      function rqBumpLocalRev() {
-        if (!state) return;
-        if (!state.syncMeta || typeof state.syncMeta !== "object") state.syncMeta = {};
-        const r = (typeof state.syncMeta.rev === "number" ? state.syncMeta.rev : 0);
-        state.syncMeta.rev = r + 1;
-        state.syncMeta.lastLocalChangeAt = Date.now();
-      }
-
-      function rqBuildCloudData() {
-        // Ensure per-record timestamps for conflict handling
-        rqTouchAllItems();
-        rqTouchAllLists();
-
-        const payload = buildExportPayload();
-        // payload.data is what applyImportedData expects (it accepts either {data:{...}} or raw data)
-        const data = payload.data || {};
-        // Track sync settings as well
-        data.syncEnabled = !!state.syncEnabled;
-        data.syncMeta = Object.assign({}, state.syncMeta || {}, {
-          deviceId: rqGetDeviceId(),
-          pushedAt: new Date().toISOString()
-        });
-        return data;
-      }
-
-      function rqMergeByUpdatedAt(localArr, remoteArr, keyFn) {
-        const out = [];
-        const map = {};
-        const add = function (x, src) {
-          if (!x) return;
-          const k = keyFn(x);
-          if (!k) return;
-          const cur = map[k];
-          if (!cur) {
-            map[k] = x;
-            return;
-          }
-          const a = (cur.updatedAt || 0);
-          const b = (x.updatedAt || 0);
-          if (b > a) map[k] = x;
-        };
-
-        for (let i = 0; i < (localArr || []).length; i++) add(localArr[i], "local");
-        for (let i = 0; i < (remoteArr || []).length; i++) add(remoteArr[i], "remote");
-
-        for (const k in map) out.push(map[k]);
-        return out;
-      }
-
-      function rqMergeCloudIntoLocal(remoteData) {
-        if (!remoteData || typeof remoteData !== "object") return;
-
-        // Keep a copy of local settings to merge gently
-        const localData = buildExportPayload().data || {};
-
-        // Merge items (keyed by mediaType:tmdbId)
-        const mergedItems = rqMergeByUpdatedAt(
-          Array.isArray(localData.items) ? localData.items : [],
-          Array.isArray(remoteData.items) ? remoteData.items : [],
-          function (it) { return (normaliseMediaType(it.mediaType || "movie") + ":" + String(it.tmdbId)); }
-        );
-
-        // Merge lists by id (or name fallback)
-        const mergedLists = rqMergeByUpdatedAt(
-          Array.isArray(localData.lists) ? localData.lists : [],
-          Array.isArray(remoteData.lists) ? remoteData.lists : [],
-          function (l) { return String(l.id || ("name:" + (l.name || ""))); }
-        );
-
-        const merged = Object.assign({}, localData, remoteData, {
-          items: mergedItems,
-          lists: mergedLists
-        });
-
-        // Preference-ish fields: if remote has them, take them
-        // (These are low-conflict; last writer wins)
-        const preferKeys = [
-          "listsUi",
-          "favouriteGenres",
-          "filters",
-          "sortBy",
-          "minRating",
-          "country",
-          "theme",
-          "ui",
-          "excludedGenres",
-          "smartStatusMode",
-          "syncEnabled"
-        ];
-        for (let i = 0; i < preferKeys.length; i++) {
-          const k = preferKeys[i];
-          if (remoteData[k] != null) merged[k] = remoteData[k];
-        }
-
-        // Apply without re-pushing immediately
-        rqSyncApplyingRemote = true;
-        try {
-          applyImportedData({ data: merged });
-          // carry over meta
-          if (!state.syncMeta || typeof state.syncMeta !== "object") state.syncMeta = {};
-          if (remoteData.syncMeta && typeof remoteData.syncMeta === "object") {
-            state.syncMeta.lastPulledAt = Date.now();
-            state.syncMeta.lastRemoteRev = remoteData.syncMeta.rev || state.syncMeta.lastRemoteRev || 0;
-          }
-          saveState();
-          render();
-          toast("Synced from cloud");
-        } finally {
-          rqSyncApplyingRemote = false;
-        }
-      }
-
-      async function rqPullFromCloud() {
-        try {
-          if (!rqIsSignedIn() || !rqGetSyncEnabled()) return;
-          const client = await getSupabaseClient();
-          if (!client) return;
-
-          const uid = rqCurrentUser.id;
-          const res = await client.from(RQ_SYNC_TABLE).select("user_id, rev, device_id, updated_at, data").eq("user_id", uid).maybeSingle();
-          if (res && res.error) throw res.error;
-          const row = res ? res.data : null;
-          if (!row || !row.data) return;
-
-          // Ignore if it's our own latest push (helps reduce flicker)
-          const remoteDevice = row.device_id || null;
-          if (remoteDevice && remoteDevice === rqGetDeviceId()) return;
-
-          rqMergeCloudIntoLocal(row.data);
-        } catch (e) {
-          console.warn("Cloud pull failed", e);
-        }
-      }
-
-      async function rqPushToCloudNow(reason) {
-        try {
-          if (!rqIsSignedIn() || !rqGetSyncEnabled()) return;
-          if (rqSyncApplyingRemote) return;
-
-          const client = await getSupabaseClient();
-          if (!client) return;
-
-          rqBumpLocalRev();
-
-          const uid = rqCurrentUser.id;
-          const deviceId = rqGetDeviceId();
-
-          const data = rqBuildCloudData();
-          // Put the rev into the data.syncMeta so conflicts can be reasoned about client-side
-          if (!data.syncMeta || typeof data.syncMeta !== "object") data.syncMeta = {};
-          data.syncMeta.rev = state.syncMeta && typeof state.syncMeta.rev === "number" ? state.syncMeta.rev : 0;
-
-          const payload = {
-            user_id: uid,
-            rev: data.syncMeta.rev,
-            device_id: deviceId,
-            updated_at: new Date().toISOString(),
-            data: data
-          };
-
-          const res = await client.from(RQ_SYNC_TABLE)
-            .upsert(payload, { onConflict: "user_id" })
-            .select("rev, device_id, updated_at")
-            .maybeSingle();
-
-          if (res && res.error) throw res.error;
-
-          if (!state.syncMeta || typeof state.syncMeta !== "object") state.syncMeta = {};
-          state.syncMeta.lastPushedAt = Date.now();
-          saveState();
-        } catch (e) {
-          console.warn("Cloud push failed", e);
-        }
-      }
-
-      function rqQueueCloudPush(reason) {
-        try {
-          if (!rqIsSignedIn() || !rqGetSyncEnabled()) return;
-          if (rqSyncApplyingRemote) return;
-
-          if (rqSyncDebounceT) clearTimeout(rqSyncDebounceT);
-          rqSyncDebounceT = setTimeout(function () {
-            rqSyncDebounceT = null;
-            rqPushToCloudNow(reason).catch(function () {});
-          }, 650);
-        } catch (e) {}
-      }
-
-      function rqStopRealtimeSync() {
-        try {
-          if (rqSyncChannel && rqSyncChannel.unsubscribe) rqSyncChannel.unsubscribe();
-        } catch (e) {}
-        rqSyncChannel = null;
-      }
-
-      async function rqStartRealtimeSync() {
-        try {
-          if (!rqIsSignedIn() || !rqGetSyncEnabled()) return;
-          const client = await getSupabaseClient();
-          if (!client) return;
-
-          // Initial pull (fast)
-          await rqPullFromCloud();
-
-          // Subscribe to Postgres changes (instant-ish cross-device)
-          rqStopRealtimeSync();
-
-          const uid = rqCurrentUser.id;
-          rqSyncChannel = client.channel("rq_sync_" + uid);
-
-          rqSyncChannel.on(
-            "postgres_changes",
-            { event: "*", schema: "public", table: RQ_SYNC_TABLE, filter: "user_id=eq." + uid },
-            function (payload) {
-              try {
-                const n = payload && payload.new ? payload.new : null;
-                if (!n || !n.data) return;
-
-                // Ignore our own writes
-                if (n.device_id && n.device_id === rqGetDeviceId()) return;
-
-                rqMergeCloudIntoLocal(n.data);
-              } catch (e) {}
-            }
-          );
-
-          rqSyncChannel.subscribe(function (status) {
-            // optional: could show status in Account page later
-          });
-        } catch (e) {
-          console.warn("Realtime sync start failed", e);
-        }
-      }
-
-
-
 
       // Ensure auth callbacks (magic-link / OAuth / PKCE) are processed even if the user
       // lands on a non-Account tab after clicking the email link.
@@ -6674,7 +6583,8 @@ with check (auth.uid() = user_id);
                 // Refresh cached user/profile + header chip, and update Account UI if visible.
                 rqRefreshAuthState("auth-change");
                 if (state && state.activeTab === "account") renderAccount();
-              });
+              try { rqCloudSyncOnAuthChange(); } catch (e) {}
+               });
             } catch (e) { /* ignore */ }
           }
 
@@ -6725,7 +6635,53 @@ with check (auth.uid() = user_id);
         status.style.marginTop = "10px";
         status.textContent = "Status: Checking sign-in…";
 
-        const authSub = document.createElement("div");
+        
+
+        // Instant sync toggle (stored locally and, when signed in, synced across devices)
+        const syncRow = document.createElement("div");
+        syncRow.className = "settings-row";
+        syncRow.style.marginTop = "10px";
+
+        const syncLabel = document.createElement("label");
+        syncLabel.className = "settings-label";
+        syncLabel.textContent = "Instant cross-device sync";
+
+        const syncHelp = document.createElement("div");
+        syncHelp.className = "settings-copy";
+        syncHelp.style.marginTop = "6px";
+        syncHelp.textContent = "Keeps your ReelQuest up to date across devices in near real time (best with Supabase Realtime enabled).";
+
+        const syncToggle = document.createElement("input");
+        syncToggle.type = "checkbox";
+        syncToggle.checked = (typeof state.syncEnabled === "boolean") ? state.syncEnabled : true;
+        syncToggle.style.transform = "scale(1.2)";
+        syncToggle.style.marginRight = "8px";
+
+        const syncToggleWrap = document.createElement("div");
+        syncToggleWrap.style.display = "flex";
+        syncToggleWrap.style.alignItems = "center";
+        const syncToggleText = document.createElement("span");
+        syncToggleText.textContent = "Enable instant sync";
+        syncToggleWrap.appendChild(syncToggle);
+        syncToggleWrap.appendChild(syncToggleText);
+
+        const syncStatus = document.createElement("div");
+        syncStatus.className = "settings-copy";
+        syncStatus.style.marginTop = "6px";
+        syncStatus.textContent = "Sync: " + (typeof rqGetSyncStatusText === "function" ? rqGetSyncStatusText() : "Off");
+
+        syncToggle.addEventListener("change", function () {
+          state.syncEnabled = !!syncToggle.checked;
+          saveState();
+          try { if (state.syncEnabled) rqCloudSyncOnAuthChange(); else rqStopCloudSync(); } catch (e) {}
+          try { syncStatus.textContent = "Sync: " + rqGetSyncStatusText(); } catch (e) {}
+        });
+
+        syncRow.appendChild(syncLabel);
+        syncRow.appendChild(syncToggleWrap);
+        syncRow.appendChild(syncHelp);
+        syncRow.appendChild(syncStatus);
+const authSub = document.createElement("div");
         authSub.className = "settings-subheading";
         authSub.style.marginTop = "14px";
         authSub.textContent = "Sign in";
@@ -6822,7 +6778,9 @@ with check (auth.uid() = user_id);
         panel.appendChild(status);
 
         
-        // Profile (only visible when signed in)
+        
+        panel.appendChild(syncRow);
+// Profile (only visible when signed in)
         const profileSub = document.createElement("div");
         profileSub.className = "settings-subheading";
         profileSub.style.marginTop = "14px";
@@ -6929,73 +6887,6 @@ with check (auth.uid() = user_id);
 
         panel.appendChild(profileSub);
         panel.appendChild(profileWrap);
-
-        // Cross-device sync (cloud)
-        const syncSub = document.createElement("div");
-        syncSub.className = "settings-subheading";
-        syncSub.style.marginTop = "14px";
-        syncSub.textContent = "Cross-device sync";
-
-        const syncCopy = document.createElement("p");
-        syncCopy.className = "settings-copy";
-        syncCopy.textContent = "When signed in, ReelQuest can sync your data across devices almost instantly (realtime). If the database table isn’t set up yet, open the setup details below.";
-
-        const syncRow = document.createElement("label");
-        syncRow.style.display = "flex";
-        syncRow.style.alignItems = "center";
-        syncRow.style.gap = "10px";
-        syncRow.style.marginTop = "8px";
-
-        const syncCb = document.createElement("input");
-        syncCb.type = "checkbox";
-        syncCb.checked = !!state.syncEnabled;
-        syncCb.addEventListener("change", function () {
-          rqSetSyncEnabled(!!syncCb.checked);
-          syncCb.checked = !!state.syncEnabled;
-          toast(state.syncEnabled ? "Sync enabled." : "Sync disabled.");
-        });
-
-        const syncTxt = document.createElement("div");
-        syncTxt.style.fontSize = "13px";
-        syncTxt.style.color = "var(--text-muted)";
-        syncTxt.textContent = "Enable instant cross-device sync (requires Supabase table).";
-
-        syncRow.appendChild(syncCb);
-        syncRow.appendChild(syncTxt);
-
-        const syncDetails = document.createElement("details");
-        syncDetails.style.marginTop = "10px";
-
-        const syncSummary = document.createElement("summary");
-        syncSummary.textContent = "Setup SQL (Supabase)";
-        syncDetails.appendChild(syncSummary);
-
-        const syncPre = document.createElement("pre");
-        syncPre.style.whiteSpace = "pre-wrap";
-        syncPre.style.userSelect = "text";
-        syncPre.style.marginTop = "10px";
-        syncPre.textContent = RQ_SYNC_SQL;
-        syncDetails.appendChild(syncPre);
-
-        const copySqlBtn = document.createElement("button");
-        copySqlBtn.type = "button";
-        copySqlBtn.className = "pill-btn";
-        copySqlBtn.textContent = "Copy SQL";
-        copySqlBtn.style.marginTop = "8px";
-        copySqlBtn.addEventListener("click", async function () {
-          try {
-            await navigator.clipboard.writeText(RQ_SYNC_SQL);
-            toast("SQL copied.");
-          } catch (e) {
-            alertNice("Couldn’t copy. You can still select and copy the text.");
-          }
-        });
-        syncDetails.appendChild(copySqlBtn);
-
-        panel.appendChild(syncSub);
-        panel.appendChild(syncCopy);
-        panel.appendChild(syncRow);
-        panel.appendChild(syncDetails);
 
         function applyProfileToUi(user, profile) {
           if (!user) {
@@ -9378,15 +9269,6 @@ els.detailActions.appendChild(orgWrap);
 
         const items = normaliseImportedItems(data && data.items ? data.items : []);
         const lists = normaliseImportedLists(data && data.lists ? data.lists : []);
-
-        try {
-          for (let i = 0; i < items.length; i++) {
-            if (items[i] && !items[i].updatedAt) items[i].updatedAt = Date.now();
-          }
-          for (let i = 0; i < lists.length; i++) {
-            if (lists[i] && !lists[i].updatedAt) lists[i].updatedAt = Date.now();
-          }
-        } catch (e) {}
         const listsUi = data && data.listsUi && typeof data.listsUi === "object" ? data.listsUi : null;
         const filters = data && data.filters && typeof data.filters === "object" ? data.filters : null;
         const country = data && typeof data.country === "string" && data.country.length === 2 ? data.country.toUpperCase() : null;
@@ -9421,27 +9303,6 @@ els.detailActions.appendChild(orgWrap);
 
         // Clear caches that could be stale
         state.detailsCache = {};
-
-        
-        // Sync preference
-        try {
-          if (typeof data.syncEnabled === "boolean") state.syncEnabled = data.syncEnabled;
-          if (data.syncMeta && typeof data.syncMeta === "object") {
-            state.syncMeta = Object.assign({}, state.syncMeta || {}, data.syncMeta);
-          }
-        } catch (e) {}
-saveState();
-        applyTheme();
-
-        // Refresh current tab content
-        if (state.activeTab === "for-you") {
-          loadForYouRecommendations();
-        } else if (state.activeTab === "discover") {
-          loadPopularForDiscover();
-        } else {
-          render();
-        }
-      }tailsCache = {};
 
         saveState();
         applyTheme();
@@ -9746,7 +9607,8 @@ function init() {
         applyTheme();
         try { initSupabaseAuthOnLoad(); } catch (e) {}
         try { rqRefreshAuthState("init"); } catch (e) {}
-        render();
+        
+try { rqCloudSyncOnAuthChange(); } catch (e) {}render();
 
         // Initial load for the starting tab
         if (state.activeTab === "discover") {
