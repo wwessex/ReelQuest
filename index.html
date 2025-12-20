@@ -3464,6 +3464,8 @@ function toggleWatchlistForItem(item) {
 
   if (!was) {
     item.inWatchlist = true;
+    try { item.updatedAt = Date.now(); } catch (e) {}
+    try { rqLogActivity("watchlist_add", { tmdbId: item.tmdbId, mediaType: item.mediaType || "movie", title: item.title || "", year: item.year || "", posterPath: item.posterPath || null }); } catch (e) {}
     if (!item.priority) item.priority = "medium";
     item.status = normaliseWatchStatus(item.status);
     saveState();
@@ -3504,6 +3506,8 @@ function toggleWatchedForItem(item) {
     item.rewatch = false;
 
     if (!item.watchedAt) item.watchedAt = Date.now();
+    try { item.updatedAt = Date.now(); } catch (e) {}
+    try { rqLogActivity("watched", { tmdbId: item.tmdbId, mediaType: item.mediaType || "movie", title: item.title || "", year: item.year || "", posterPath: item.posterPath || null, userRating: (typeof item.userRating === "number" ? item.userRating : null) }); } catch (e) {}
 
     saveState();
     render();
@@ -6333,6 +6337,9 @@ function moveEntryInList(listId, entryKeyValue, direction) {
   ensureCustomOrder(list);
   if (list.customOrder.indexOf(key) === -1) list.customOrder.push(key);
 
+  try { if (list) list.updatedAt = Date.now(); } catch (e) {}
+  try { rqLogActivity("list_add", { tmdbId: tmdbId, mediaType: mt, title: title, year: year, posterPath: detailsOrMovie.poster_path || null, listName: list.name || "" }); } catch (e) {}
+
   saveState();
   render();
 }
@@ -6474,6 +6481,7 @@ function moveEntryInList(listId, entryKeyValue, direction) {
             rqCurrentUser = null;
             rqCurrentProfile = null;
             rqSetHeaderUserChip(null, null);
+            try { rqStopActivityRealtime(); } catch (e) {}
             return { user: null, profile: null };
           }
 
@@ -6512,11 +6520,16 @@ function moveEntryInList(listId, entryKeyValue, direction) {
               }
             }
           } catch (e) { /* ignore */ }
+          
+          // Social: start realtime activity feed once authenticated (safe no-op if not configured)
+          try { rqStartActivityRealtime(); } catch (e) {}
+
           return { user: user, profile: profile };
         } catch (e) {
           rqCurrentUser = null;
           rqCurrentProfile = null;
           rqSetHeaderUserChip(null, null);
+          try { rqStopActivityRealtime(); } catch (e) {}
           return { user: null, profile: null };
         }
       }
@@ -6910,7 +6923,504 @@ function moveEntryInList(listId, entryKeyValue, direction) {
       }
 
       
-      function renderAccount() {
+      
+
+      // ------------------------------
+      // Friends & Activity Feed (Supabase)
+      // A light social layer: follow users and see a feed of their activity.
+      // Safe-by-default: if the tables/policies aren’t set up, the app still works locally.
+      // ------------------------------
+
+      const RQ_FOLLOWS_TABLE = "rq_follows_v1";
+      const RQ_ACTIVITY_TABLE = "rq_activity_v1";
+
+      const RQ_SOCIAL_SQL = `
+-- ReelQuest friends/follow + activity feed (run once in Supabase SQL editor)
+
+create table if not exists public.${RQ_FOLLOWS_TABLE} (
+  follower_id uuid references auth.users (id) on delete cascade,
+  following_id uuid references auth.users (id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (follower_id, following_id)
+);
+
+alter table public.${RQ_FOLLOWS_TABLE} enable row level security;
+
+create policy if not exists "follows select own" on public.${RQ_FOLLOWS_TABLE}
+for select to authenticated
+using (auth.uid() = follower_id or auth.uid() = following_id);
+
+create policy if not exists "follows insert own" on public.${RQ_FOLLOWS_TABLE}
+for insert to authenticated
+with check (auth.uid() = follower_id);
+
+create policy if not exists "follows delete own" on public.${RQ_FOLLOWS_TABLE}
+for delete to authenticated
+using (auth.uid() = follower_id);
+
+create table if not exists public.${RQ_ACTIVITY_TABLE} (
+  id bigserial primary key,
+  user_id uuid references auth.users (id) on delete cascade,
+  device_id text,
+  type text not null,
+  payload jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists rq_activity_user_created_idx
+on public.${RQ_ACTIVITY_TABLE} (user_id, created_at desc);
+
+alter table public.${RQ_ACTIVITY_TABLE} enable row level security;
+
+-- Read your own activity, plus activity from people you follow
+create policy if not exists "activity read own + following" on public.${RQ_ACTIVITY_TABLE}
+for select to authenticated
+using (
+  auth.uid() = user_id
+  OR user_id in (
+    select following_id from public.${RQ_FOLLOWS_TABLE} where follower_id = auth.uid()
+  )
+);
+
+-- Write only your own activity
+create policy if not exists "activity insert own" on public.${RQ_ACTIVITY_TABLE}
+for insert to authenticated
+with check (auth.uid() = user_id);
+
+-- Optional (recommended): allow authenticated users to discover people by display name.
+-- If your existing profiles table already has a safe select policy, you can skip this.
+-- Otherwise, you can create a public-safe view without email:
+
+-- create or replace view public.profiles_public as
+--   select id, display_name, avatar_url, country_region
+--   from public.profiles;
+
+-- grant select on public.profiles_public to authenticated;
+`.trim();
+
+      let rqActivityChannel = null;
+      let rqSocialFollowingCache = { ids: [], fetchedAt: 0 };
+      let rqSocialProfilesCache = {}; // id -> {id, display_name, avatar_url, country_region}
+      let rqActivityUi = null; // populated by Account page renderer
+
+      function rqSocialReady() {
+        try { return !!(rqCurrentUser && rqCurrentUser.id); } catch (e) { return false; }
+      }
+
+      async function rqGetFollowingIds(force) {
+        try {
+          if (!rqSocialReady()) return [];
+          const now = Date.now();
+          if (!force && rqSocialFollowingCache.ids.length && (now - rqSocialFollowingCache.fetchedAt) < 30000) {
+            return rqSocialFollowingCache.ids.slice();
+          }
+
+          const client = await getSupabaseClient();
+          if (!client) return [];
+
+          const uid = rqCurrentUser.id;
+          const res = await client
+            .from(RQ_FOLLOWS_TABLE)
+            .select("following_id")
+            .eq("follower_id", uid);
+
+          if (res && res.error) throw res.error;
+
+          const ids = (res && Array.isArray(res.data)) ? res.data.map(function (r) { return r.following_id; }).filter(Boolean) : [];
+          rqSocialFollowingCache = { ids: ids, fetchedAt: now };
+          return ids.slice();
+        } catch (e) {
+          // If policies/tables aren’t ready, we just behave like there are no follows.
+          return [];
+        }
+      }
+
+      async function rqFetchProfilesByIds(ids) {
+        try {
+          if (!rqSocialReady()) return {};
+          const want = (ids || []).filter(Boolean);
+          if (!want.length) return {};
+
+          // Cache hit?
+          let missing = [];
+          for (let i = 0; i < want.length; i++) {
+            const id = want[i];
+            if (!rqSocialProfilesCache[id]) missing.push(id);
+          }
+          if (!missing.length) return rqSocialProfilesCache;
+
+          const client = await getSupabaseClient();
+          if (!client) return rqSocialProfilesCache;
+
+          // Prefer profiles_public view if present; fall back to profiles.
+          let res = await client
+            .from("profiles_public")
+            .select("id, display_name, avatar_url, country_region")
+            .in("id", missing)
+            .limit(50);
+
+          if (res && res.error) {
+            // fallback
+            res = await client
+              .from("profiles")
+              .select("id, display_name, avatar_url, country_region")
+              .in("id", missing)
+              .limit(50);
+          }
+
+          if (res && res.error) throw res.error;
+
+          const rows = (res && Array.isArray(res.data)) ? res.data : [];
+          for (let i = 0; i < rows.length; i++) {
+            const p = rows[i];
+            if (p && p.id) rqSocialProfilesCache[p.id] = p;
+          }
+          return rqSocialProfilesCache;
+        } catch (e) {
+          return rqSocialProfilesCache;
+        }
+      }
+
+      async function rqSearchUsersByDisplayName(q) {
+        try {
+          if (!rqSocialReady()) {
+            alertNice("Sign in to search and follow friends.");
+            return [];
+          }
+          const query = String(q || "").trim();
+          if (query.length < 2) return [];
+
+          const client = await getSupabaseClient();
+          if (!client) return [];
+
+          // Prefer profiles_public if present; fall back to profiles.
+          let res = await client
+            .from("profiles_public")
+            .select("id, display_name, avatar_url, country_region")
+            .ilike("display_name", "%" + query + "%")
+            .limit(10);
+
+          if (res && res.error) {
+            res = await client
+              .from("profiles")
+              .select("id, display_name, avatar_url, country_region")
+              .ilike("display_name", "%" + query + "%")
+              .limit(10);
+          }
+
+          if (res && res.error) throw res.error;
+
+          const rows = (res && Array.isArray(res.data)) ? res.data : [];
+          // Don’t show yourself
+          const uid = rqCurrentUser.id;
+          return rows.filter(function (p) { return p && p.id && p.id !== uid; });
+        } catch (e) {
+          alertNice("Couldn’t search users. If this is your first time enabling social features, run the Setup SQL in Account > Friends & Activity.");
+          return [];
+        }
+      }
+
+      async function rqFollowUser(targetId) {
+        try {
+          if (!rqSocialReady()) return false;
+          const uid = rqCurrentUser.id;
+          const tid = String(targetId || "").trim();
+          if (!tid || tid === uid) return false;
+
+          const client = await getSupabaseClient();
+          if (!client) return false;
+
+          const res = await client
+            .from(RQ_FOLLOWS_TABLE)
+            .upsert({ follower_id: uid, following_id: tid }, { onConflict: "follower_id,following_id" });
+
+          if (res && res.error) throw res.error;
+
+          rqSocialFollowingCache.fetchedAt = 0;
+          return true;
+        } catch (e) {
+          alertNice("Couldn’t follow. Run the Setup SQL in Account > Friends & Activity, and ensure RLS policies are in place.");
+          return false;
+        }
+      }
+
+      async function rqUnfollowUser(targetId) {
+        try {
+          if (!rqSocialReady()) return false;
+          const uid = rqCurrentUser.id;
+          const tid = String(targetId || "").trim();
+          if (!tid) return false;
+
+          const client = await getSupabaseClient();
+          if (!client) return false;
+
+          const res = await client
+            .from(RQ_FOLLOWS_TABLE)
+            .delete()
+            .eq("follower_id", uid)
+            .eq("following_id", tid);
+
+          if (res && res.error) throw res.error;
+
+          rqSocialFollowingCache.fetchedAt = 0;
+          return true;
+        } catch (e) {
+          alertNice("Couldn’t unfollow. Check your RLS policies on the follows table.");
+          return false;
+        }
+      }
+
+      async function rqLogActivity(type, payload) {
+        try {
+          if (!rqSocialReady()) return;
+          const client = await getSupabaseClient();
+          if (!client) return;
+
+          const uid = rqCurrentUser.id;
+          const deviceId = (typeof rqGetDeviceId === "function") ? rqGetDeviceId() : null;
+
+          const body = {
+            user_id: uid,
+            device_id: deviceId,
+            type: String(type || "event"),
+            payload: (payload && typeof payload === "object") ? payload : {}
+          };
+
+          // Best effort
+          await client.from(RQ_ACTIVITY_TABLE).insert(body);
+        } catch (e) {
+          // Silent; social should never break core tracking.
+        }
+      }
+
+      function rqFmtUserName(id) {
+        try {
+          const p = rqSocialProfilesCache && rqSocialProfilesCache[id] ? rqSocialProfilesCache[id] : null;
+          const dn = p && p.display_name ? String(p.display_name) : "";
+          if (dn) return dn;
+        } catch (e) {}
+        const s = String(id || "");
+        return s ? ("User " + s.slice(0, 6) + "…") : "User";
+      }
+
+      function rqRenderActivityItem(act) {
+        const li = document.createElement("div");
+        li.className = "feed-item";
+        li.style.padding = "10px 12px";
+        li.style.border = "1px solid var(--border)";
+        li.style.borderRadius = "14px";
+        li.style.background = "rgba(255,255,255,0.03)";
+
+        const who = document.createElement("div");
+        who.style.fontSize = "13px";
+        who.style.fontWeight = "600";
+        who.textContent = rqFmtUserName(act.user_id);
+
+        const when = document.createElement("div");
+        when.style.fontSize = "12px";
+        when.style.color = "var(--text-muted)";
+        when.textContent = act.created_at ? formatDateUK(new Date(act.created_at).getTime()) : "";
+
+        const body = document.createElement("div");
+        body.style.marginTop = "6px";
+        body.style.fontSize = "13px";
+
+        const p = act.payload && typeof act.payload === "object" ? act.payload : {};
+        const title = p.title || p.name || "a title";
+        const year = p.year ? (" (" + p.year + ")") : "";
+        const rating = (typeof p.userRating === "number") ? (" · " + p.userRating.toFixed(1) + "/10") : "";
+        const listName = p.listName ? (" · " + p.listName) : "";
+
+        let text = "";
+        if (act.type === "watched") text = "watched " + title + year;
+        else if (act.type === "watchlist_add") text = "added " + title + year + " to their watchlist";
+        else if (act.type === "rated") text = "rated " + title + year + rating;
+        else if (act.type === "review") text = "reviewed " + title + year;
+        else if (act.type === "list_add") text = "added " + title + year + " to a list" + listName;
+        else text = "updated " + title + year;
+
+        body.textContent = text;
+
+        const wrapTop = document.createElement("div");
+        wrapTop.style.display = "flex";
+        wrapTop.style.justifyContent = "space-between";
+        wrapTop.style.gap = "10px";
+        wrapTop.appendChild(who);
+        wrapTop.appendChild(when);
+
+        li.appendChild(wrapTop);
+        li.appendChild(body);
+
+        // Optional: show snippet for reviews
+        if (act.type === "review" && p.noteSnippet) {
+          const sn = document.createElement("div");
+          sn.style.marginTop = "6px";
+          sn.style.fontSize = "12px";
+          sn.style.color = "var(--text-muted)";
+          sn.textContent = "“" + String(p.noteSnippet) + "”";
+          li.appendChild(sn);
+        }
+
+        // Click to open detail if possible
+        li.style.cursor = "pointer";
+        li.addEventListener("click", function () {
+          try {
+            if (!p.tmdbId) return;
+            const view = { mode: "local", item: ensureItemFromTmdb({ id: p.tmdbId, title: p.title, name: p.title, poster_path: p.posterPath || null }, p.mediaType || "movie") };
+            openDetailForView(view);
+          } catch (e) {}
+        });
+
+        return li;
+      }
+
+      async function rqFetchActivityFeed(limit) {
+        try {
+          if (!rqSocialReady()) return [];
+          const client = await getSupabaseClient();
+          if (!client) return [];
+
+          const following = await rqGetFollowingIds(false);
+          const ids = [rqCurrentUser.id].concat(following || []);
+          const lim = (typeof limit === "number" && limit > 0) ? limit : 50;
+
+          const res = await client
+            .from(RQ_ACTIVITY_TABLE)
+            .select("id, user_id, type, payload, created_at")
+            .in("user_id", ids)
+            .order("created_at", { ascending: false })
+            .limit(lim);
+
+          if (res && res.error) throw res.error;
+
+          const rows = (res && Array.isArray(res.data)) ? res.data : [];
+          // Cache profiles for those users
+          const userIds = {};
+          for (let i = 0; i < rows.length; i++) userIds[rows[i].user_id] = true;
+          await rqFetchProfilesByIds(Object.keys(userIds));
+
+          return rows;
+        } catch (e) {
+          return [];
+        }
+      }
+
+      function rqStopActivityRealtime() {
+        try {
+          if (rqActivityChannel && rqActivityChannel.unsubscribe) rqActivityChannel.unsubscribe();
+        } catch (e) {}
+        rqActivityChannel = null;
+      }
+
+      async function rqStartActivityRealtime() {
+        try {
+          if (!rqSocialReady()) return;
+          const client = await getSupabaseClient();
+          if (!client) return;
+
+          rqStopActivityRealtime();
+
+          const deviceId = (typeof rqGetDeviceId === "function") ? rqGetDeviceId() : null;
+          const following = await rqGetFollowingIds(true);
+          const allowed = {};
+          allowed[rqCurrentUser.id] = true;
+          for (let i = 0; i < following.length; i++) allowed[following[i]] = true;
+
+          rqActivityChannel = client
+            .channel("rq_activity_feed_" + rqCurrentUser.id)
+            .on(
+              "postgres_changes",
+              { event: "INSERT", schema: "public", table: RQ_ACTIVITY_TABLE },
+              function (payload) {
+                try {
+                  if (!payload || !payload.new) return;
+                  const row = payload.new;
+                  if (!row.user_id || !allowed[row.user_id]) return;
+                  if (deviceId && row.device_id && row.device_id === deviceId) return;
+
+                  // Prepend into UI if visible
+                  if (rqActivityUi && rqActivityUi.feedList) {
+                    rqFetchProfilesByIds([row.user_id]).then(function () {
+                      const el = rqRenderActivityItem(row);
+                      rqActivityUi.feedList.insertBefore(el, rqActivityUi.feedList.firstChild);
+                    });
+                  }
+                } catch (e) {}
+              }
+            )
+            .subscribe(function (status) {});
+        } catch (e) {
+          // Ignore.
+        }
+      }
+
+      async function rqRefreshSocialUi() {
+        try {
+          if (!rqActivityUi) return;
+
+          // Following list
+          const followingIds = await rqGetFollowingIds(true);
+          await rqFetchProfilesByIds(followingIds);
+
+          rqActivityUi.followingList.innerHTML = "";
+          if (!followingIds.length) {
+            const empty = document.createElement("div");
+            empty.className = "settings-copy";
+            empty.textContent = "You aren’t following anyone yet.";
+            rqActivityUi.followingList.appendChild(empty);
+          } else {
+            for (let i = 0; i < followingIds.length; i++) {
+              const id = followingIds[i];
+              const p = rqSocialProfilesCache[id] || { id: id, display_name: null };
+              const row = document.createElement("div");
+              row.style.display = "flex";
+              row.style.alignItems = "center";
+              row.style.justifyContent = "space-between";
+              row.style.gap = "10px";
+              row.style.padding = "6px 0";
+
+              const name = document.createElement("div");
+              name.style.fontSize = "13px";
+              name.textContent = (p.display_name || ("User " + String(id).slice(0, 6) + "…"));
+
+              const btn = document.createElement("button");
+              btn.type = "button";
+              btn.className = "pill-btn";
+              btn.textContent = "Unfollow";
+              btn.addEventListener("click", async function () {
+                btn.disabled = true;
+                await rqUnfollowUser(id);
+                btn.disabled = false;
+                rqRefreshSocialUi();
+              });
+
+              row.appendChild(name);
+              row.appendChild(btn);
+              rqActivityUi.followingList.appendChild(row);
+            }
+          }
+
+          // Feed
+          rqActivityUi.feedList.innerHTML = "";
+          const acts = await rqFetchActivityFeed(50);
+
+          if (!acts.length) {
+            const empty = document.createElement("div");
+            empty.className = "settings-copy";
+            empty.textContent = "No activity yet. Follow a friend, then log a film to see updates here.";
+            rqActivityUi.feedList.appendChild(empty);
+          } else {
+            for (let i = 0; i < acts.length; i++) {
+              rqActivityUi.feedList.appendChild(rqRenderActivityItem(acts[i]));
+            }
+          }
+
+          // Ensure realtime reflects latest following set
+          rqStartActivityRealtime();
+        } catch (e) {}
+      }
+
+function renderAccount() {
         const panel = els.accountPanel;
         if (!panel) return;
         panel.innerHTML = "";
@@ -7233,7 +7743,207 @@ const authSub = document.createElement("div");
         panel.appendChild(prefsWrap);
 
 // Profile (only visible when signed in)
-        const profileSub = document.createElement("div");
+        
+        // Friends & activity feed
+        const socialSub = document.createElement("div");
+        socialSub.className = "settings-subheading";
+        socialSub.style.marginTop = "16px";
+        socialSub.textContent = "Friends & activity feed";
+
+        const socialCopy = document.createElement("div");
+        socialCopy.className = "settings-copy";
+        socialCopy.style.marginTop = "6px";
+        socialCopy.textContent = "Follow friends and see what they’re watching, rating and reviewing. (Requires Supabase tables + policies.)";
+
+        const socialSearchRow = document.createElement("div");
+        socialSearchRow.className = "settings-row";
+        socialSearchRow.style.marginTop = "10px";
+
+        const searchLabel = document.createElement("label");
+        searchLabel.className = "settings-label";
+        searchLabel.textContent = "Find friends";
+
+        const searchWrap = document.createElement("div");
+        searchWrap.style.display = "flex";
+        searchWrap.style.gap = "8px";
+        searchWrap.style.flexWrap = "wrap";
+
+        const searchInput = document.createElement("input");
+        searchInput.type = "text";
+        searchInput.className = "controls-input";
+        searchInput.placeholder = "Search display name…";
+        searchInput.autocomplete = "off";
+        searchInput.style.flex = "1";
+        searchInput.style.minWidth = "200px";
+
+        const searchBtn = document.createElement("button");
+        searchBtn.type = "button";
+        searchBtn.className = "pill-btn";
+        searchBtn.textContent = "Search";
+
+        const results = document.createElement("div");
+        results.style.marginTop = "10px";
+        results.style.display = "grid";
+        results.style.gap = "8px";
+
+        searchBtn.addEventListener("click", async function () {
+          results.innerHTML = "";
+          const q = String(searchInput.value || "").trim();
+          if (q.length < 2) {
+            alertNice("Type at least 2 characters.");
+            return;
+          }
+          searchBtn.disabled = true;
+          const found = await rqSearchUsersByDisplayName(q);
+          searchBtn.disabled = false;
+
+          if (!found.length) {
+            const empty = document.createElement("div");
+            empty.className = "settings-copy";
+            empty.textContent = "No matches found.";
+            results.appendChild(empty);
+            return;
+          }
+
+          const following = await rqGetFollowingIds(true);
+          const isFollowing = {};
+          for (let i = 0; i < following.length; i++) isFollowing[following[i]] = true;
+
+          for (let i = 0; i < found.length; i++) {
+            const p = found[i];
+            if (!p || !p.id) continue;
+
+            const row = document.createElement("div");
+            row.style.display = "flex";
+            row.style.alignItems = "center";
+            row.style.justifyContent = "space-between";
+            row.style.gap = "10px";
+            row.style.padding = "10px 12px";
+            row.style.border = "1px solid var(--border)";
+            row.style.borderRadius = "14px";
+            row.style.background = "rgba(255,255,255,0.03)";
+
+            const name = document.createElement("div");
+            name.style.fontSize = "13px";
+            name.style.fontWeight = "600";
+            name.textContent = p.display_name || ("User " + String(p.id).slice(0, 6) + "…");
+
+            const btn = document.createElement("button");
+            btn.type = "button";
+            btn.className = "pill-btn";
+
+            const already = !!isFollowing[p.id];
+            btn.textContent = already ? "Unfollow" : "Follow";
+
+            btn.addEventListener("click", async function () {
+              btn.disabled = true;
+              if (already) await rqUnfollowUser(p.id);
+              else await rqFollowUser(p.id);
+              btn.disabled = false;
+              rqRefreshSocialUi();
+            });
+
+            row.appendChild(name);
+            row.appendChild(btn);
+            results.appendChild(row);
+          }
+        });
+
+        searchWrap.appendChild(searchInput);
+        searchWrap.appendChild(searchBtn);
+
+        socialSearchRow.appendChild(searchLabel);
+        socialSearchRow.appendChild(searchWrap);
+
+        const followingSub = document.createElement("div");
+        followingSub.className = "settings-subheading";
+        followingSub.style.marginTop = "12px";
+        followingSub.textContent = "Following";
+
+        const followingList = document.createElement("div");
+        followingList.style.marginTop = "8px";
+        followingList.style.display = "grid";
+        followingList.style.gap = "6px";
+
+        const feedSub = document.createElement("div");
+        feedSub.className = "settings-subheading";
+        feedSub.style.marginTop = "12px";
+        feedSub.textContent = "Activity feed";
+
+        const feedTopRow = document.createElement("div");
+        feedTopRow.style.display = "flex";
+        feedTopRow.style.justifyContent = "space-between";
+        feedTopRow.style.alignItems = "center";
+        feedTopRow.style.gap = "10px";
+        feedTopRow.style.marginTop = "8px";
+
+        const feedHint = document.createElement("div");
+        feedHint.className = "settings-copy";
+        feedHint.style.margin = "0";
+        feedHint.textContent = "Updates appear here in near real time.";
+
+        const feedRefreshBtn = document.createElement("button");
+        feedRefreshBtn.type = "button";
+        feedRefreshBtn.className = "pill-btn";
+        feedRefreshBtn.textContent = "Refresh";
+        feedRefreshBtn.addEventListener("click", function () {
+          rqRefreshSocialUi();
+        });
+
+        feedTopRow.appendChild(feedHint);
+        feedTopRow.appendChild(feedRefreshBtn);
+
+        const feedList = document.createElement("div");
+        feedList.style.marginTop = "10px";
+        feedList.style.display = "grid";
+        feedList.style.gap = "10px";
+
+        const socialDetails = document.createElement("details");
+        socialDetails.style.marginTop = "10px";
+
+        const socialSummary = document.createElement("summary");
+        socialSummary.textContent = "Setup SQL (friends + activity)";
+        socialDetails.appendChild(socialSummary);
+
+        const socialPre = document.createElement("pre");
+        socialPre.style.whiteSpace = "pre-wrap";
+        socialPre.style.userSelect = "text";
+        socialPre.style.marginTop = "10px";
+        socialPre.textContent = RQ_SOCIAL_SQL;
+        socialDetails.appendChild(socialPre);
+
+        const copySocialSqlBtn = document.createElement("button");
+        copySocialSqlBtn.type = "button";
+        copySocialSqlBtn.className = "pill-btn";
+        copySocialSqlBtn.textContent = "Copy SQL";
+        copySocialSqlBtn.style.marginTop = "8px";
+        copySocialSqlBtn.addEventListener("click", async function () {
+          try {
+            await navigator.clipboard.writeText(RQ_SOCIAL_SQL);
+            toast("SQL copied.");
+          } catch (e) {
+            alertNice("Couldn’t copy. You can still select and copy the text.");
+          }
+        });
+        socialDetails.appendChild(copySocialSqlBtn);
+
+        panel.appendChild(socialSub);
+        panel.appendChild(socialCopy);
+        panel.appendChild(socialSearchRow);
+        panel.appendChild(results);
+        panel.appendChild(followingSub);
+        panel.appendChild(followingList);
+        panel.appendChild(feedSub);
+        panel.appendChild(feedTopRow);
+        panel.appendChild(feedList);
+        panel.appendChild(socialDetails);
+
+        // Wire UI to social logic (global ref so realtime inserts can append)
+        rqActivityUi = { followingList: followingList, feedList: feedList };
+
+        // Initial fill
+        try { rqRefreshSocialUi(); } catch (e) {}
+const profileSub = document.createElement("div");
         profileSub.className = "settings-subheading";
         profileSub.style.marginTop = "14px";
         profileSub.textContent = "Profile";
@@ -9252,6 +9962,13 @@ notesSave.style.marginTop = "8px";
 notesSave.textContent = "Save notes";
 notesSave.addEventListener("click", function () {
   linked.notes = String(notesArea.value || "");
+  try { linked.updatedAt = Date.now(); } catch (e) {}
+  try {
+    const txt = String(linked.notes || "").trim();
+    if (txt) {
+      rqLogActivity("review", { tmdbId: linked.tmdbId, mediaType: linked.mediaType || "movie", title: linked.title || "", year: linked.year || "", posterPath: linked.posterPath || null, noteSnippet: txt.length > 140 ? (txt.slice(0, 140) + "…") : txt });
+    }
+  } catch (e) {}
   saveState();
   render();
   alertNice("Notes saved.");
@@ -9311,6 +10028,8 @@ ratingSave.addEventListener("click", function () {
     return;
   }
   linked.userRating = parseFloat(ratingRange.value);
+  try { linked.updatedAt = Date.now(); } catch (e) {}
+  try { rqLogActivity("rated", { tmdbId: linked.tmdbId, mediaType: linked.mediaType || "movie", title: linked.title || "", year: linked.year || "", posterPath: linked.posterPath || null, userRating: (typeof linked.userRating === "number" ? linked.userRating : null) }); } catch (e) {}
   saveState();
   render();
   alertNice("Rating saved.");
