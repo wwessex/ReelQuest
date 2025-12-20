@@ -6443,6 +6443,11 @@ function moveEntryInList(listId, entryKeyValue, direction) {
       let rqCurrentUser = null;
       let rqCurrentProfile = null;
 
+      function rqIsSignedIn() {
+        try { return !!(rqCurrentUser && rqCurrentUser.id); } catch (e) { return false; }
+      }
+
+
       function rqGetDisplayName(user, profile) {
         const dn = profile && profile.display_name ? String(profile.display_name).trim() : "";
         if (dn) return dn;
@@ -8172,7 +8177,7 @@ const profileSub = document.createElement("div");
 
         // Gate: must be signed in
         try {
-          if (!rqIsSignedIn || !rqIsSignedIn()) {
+          if (!rqIsSignedIn()) {
             const msg = document.createElement("div");
             msg.className = "settings-copy";
             msg.style.marginTop = "12px";
@@ -9203,7 +9208,7 @@ container.appendChild(pickBtn);
 
         // If someone tries to land on Social while signed out, bounce back
         try {
-          if (state.activeTab === "social" && (!rqIsSignedIn || !rqIsSignedIn())) {
+          if (state.activeTab === "social" && (!rqIsSignedIn())) {
             toast("Please sign in for Social features!");
             state.activeTab = "for-you";
           }
@@ -10309,7 +10314,7 @@ els.detailActions.appendChild(orgWrap);
         // Gate Social: require sign-in
         if (tab === "social") {
           try {
-            if (!rqIsSignedIn || !rqIsSignedIn()) {
+            if (!rqIsSignedIn()) {
               toast("Please sign in for Social features!");
               return;
             }
