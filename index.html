@@ -5543,21 +5543,211 @@ function moveEntryInList(listId, entryKeyValue, direction) {
         signOutBtn.textContent = "Sign out";
         signOutBtn.style.display = "none";
 
-        // Avoid “flash” of the email box when already signed in.
-        emailInput.style.display = "none";
-        linkBtn.style.display = "none";
+        // ---- Profile UI (only visible when signed in) ----
+        const profileSub = document.createElement("div");
+        profileSub.className = "settings-subheading";
+        profileSub.style.marginTop = "16px";
+        profileSub.textContent = "Profile";
 
-        function setAuthUi(isSignedIn, email) {
+        const profileCard = document.createElement("div");
+        profileCard.className = "settings-card";
+        profileCard.style.marginTop = "10px";
+        profileCard.style.display = "none";
+
+        const profileMsg = document.createElement("div");
+        profileMsg.className = "settings-copy";
+        profileMsg.style.marginTop = "6px";
+        profileMsg.textContent = "";
+
+        const nameLabel = document.createElement("label");
+        nameLabel.className = "settings-label";
+        nameLabel.textContent = "Display name";
+
+        const nameInput = document.createElement("input");
+        nameInput.className = "search-input";
+        nameInput.placeholder = "e.g. William";
+        nameLabel.appendChild(nameInput);
+
+        const avatarLabel = document.createElement("label");
+        avatarLabel.className = "settings-label";
+        avatarLabel.textContent = "Avatar image URL (optional)";
+
+        const avatarInput = document.createElement("input");
+        avatarInput.className = "search-input";
+        avatarInput.placeholder = "https://…";
+        avatarInput.inputMode = "url";
+        avatarLabel.appendChild(avatarInput);
+
+        const avatarPreviewWrap = document.createElement("div");
+        avatarPreviewWrap.style.display = "flex";
+        avatarPreviewWrap.style.alignItems = "center";
+        avatarPreviewWrap.style.gap = "10px";
+        avatarPreviewWrap.style.marginTop = "10px";
+
+        const avatarImg = document.createElement("img");
+        avatarImg.alt = "Avatar preview";
+        avatarImg.style.width = "48px";
+        avatarImg.style.height = "48px";
+        avatarImg.style.borderRadius = "999px";
+        avatarImg.style.objectFit = "cover";
+        avatarImg.style.display = "none";
+
+        const avatarHint = document.createElement("div");
+        avatarHint.className = "settings-copy";
+        avatarHint.textContent = "Tip: use a square image for best results.";
+
+        avatarPreviewWrap.appendChild(avatarImg);
+        avatarPreviewWrap.appendChild(avatarHint);
+
+        const profileActions = document.createElement("div");
+        profileActions.style.display = "flex";
+        profileActions.style.flexWrap = "wrap";
+        profileActions.style.gap = "10px";
+        profileActions.style.marginTop = "12px";
+
+        const saveProfileBtn = document.createElement("button");
+        saveProfileBtn.type = "button";
+        saveProfileBtn.className = "pill-btn";
+        saveProfileBtn.textContent = "Save profile";
+
+        profileActions.appendChild(saveProfileBtn);
+
+        profileCard.appendChild(nameLabel);
+        profileCard.appendChild(avatarLabel);
+        profileCard.appendChild(avatarPreviewWrap);
+        profileCard.appendChild(profileActions);
+        profileCard.appendChild(profileMsg);
+
+        emailWrap.appendChild(emailInput);
+        emailWrap.appendChild(linkBtn);
+        emailWrap.appendChild(signOutBtn);
+
+        panel.appendChild(heading);
+        panel.appendChild(copy);
+        panel.appendChild(authSub);
+        panel.appendChild(emailWrap);
+        panel.appendChild(status);
+        panel.appendChild(profileSub);
+        panel.appendChild(profileCard);
+
+        let profileLoadedFor = null;
+        let profilesAvailable = true;
+
+        function setAvatarPreview(url) {
+          const u = String(url || "").trim();
+          if (!u) {
+            avatarImg.src = "";
+            avatarImg.style.display = "none";
+            return;
+          }
+          avatarImg.src = u;
+          avatarImg.style.display = "inline-block";
+        }
+
+        avatarInput.addEventListener("input", function () {
+          setAvatarPreview(avatarInput.value);
+        });
+
+        async function ensureProfileLoaded(user) {
+          if (!user || !user.id) return;
+          if (profileLoadedFor === user.id) return;
+          profileLoadedFor = user.id;
+
+          profileMsg.textContent = "Loading profile…";
+          try {
+            const client = await getSupabaseClient();
+            if (!client) throw new Error("Supabase client not available");
+
+            // If the table/policies aren’t set up yet, this will throw/return an error.
+            let data = null;
+
+            if (client.from && client.from("profiles").select) {
+              try {
+                const res = await client.from("profiles")
+                  .select("id, display_name, avatar_url")
+                  .eq("id", user.id)
+                  .maybeSingle();
+                if (res && res.error) throw res.error;
+                data = res ? res.data : null;
+              } catch (e) {
+                // If no row exists, create it. If the table doesn’t exist, show setup hint.
+                const msg = (e && e.message) ? String(e.message) : "";
+                if (msg.toLowerCase().indexOf("relation") !== -1 || msg.toLowerCase().indexOf("does not exist") !== -1) {
+                  profilesAvailable = false;
+                  profileMsg.textContent = "Profiles table not found in Supabase. Run the setup SQL in Supabase → SQL editor.";
+                  saveProfileBtn.disabled = true;
+                  return;
+                }
+                // Try create row via upsert (requires policies)
+                try {
+                  const up = await client.from("profiles").upsert({ id: user.id }, { onConflict: "id" }).select("id, display_name, avatar_url").maybeSingle();
+                  if (up && up.error) throw up.error;
+                  data = up ? up.data : null;
+                } catch (e2) {
+                  profilesAvailable = false;
+                  profileMsg.textContent = "Profile storage isn’t ready (RLS/policies). Run the setup SQL in Supabase → SQL editor.";
+                  saveProfileBtn.disabled = true;
+                  return;
+                }
+              }
+            }
+
+            nameInput.value = (data && data.display_name) ? data.display_name : "";
+            avatarInput.value = (data && data.avatar_url) ? data.avatar_url : "";
+            setAvatarPreview(avatarInput.value);
+
+            profileMsg.textContent = "Profile loaded.";
+            saveProfileBtn.disabled = false;
+          } catch (e) {
+            profilesAvailable = false;
+            console.error(e);
+            profileMsg.textContent = "Couldn’t load profile.";
+            saveProfileBtn.disabled = true;
+          }
+        }
+
+        async function saveProfile(user) {
+          if (!profilesAvailable) {
+            alertNice("Profiles aren’t set up in Supabase yet.");
+            return;
+          }
+          try {
+            const client = await getSupabaseClient();
+            if (!client) throw new Error("Supabase client not available");
+            const payload = {
+              id: user.id,
+              display_name: String(nameInput.value || "").trim(),
+              avatar_url: String(avatarInput.value || "").trim(),
+              updated_at: new Date().toISOString()
+            };
+            const res = await client.from("profiles").upsert(payload, { onConflict: "id" });
+            if (res && res.error) throw res.error;
+            setAvatarPreview(payload.avatar_url);
+            toast("Profile saved.");
+            profileMsg.textContent = "Saved.";
+          } catch (e) {
+            console.error(e);
+            alertNice("Couldn’t save profile: " + (e && e.message ? e.message : "unknown error"));
+          }
+        }
+
+        function setAuthUi(isSignedIn, user) {
           if (isSignedIn) {
-            status.textContent = "Status: Signed in as " + (email || "your account");
+            status.textContent = "Status: Signed in as " + (user && user.email ? user.email : "your account");
             emailInput.style.display = "none";
             linkBtn.style.display = "none";
             signOutBtn.style.display = "inline-flex";
+            profileCard.style.display = "block";
+            // Load the user's profile from Supabase
+            ensureProfileLoaded(user);
           } else {
             status.textContent = "Status: Not signed in.";
             emailInput.style.display = "";
             linkBtn.style.display = "";
             signOutBtn.style.display = "none";
+            profileCard.style.display = "none";
+            profileMsg.textContent = "";
+            profileLoadedFor = null;
           }
         }
 
@@ -5577,7 +5767,7 @@ function moveEntryInList(listId, entryKeyValue, direction) {
             toast("Magic link sent.");
             try {
               if (isIos && typeof isIos === "function" && isStandalone && typeof isStandalone === "function" && isIos() && isStandalone()) {
-                alertNice("If ReelQuest is installed on your Home Screen, the email link may open in Safari. For the sign-in to apply, open the magic link in the same place you use ReelQuest (Safari vs installed app).");
+                alertNice("If ReelQuest is installed on your Home Screen, the email link may open in Safari instead of the installed app. That won’t log the installed app in. If that happens, open ReelQuest in Safari, sign in once, then reinstall.");
               }
             } catch (e) {}
           } catch (e) {
@@ -5592,39 +5782,18 @@ function moveEntryInList(listId, entryKeyValue, direction) {
             if (!client) return;
             await client.auth.signOut();
             toast("Signed out.");
-            renderAccount();
+            setAuthUi(false, null);
           } catch (e) {
             console.error(e);
             alertNice("Couldn’t sign out: " + (e && e.message ? e.message : "unknown error"));
           }
         });
 
-        emailWrap.appendChild(emailInput);
-        emailWrap.appendChild(linkBtn);
-        emailWrap.appendChild(signOutBtn);
-
-        panel.appendChild(heading);
-        panel.appendChild(copy);
-        panel.appendChild(authSub);
-        panel.appendChild(emailWrap);
-        panel.appendChild(status);
-
-        // Async: update sign-in status and wire an auth-change listener.
-        (async function () {
+        saveProfileBtn.addEventListener("click", async function () {
           try {
             const client = await getSupabaseClient();
-            if (!client) { status.textContent = "Status: Sign-in unavailable."; setAuthUi(false); return; }
+            if (!client) throw new Error("Supabase client not available");
 
-            if (!rqSupabaseAuthListenerAttached && client.auth && client.auth.onAuthStateChange) {
-              rqSupabaseAuthListenerAttached = true;
-              try {
-                client.auth.onAuthStateChange(function () {
-                  if (state && state.activeTab === "account") renderAccount();
-                });
-              } catch (e) { /* ignore */ }
-            }
-
-            // Prefer local session (works immediately after a redirect), fall back to getUser().
             let user = null;
             try {
               const sessRes = await client.auth.getSession();
@@ -5634,12 +5803,38 @@ function moveEntryInList(listId, entryKeyValue, direction) {
               const userRes = await client.auth.getUser();
               user = userRes && userRes.data ? userRes.data.user : null;
             }
-            setAuthUi(!!(user && user.email), user && user.email ? user.email : "");
+            if (!user) {
+              alertNice("You’re not signed in.");
+              return;
+            }
+            await saveProfile(user);
+          } catch (e) {
+            console.error(e);
+            alertNice("Couldn’t save profile.");
+          }
+        });
+
+        // Check sign-in status immediately
+        (async function () {
+          try {
+            const client = await getSupabaseClient();
+            if (!client) throw new Error("Supabase client not available");
+
+            let user = null;
+            try {
+              const sessRes = await client.auth.getSession();
+              user = sessRes && sessRes.data && sessRes.data.session && sessRes.data.session.user ? sessRes.data.session.user : null;
+            } catch (e) {}
+            if (!user) {
+              const userRes = await client.auth.getUser();
+              user = userRes && userRes.data ? userRes.data.user : null;
+            }
+
+            setAuthUi(!!(user && user.email), user);
           } catch (e) {
             console.error(e);
             status.textContent = "Status: Couldn’t check sign-in.";
-            // Allow retry by showing fields.
-            setAuthUi(false);
+            setAuthUi(false, null);
           }
         })();
       }
