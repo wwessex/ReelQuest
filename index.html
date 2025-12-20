@@ -5444,6 +5444,57 @@ function moveEntryInList(listId, entryKeyValue, direction) {
         return rqSupabaseClient;
       }
 
+
+      // Ensure auth callbacks (magic-link / OAuth / PKCE) are processed even if the user
+      // lands on a non-Account tab after clicking the email link.
+      let rqSupabaseInitStarted = false;
+
+      async function initSupabaseAuthOnLoad() {
+        if (rqSupabaseInitStarted) return;
+        rqSupabaseInitStarted = true;
+
+        try {
+          const client = await getSupabaseClient();
+          if (!client || !client.auth) return;
+
+          // Attach once: keep Account UI in sync if user navigates there.
+          if (!rqSupabaseAuthListenerAttached && client.auth.onAuthStateChange) {
+            rqSupabaseAuthListenerAttached = true;
+            try {
+              client.auth.onAuthStateChange(function () {
+                if (state && state.activeTab === "account") renderAccount();
+              });
+            } catch (e) { /* ignore */ }
+          }
+
+          const url = new URL(window.location.href);
+          const hasCode = url.searchParams.get("code");
+          const hasTokensInHash = !!(url.hash && (url.hash.indexOf("access_token=") !== -1 || url.hash.indexOf("refresh_token=") !== -1));
+
+          // Newer Supabase flows may return a `code` (PKCE). Exchange it for a session.
+          if (hasCode && client.auth.exchangeCodeForSession) {
+            try {
+              await client.auth.exchangeCodeForSession(window.location.href);
+            } catch (e) {
+              console.warn("Supabase exchangeCodeForSession failed:", e);
+            }
+            // Clean URL
+            url.searchParams.delete("code");
+            url.searchParams.delete("state");
+            url.searchParams.delete("type");
+            window.history.replaceState({}, document.title, url.toString());
+          } else if (hasTokensInHash) {
+            // Older magic-link flow returns tokens in the hash. Supabase will usually detect these,
+            // but we also call getSession() once to ensure it’s persisted before we clear the hash.
+            try { await client.auth.getSession(); } catch (e) {}
+            url.hash = "";
+            window.history.replaceState({}, document.title, url.toString());
+          }
+        } catch (e) {
+          console.warn("Auth init failed:", e);
+        }
+      }
+
       
       function renderAccount() {
         const panel = els.accountPanel;
@@ -5524,6 +5575,11 @@ function moveEntryInList(listId, entryKeyValue, direction) {
               options: { emailRedirectTo: (location.origin + location.pathname) }
             });
             toast("Magic link sent.");
+            try {
+              if (isIos && typeof isIos === "function" && isStandalone && typeof isStandalone === "function" && isIos() && isStandalone()) {
+                alertNice("If ReelQuest is installed on your Home Screen, the email link may open in Safari. For the sign-in to apply, open the magic link in the same place you use ReelQuest (Safari vs installed app).");
+              }
+            } catch (e) {}
           } catch (e) {
             console.error(e);
             alertNice("Couldn’t send the magic link: " + (e && e.message ? e.message : "unknown error"));
@@ -5568,8 +5624,16 @@ function moveEntryInList(listId, entryKeyValue, direction) {
               } catch (e) { /* ignore */ }
             }
 
-            const userRes = await client.auth.getUser();
-            const user = userRes && userRes.data ? userRes.data.user : null;
+            // Prefer local session (works immediately after a redirect), fall back to getUser().
+            let user = null;
+            try {
+              const sessRes = await client.auth.getSession();
+              user = sessRes && sessRes.data && sessRes.data.session && sessRes.data.session.user ? sessRes.data.session.user : null;
+            } catch (e) {}
+            if (!user) {
+              const userRes = await client.auth.getUser();
+              user = userRes && userRes.data ? userRes.data.user : null;
+            }
             setAuthUi(!!(user && user.email), user && user.email ? user.email : "");
           } catch (e) {
             console.error(e);
@@ -8198,6 +8262,7 @@ function init() {
         migrateTmdbIdsToNumbers();
         migrateItemsMediaType();
         applyTheme();
+        try { initSupabaseAuthOnLoad(); } catch (e) {}
         render();
 
         // Initial load for the starting tab
@@ -8298,7 +8363,7 @@ function init() {
           });
         }
 
-        updateDebug("ReelQuest ready (JS initialised) • build v10-restore");
+        updateDebug("ReelQuest ready (JS initialised) • build v11-magiclink-fix");
       }
 
       document.addEventListener("DOMContentLoaded", init);
