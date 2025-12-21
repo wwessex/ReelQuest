@@ -7778,6 +7778,7 @@ const authSub = document.createElement("div");
         }
 
         linkBtn.addEventListener("click", async function () {
+          if (linkBtn.dataset.cooldown === "1") return;
           const email = String(emailInput.value || "").trim();
           if (!email || email.indexOf("@") === -1) {
             alertNice("Enter a valid email address.");
@@ -7786,11 +7787,59 @@ const authSub = document.createElement("div");
           try {
             const client = await getSupabaseClient();
             if (!client) throw new Error("Supabase client not available");
-            await client.auth.signInWithOtp({
+            const { data, error } = await client.auth.signInWithOtp({
               email: email,
               options: { emailRedirectTo: (location.origin + location.pathname) }
             });
-            toast("Magic link sent.");
+
+            if (error) {
+              // Common Supabase default SMTP limitation: only sends to pre-authorized team addresses.
+              const msg = String(error.message || error.error_description || error);
+              console.error("Magic link error:", error);
+
+              if (/not authorized/i.test(msg) || /Email address not authorized/i.test(msg)) {
+                alertNice(
+                  "Supabase didn’t send an email because the default SMTP only sends to pre-authorized team emails.
+
+" +
+                  "Fix: Supabase Dashboard → Auth → SMTP → set up a custom SMTP provider (recommended),
+" +
+                  "or add this email as an Organization member for testing."
+                );
+              } else if (/rate/i.test(msg) || /too many/i.test(msg) || /429/.test(msg)) {
+                alertNice(
+                  "Rate limit hit. Supabase’s default email service is heavily limited.
+
+" +
+                  "Wait a bit and try again, or set up a custom SMTP provider for reliable delivery."
+                );
+              } else {
+                alertNice("Couldn’t send magic link:
+
+" + msg);
+              }
+              return;
+            }
+
+            toast("Magic link sent. Check your inbox (and spam).");
+            try {
+              linkBtn.dataset.cooldown = "1";
+              const oldText = linkBtn.textContent;
+              let remaining = 60;
+              linkBtn.disabled = true;
+              const t = setInterval(function () {
+                remaining -= 1;
+                if (remaining <= 0) {
+                  clearInterval(t);
+                  linkBtn.disabled = false;
+                  linkBtn.dataset.cooldown = "0";
+                  linkBtn.textContent = oldText;
+                } else {
+                  linkBtn.textContent = oldText + " (" + remaining + "s)";
+                }
+              }, 1000);
+            } catch (e) {}
+
             try {
               if (isIos && typeof isIos === "function" && isStandalone && typeof isStandalone === "function" && isIos() && isStandalone()) {
                 alertNice("If CineSafari is installed on your Home Screen, the email link may open in Safari. For the sign-in to apply, open the magic link in the same place you use CineSafari (Safari vs installed app).");
