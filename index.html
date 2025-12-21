@@ -3,7 +3,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8"/>
-<title>ReelQuest</title>
+<title>CineSafari</title>
 <meta content="width=device-width, initial-scale=1" name="viewport"/>
 <style>
     :root {
@@ -1468,7 +1468,7 @@
 <div aria-hidden="true" class="brand-mark">
 <div class="brand-mark-inner"></div>
 </div>
-<div class="brand-text">ReelQuest</div>
+<div class="brand-text">CineSafari</div>
 </button>
 <div class="topbar-actions">
 <button type="button" class="user-chip" id="user-chip" aria-label="Account">
@@ -1495,7 +1495,6 @@
 <button class="tab-btn" data-tab="watched">Watched</button>
 <button class="tab-btn" data-tab="rewatch">Rewatch</button>
 <button class="tab-btn" data-tab="lists">Lists</button>
-<button class="tab-btn" data-tab="social">Social</button>
 <button class="tab-btn" data-tab="account">Account</button>
 </nav>
 <main><div class="pagehead" id="pagehead"><section class="section-header">
@@ -1561,7 +1560,6 @@
 <div class="settings-panel" id="settings-panel"></div>
 <div class="settings-panel" id="lists-panel"></div>
 <div class="settings-panel" id="account-panel"></div>
-<div class="settings-panel" id="social-panel"></div>
 <input accept="application/json" class="file-input-hidden" id="import-input" type="file"/>
 <div class="grid" id="card-grid"></div>
 <div class="debug" id="debug"></div>
@@ -1603,7 +1601,6 @@
 <button class="menu-item" data-tab="watchlist" type="button">Watchlist</button>
 <button class="menu-item" data-tab="watched" type="button">Watched</button>
 <button class="menu-item" data-tab="lists" type="button">Lists</button>
-<button class="menu-item" data-tab="social" type="button">Social</button>
 <button class="menu-item" data-tab="account" type="button">Account</button>
 <button class="menu-item" data-tab="settings" type="button">Settings</button>
 </div>
@@ -1632,12 +1629,12 @@
 
   window.addEventListener("error", function (ev) {
     try { console.error(ev && ev.error ? ev.error : ev); } catch (e) {}
-    rqShowFatal("ReelQuest hit an error. If this happened after an update, open the site once with ?nosw=1 to clear the cache, then reload.");
+    rqShowFatal("CineSafari hit an error. If this happened after an update, open the site once with ?nosw=1 to clear the cache, then reload.");
   });
 
   window.addEventListener("unhandledrejection", function (ev) {
     try { console.error(ev && ev.reason ? ev.reason : ev); } catch (e) {}
-    rqShowFatal("ReelQuest hit an error. If this happened after an update, open the site once with ?nosw=1 to clear the cache, then reload.");
+    rqShowFatal("CineSafari hit an error. If this happened after an update, open the site once with ?nosw=1 to clear the cache, then reload.");
   });
 })();
 
@@ -2076,7 +2073,7 @@ function moodMatchesTmdb(tmdbObj) {
   return true;
 }
 
-      const STORAGE_KEY = "reelquest-state-v7";
+      const STORAGE_KEY = "cinesafari-state-v7";
 
       let els = {};
 
@@ -2222,7 +2219,7 @@ function formatDateUK(ts) {
             state.useGravatar = parsed.useGravatar;
           }
         } catch (e) {
-          console.warn("Failed to load ReelQuest state", e);
+          console.warn("Failed to load CineSafari state", e);
         }
       }
 
@@ -2368,7 +2365,7 @@ function alertNice(message) {
             })
           );
         } catch (e) {
-          console.warn("Failed to save ReelQuest state", e);
+          console.warn("Failed to save CineSafari state", e);
         }
               try { if (typeof rqSyncApplyingRemote === "boolean" && rqSyncApplyingRemote) { /* skip */ } else { try { rqSetLocalWriteMs(Date.now()); } catch (e) {} try { rqNotifyLocalStateChanged(); } catch (e) {} } } catch (e) {}
                try { maybeAutoBackupSnapshot(); } catch (e) {}
@@ -3118,13 +3115,13 @@ async function loadMoodForDiscover() {
         const dtEnd = new Date(dt.getTime() + 24*60*60*1000);
         const ymdEnd = String(dtEnd.getFullYear()) + pad2(dtEnd.getMonth()+1) + pad2(dtEnd.getDate());
 
-        const uid = "reelquest-" + Date.now() + "@reelquest";
+        const uid = "cinesafari-" + Date.now() + "@cinesafari";
         const summary = (title || "Film release") + " (Release)";
 
         const ics =
           "BEGIN:VCALENDAR\r\n" +
           "VERSION:2.0\r\n" +
-          "PRODID:-//ReelQuest//EN\r\n" +
+          "PRODID:-//CineSafari//EN\r\n" +
           "CALSCALE:GREGORIAN\r\n" +
           "BEGIN:VEVENT\r\n" +
           "UID:" + uid + "\r\n" +
@@ -3135,7 +3132,7 @@ async function loadMoodForDiscover() {
           "BEGIN:VALARM\r\n" +
           "TRIGGER:-P1D\r\n" +
           "ACTION:DISPLAY\r\n" +
-          "DESCRIPTION:ReelQuest reminder\r\n" +
+          "DESCRIPTION:CineSafari reminder\r\n" +
           "END:VALARM\r\n" +
           "END:VEVENT\r\n" +
           "END:VCALENDAR\r\n";
@@ -3144,7 +3141,7 @@ async function loadMoodForDiscover() {
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
-        a.download = "reelquest-reminder.ics";
+        a.download = "cinesafari-reminder.ics";
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
@@ -3654,10 +3651,10 @@ function clearWatched() {
           lines.push(n + ". " + title + year + watched);
         }
 
-        const finalText = "My ReelQuest watchlist:\n\n" + lines.join("\n") + "\n\nShared from ReelQuest.";
+        const finalText = "My CineSafari watchlist:\n\n" + lines.join("\n") + "\n\nShared from CineSafari.";
 
         if (navigator.share) {
-          navigator.share({ title: "My ReelQuest watchlist", text: finalText }).catch(function () {});
+          navigator.share({ title: "My CineSafari watchlist", text: finalText }).catch(function () {});
         } else if (navigator.clipboard && navigator.clipboard.writeText) {
           navigator.clipboard.writeText(finalText)
             .then(function () { alertNice("Watchlist copied to the clipboard."); })
@@ -3693,7 +3690,7 @@ function slugifyFilename(name) {
 function buildListExportPayload(list) {
   // Export just one list, but keep enough metadata to re-import safely.
   return {
-    app: "ReelQuest",
+    app: "CineSafari",
     kind: "list",
     version: 1,
     exportedAt: new Date().toISOString(),
@@ -3782,7 +3779,7 @@ function exportItemsToCsvFile(stamp) {
   const dd = String(d.getDate()).padStart(2, "0");
   const hh = String(d.getHours()).padStart(2, "0");
   const mi = String(d.getMinutes()).padStart(2, "0");
-  const filename = "reelquest-items-" + yyyy + "-" + mm + "-" + dd + "-" + hh + mi + ".csv";
+  const filename = "cinesafari-items-" + yyyy + "-" + mm + "-" + dd + "-" + hh + mi + ".csv";
 
   const csv = itemsToCsv(Array.isArray(state.items) ? state.items : []);
   downloadText(filename, csv, "text/csv");
@@ -3924,10 +3921,10 @@ function exportListsToCsvFiles(stamp) {
   const listsCsv = listsToCsv(lists);
   const entriesCsv = listEntriesToCsv(lists);
 
-  downloadText("reelquest-lists-" + yyyy + "-" + mm + "-" + dd + "-" + hh + mi + ".csv", listsCsv, "text/csv");
+  downloadText("cinesafari-lists-" + yyyy + "-" + mm + "-" + dd + "-" + hh + mi + ".csv", listsCsv, "text/csv");
   // Slight delay to avoid Safari/iOS swallowing consecutive downloads
   setTimeout(function () {
-    downloadText("reelquest-list-entries-" + yyyy + "-" + mm + "-" + dd + "-" + hh + mi + ".csv", entriesCsv, "text/csv");
+    downloadText("cinesafari-list-entries-" + yyyy + "-" + mm + "-" + dd + "-" + hh + mi + ".csv", entriesCsv, "text/csv");
   }, 250);
 
   toast("Exported lists CSVs.");
@@ -4169,7 +4166,7 @@ async function importFromCsvText(text, filename) {
   const isImdbRatings = detectImdbRatingsCsv(headers);
   const isImdbList = !isImdbRatings && detectImdbListCsv(headers);
 
-  // ReelQuest CSV export has tmdbId + mediaType
+  // CineSafari CSV export has tmdbId + mediaType
   const isRqCsv = (map["tmdbid"] != null || map["tmdb id"] != null) && (map["mediatype"] != null || map["media type"] != null);
 
   // Decide import mode automatically when we can
@@ -4213,7 +4210,7 @@ async function importFromCsvText(text, filename) {
     const row = rows[r];
     if (!row || !row.length) continue;
 
-    // ReelQuest CSV path (has TMDB ids already)
+    // CineSafari CSV path (has TMDB ids already)
     if (hasTmdbId) {
       const tmdbIdStr = csvGet(row, map, tmdbKey).trim();
       const tid = toTmdbId(tmdbIdStr);
@@ -4415,7 +4412,7 @@ function exportSingleListToFile(listId) {
   const yyyy = stamp.getFullYear();
   const mm = String(stamp.getMonth() + 1).padStart(2, "0");
   const dd = String(stamp.getDate()).padStart(2, "0");
-  const filename = "reelquest-list-" + slugifyFilename(list.name) + "-" + yyyy + "-" + mm + "-" + dd + ".json";
+  const filename = "cinesafari-list-" + slugifyFilename(list.name) + "-" + yyyy + "-" + mm + "-" + dd + ".json";
 
   downloadJson(filename, payload);
   toast("Exported “" + (list.name || "List") + "”.");
@@ -4585,10 +4582,10 @@ function buildListShareText(list) {
     lines.push((i + 1) + ". " + title + y + tv);
   }
 
-  const header = "ReelQuest — " + (list.name || "List");
+  const header = "CineSafari — " + (list.name || "List");
   const desc = list.description ? ("\n" + list.description.trim()) : "";
   const body = lines.length ? ("\n\n" + lines.join("\n")) : "\n\n(Empty list)";
-  return header + desc + body + "\n\nShared from ReelQuest.";
+  return header + desc + body + "\n\nShared from CineSafari.";
 }
 
 function buildListShareLink(list) {
@@ -4628,12 +4625,12 @@ async function shareList(listId) {
   const list = getListById(listId);
   if (!list) return;
 
-  const wantLink = window.confirm("Share a link that opens this list in ReelQuest?\n\nOK = Share link\nCancel = Share text card");
+  const wantLink = window.confirm("Share a link that opens this list in CineSafari?\n\nOK = Share link\nCancel = Share text card");
 
   if (wantLink) {
     const link = buildListShareLink(list);
-    const title = "ReelQuest — " + (list.name || "List");
-    const text = "Here’s a ReelQuest list: “" + (list.name || "List") + "”.";
+    const title = "CineSafari — " + (list.name || "List");
+    const text = "Here’s a CineSafari list: “" + (list.name || "List") + "”.";
     if (navigator.share) {
       try {
         await navigator.share({ title: title, text: text, url: link });
@@ -4648,7 +4645,7 @@ async function shareList(listId) {
   }
 
   const card = buildListShareText(list);
-  const title = "ReelQuest — " + (list.name || "List");
+  const title = "CineSafari — " + (list.name || "List");
   if (navigator.share) {
     try {
       await navigator.share({ title: title, text: card });
@@ -4668,7 +4665,7 @@ function handleIncomingSharedList() {
     const decoded = base64UrlDecodeUtf8(param);
     const parsed = JSON.parse(decoded);
 
-    const ok = window.confirm("This link contains a shared ReelQuest list. Do you want to import it?\n\nOK = Import\nCancel = Ignore");
+    const ok = window.confirm("This link contains a shared CineSafari list. Do you want to import it?\n\nOK = Import\nCancel = Ignore");
     if (!ok) {
       url.searchParams.delete("share");
       window.history.replaceState({}, document.title, url.toString());
@@ -5047,7 +5044,7 @@ views.push({ mode: "remote", tmdbMovie: m, item: linked, mediaType: mt });
         const copy = document.createElement("p");
         copy.className = "settings-copy";
         copy.textContent =
-          "Tell ReelQuest which genres you love. We’ll use this for smarter suggestions later.";
+          "Tell CineSafari which genres you love. We’ll use this for smarter suggestions later.";
 
         const sub = document.createElement("div");
         sub.className = "settings-subheading";
@@ -5087,7 +5084,7 @@ appHeading.textContent = "App";
 
 const appCopy = document.createElement("p");
 appCopy.className = "settings-copy";
-appCopy.textContent = "Install ReelQuest to your Home Screen for an app-like experience. Offline, you’ll still see your last saved results.";
+appCopy.textContent = "Install CineSafari to your Home Screen for an app-like experience. Offline, you’ll still see your last saved results.";
 
 const appRow = document.createElement("div");
 appRow.style.display = "flex";
@@ -5098,7 +5095,7 @@ appRow.style.alignItems = "center";
 const installBtn = document.createElement("button");
 installBtn.type = "button";
 installBtn.className = "pill-btn";
-installBtn.textContent = "Install ReelQuest";
+installBtn.textContent = "Install CineSafari";
 installBtn.addEventListener("click", function () {
   showInstallHint();
 });
@@ -5340,7 +5337,7 @@ tvBtn.addEventListener("click", function () {
         const toolsCopy = document.createElement("p");
         toolsCopy.className = "settings-copy";
         toolsCopy.textContent =
-          "Export a full backup (JSON) or a portable CSV. Import supports ReelQuest backups plus IMDb CSV exports (Ratings, Watchlist, and Lists).";
+          "Export a full backup (JSON) or a portable CSV. Import supports CineSafari backups plus IMDb CSV exports (Ratings, Watchlist, and Lists).";
 
         const toolsRow = document.createElement("div");
         toolsRow.style.display = "flex";
@@ -6470,11 +6467,6 @@ function moveEntryInList(listId, entryKeyValue, direction) {
       let rqCurrentUser = null;
       let rqCurrentProfile = null;
 
-      function rqIsSignedIn() {
-        try { return !!(rqCurrentUser && rqCurrentUser.id); } catch (e) { return false; }
-      }
-
-
       function rqGetDisplayName(user, profile) {
         const dn = profile && profile.display_name ? String(profile.display_name).trim() : "";
         if (dn) return dn;
@@ -7086,43 +7078,8 @@ function rqApplyAvatarToEl(imgEl, url, altText) {
       // Safe-by-default: if the social tables aren't configured in Supabase, the UI shows a message and the app keeps working.
       // ------------------------------
 
-      const RQ_SOCIAL_FOLLOWS_TABLES = ["rq_follows_v1", "rq_follows"];
-      const RQ_SOCIAL_ACTIVITY_TABLES = ["rq_activity_v1", "rq_activity"];
-      const rqSocialResolvedTables = { follows: null, activity: null };
-
-      async function rqSocialPickTable(client, candidates, kind) {
-        // Pick the first table that exists. Cache per kind.
-        try {
-          for (let i = 0; i < candidates.length; i++) {
-            const t = candidates[i];
-            const probe = await client.from(t).select("*").limit(1);
-            if (!probe || !probe.error) return t;
-            const msg = String((probe.error && (probe.error.message || probe.error.details)) || "");
-            // keep trying if relation/table is missing
-            if (msg.toLowerCase().indexOf("does not exist") !== -1 || msg.toLowerCase().indexOf("relation") !== -1) {
-              continue;
-            }
-            throw probe.error;
-          }
-        } catch (e) {
-          rqSocialMarkMissingIfNeeded(e);
-          throw e;
-        }
-        // Default to first candidate
-        return candidates[0];
-      }
-
-      async function rqSocialFollowsTable(client) {
-        if (rqSocialResolvedTables.follows) return rqSocialResolvedTables.follows;
-        rqSocialResolvedTables.follows = await rqSocialPickTable(client, RQ_SOCIAL_FOLLOWS_TABLES, "follows");
-        return rqSocialResolvedTables.follows;
-      }
-
-      async function rqSocialActivityTable(client) {
-        if (rqSocialResolvedTables.activity) return rqSocialResolvedTables.activity;
-        rqSocialResolvedTables.activity = await rqSocialPickTable(client, RQ_SOCIAL_ACTIVITY_TABLES, "activity");
-        return rqSocialResolvedTables.activity;
-      }
+      const RQ_SOCIAL_FOLLOWS_TABLE = "rq_follows_v1";
+      const RQ_SOCIAL_ACTIVITY_TABLE = "rq_activity_v1";
 
       let rqSocialTablesMissing = false;
       let rqSocialChannel = null;
@@ -7159,7 +7116,7 @@ function rqApplyAvatarToEl(imgEl, url, altText) {
 
         try {
           const res = await client
-            .from(await rqSocialFollowsTable(client))
+            .from(RQ_SOCIAL_FOLLOWS_TABLE)
             .select("following_id")
             .eq("follower_id", rqCurrentUser.id);
 
@@ -7179,33 +7136,1565 @@ function rqApplyAvatarToEl(imgEl, url, altText) {
         const client = await rqSocialClient();
         if (!client) return [];
 
-        const like = "%" + query + "%";
-
-        async function runSearch(columnName) {
-          return await client
-            .from("profiles")
-            .select("*")
-            .ilike(columnName, like)
-            .limit(20);
-        }
-
         try {
-          let res = await runSearch("display_name");
-
-          // Older Supabase starter schemas may use "username" instead of "display_name"
-          if (res && res.error && /display_name/i.test(String(res.error.message || ""))) {
-            res = await runSearch("username");
-          }
+          const res = await client
+            .from("profiles")
+            .select("id, display_name, avatar_url, country_region")
+            .ilike("display_name", "%" + query + "%")
+            .limit(20);
 
           if (res && res.error) throw res.error;
 
           const rows = Array.isArray(res && res.data) ? res.data : [];
-          return rows;
+          // Don't show self
+          return rows.filter(function (p) { return !(rqCurrentUser && p && p.id === rqCurrentUser.id); });
         } catch (e) {
           rqSocialMarkMissingIfNeeded(e);
           return [];
         }
       }
+
+      async function rqSocialIsFollowingMap(targetIds) {
+        const ids = Array.isArray(targetIds) ? targetIds.filter(Boolean) : [];
+        if (!ids.length || !rqCurrentUser || !rqCurrentUser.id) return {};
+        const client = await rqSocialClient();
+        if (!client) return {};
+
+        try {
+          const res = await client
+            .from(RQ_SOCIAL_FOLLOWS_TABLE)
+            .select("following_id")
+            .eq("follower_id", rqCurrentUser.id)
+            .in("following_id", ids);
+
+          if (res && res.error) throw res.error;
+
+          const rows = Array.isArray(res && res.data) ? res.data : [];
+          const map = {};
+          for (let i = 0; i < rows.length; i++) map[rows[i].following_id] = true;
+          return map;
+        } catch (e) {
+          rqSocialMarkMissingIfNeeded(e);
+          return {};
+        }
+      }
+
+      async function rqSocialFollow(targetId) {
+        if (!rqCurrentUser || !rqCurrentUser.id) return false;
+        const client = await rqSocialClient();
+        if (!client) return false;
+
+        try {
+          const payload = { follower_id: rqCurrentUser.id, following_id: targetId, created_at: new Date().toISOString() };
+          const res = await client.from(RQ_SOCIAL_FOLLOWS_TABLE).insert(payload);
+          if (res && res.error) throw res.error;
+          return true;
+        } catch (e) {
+          rqSocialMarkMissingIfNeeded(e);
+          return false;
+        }
+      }
+
+      async function rqSocialUnfollow(targetId) {
+        if (!rqCurrentUser || !rqCurrentUser.id) return false;
+        const client = await rqSocialClient();
+        if (!client) return false;
+
+        try {
+          const res = await client
+            .from(RQ_SOCIAL_FOLLOWS_TABLE)
+            .delete()
+            .eq("follower_id", rqCurrentUser.id)
+            .eq("following_id", targetId);
+
+          if (res && res.error) throw res.error;
+          return true;
+        } catch (e) {
+          rqSocialMarkMissingIfNeeded(e);
+          return false;
+        }
+      }
+
+      async function rqSocialLogActivity(kind, payload) {
+        // Safe no-op if not ready
+        if (!rqSocialIsReady()) return;
+        const client = await rqSocialClient();
+        if (!client) return;
+
+        try {
+          const row = {
+            user_id: rqCurrentUser.id,
+            kind: String(kind || "activity"),
+            payload: payload && typeof payload === "object" ? payload : {},
+            created_at: new Date().toISOString(),
+            device_id: (typeof rqGetDeviceId === "function") ? rqGetDeviceId() : null
+          };
+          const res = await client.from(RQ_SOCIAL_ACTIVITY_TABLE).insert(row);
+          if (res && res.error) throw res.error;
+        } catch (e) {
+          rqSocialMarkMissingIfNeeded(e);
+        }
+      }
+
+      async function rqSocialFetchFeed(limit) {
+        const client = await rqSocialClient();
+        if (!client || !rqCurrentUser || !rqCurrentUser.id) return { items: [], profiles: {} };
+
+        try {
+          const following = await rqSocialGetFollowingIds();
+          const ids = [rqCurrentUser.id].concat(following);
+          if (!ids.length) return { items: [], profiles: {} };
+
+          const res = await client
+            .from(RQ_SOCIAL_ACTIVITY_TABLE)
+            .select("id, user_id, kind, payload, created_at")
+            .in("user_id", ids)
+            .order("created_at", { ascending: false })
+            .limit(typeof limit === "number" ? limit : 40);
+
+          if (res && res.error) throw res.error;
+
+          const rows = Array.isArray(res && res.data) ? res.data : [];
+          // Fetch profile names for the feed
+          const uids = Array.from(new Set(rows.map(function (r) { return r.user_id; }).filter(Boolean)));
+          let profileMap = {};
+          if (uids.length) {
+            const pres = await client.from("profiles").select("id, display_name, avatar_url").in("id", uids);
+            if (pres && pres.error) throw pres.error;
+            const prows = Array.isArray(pres && pres.data) ? pres.data : [];
+            for (let i = 0; i < prows.length; i++) profileMap[prows[i].id] = prows[i];
+          }
+
+          return { items: rows, profiles: profileMap };
+        } catch (e) {
+          rqSocialMarkMissingIfNeeded(e);
+          return { items: [], profiles: {} };
+        }
+      }
+
+      function rqSocialFormatActivity(row, profiles) {
+        const p = profiles && row && row.user_id ? profiles[row.user_id] : null;
+        const name = p && p.display_name ? p.display_name : "Someone";
+        const when = row && row.created_at ? new Date(row.created_at).toLocaleString() : "";
+        const kind = row && row.kind ? String(row.kind) : "activity";
+        const pl = (row && row.payload && typeof row.payload === "object") ? row.payload : {};
+
+        if (kind === "watched") return name + " watched " + (pl.title || "a title") + (when ? " • " + when : "");
+        if (kind === "watchlist") return name + " added " + (pl.title || "a title") + " to watchlist" + (when ? " • " + when : "");
+        if (kind === "rating") return name + " rated " + (pl.title || "a title") + " " + (pl.rating != null ? (pl.rating + "/10") : "") + (when ? " • " + when : "");
+        if (kind === "review") return name + " reviewed " + (pl.title || "a title") + (when ? " • " + when : "");
+        return name + " did something" + (when ? " • " + when : "");
+      }
+
+      function rqSocialStopRealtime() {
+        try { if (rqSocialChannel && rqSocialChannel.unsubscribe) rqSocialChannel.unsubscribe(); } catch (e) {}
+        rqSocialChannel = null;
+      }
+
+      async function rqSocialStartRealtime(onNewActivity) {
+        // Create a per-follow-list subscription (own + friends)
+        try {
+          if (!rqSocialIsReady()) return;
+          const client = await rqSocialClient();
+          if (!client) return;
+
+          const following = await rqSocialGetFollowingIds();
+          const ids = [rqCurrentUser.id].concat(following);
+
+          // Only restart if changed
+          const same =
+            ids.length === rqSocialLastFollowingIds.length &&
+            ids.every(function (id, i) { return id === rqSocialLastFollowingIds[i]; });
+
+          if (same && rqSocialChannel) return;
+
+          rqSocialLastFollowingIds = ids.slice(0);
+
+          rqSocialStopRealtime();
+          rqSocialChannel = client.channel("rq_social_feed_" + rqCurrentUser.id);
+
+          for (let i = 0; i < ids.length; i++) {
+            rqSocialChannel.on(
+              "postgres_changes",
+              { event: "INSERT", schema: "public", table: RQ_SOCIAL_ACTIVITY_TABLE, filter: "user_id=eq." + ids[i] },
+              function () {
+                try { if (typeof onNewActivity === "function") onNewActivity(); } catch (e) {}
+              }
+            );
+          }
+
+          rqSocialChannel.subscribe(function () {});
+        } catch (e) {
+          rqSocialMarkMissingIfNeeded(e);
+        }
+      }
+
+      async function rqRenderSocialPanel(containerEl) {
+        if (!containerEl) return;
+        containerEl.innerHTML = "";
+
+        const sub = document.createElement("div");
+        sub.className = "settings-subheading";
+        sub.style.marginTop = "14px";
+        sub.textContent = "Friends & activity";
+
+        const copy = document.createElement("p");
+        copy.className = "settings-copy";
+        copy.textContent = "Follow friends and see what they’re watching (requires social tables enabled on the server).";
+
+        containerEl.appendChild(sub);
+        containerEl.appendChild(copy);
+
+        if (!rqCurrentUser || !rqCurrentUser.id) {
+          const msg = document.createElement("div");
+          msg.className = "settings-copy";
+          msg.textContent = "Sign in to use friends and the activity feed.";
+          containerEl.appendChild(msg);
+          return;
+        }
+
+        if (rqSocialTablesMissing) {
+          const msg = document.createElement("div");
+          msg.className = "settings-copy";
+          msg.textContent = "Social features aren’t enabled on this server yet.";
+          containerEl.appendChild(msg);
+          return;
+        }
+
+        // Search users
+        const searchWrap = document.createElement("div");
+        searchWrap.style.display = "flex";
+        searchWrap.style.gap = "8px";
+        searchWrap.style.flexWrap = "wrap";
+        searchWrap.style.marginTop = "8px";
+
+        const searchInput = document.createElement("input");
+        searchInput.className = "text-input";
+        searchInput.placeholder = "Search display name…";
+        searchInput.style.flex = "1 1 200px";
+
+        const searchBtn = document.createElement("button");
+        searchBtn.type = "button";
+        searchBtn.className = "pill-btn";
+        searchBtn.textContent = "Search";
+
+        searchWrap.appendChild(searchInput);
+        searchWrap.appendChild(searchBtn);
+
+        const resultsWrap = document.createElement("div");
+        resultsWrap.style.display = "flex";
+        resultsWrap.style.flexDirection = "column";
+        resultsWrap.style.gap = "8px";
+        resultsWrap.style.marginTop = "10px";
+
+        // Following + feed
+        const toolsWrap = document.createElement("div");
+        toolsWrap.style.display = "flex";
+        toolsWrap.style.gap = "8px";
+        toolsWrap.style.flexWrap = "wrap";
+        toolsWrap.style.marginTop = "10px";
+
+        const refreshBtn = document.createElement("button");
+        refreshBtn.type = "button";
+        refreshBtn.className = "pill-btn";
+        refreshBtn.textContent = "Refresh feed";
+
+        toolsWrap.appendChild(refreshBtn);
+
+        const feedWrap = document.createElement("div");
+        feedWrap.style.display = "flex";
+        feedWrap.style.flexDirection = "column";
+        feedWrap.style.gap = "8px";
+        feedWrap.style.marginTop = "10px";
+
+        containerEl.appendChild(searchWrap);
+        containerEl.appendChild(resultsWrap);
+        containerEl.appendChild(toolsWrap);
+        containerEl.appendChild(feedWrap);
+
+        async function renderResults(list) {
+          resultsWrap.innerHTML = "";
+          const rows = Array.isArray(list) ? list : [];
+          if (!rows.length) {
+            const empty = document.createElement("div");
+            empty.className = "settings-copy";
+            empty.textContent = "No users found.";
+            resultsWrap.appendChild(empty);
+            return;
+          }
+
+          const ids = rows.map(function (r) { return r.id; }).filter(Boolean);
+          const followingMap = await rqSocialIsFollowingMap(ids);
+
+          for (let i = 0; i < rows.length; i++) {
+            const p = rows[i];
+            const row = document.createElement("div");
+            row.style.display = "flex";
+            row.style.alignItems = "center";
+            row.style.justifyContent = "space-between";
+            row.style.gap = "10px";
+            row.style.padding = "10px";
+            row.style.border = "1px solid var(--border-subtle)";
+            row.style.borderRadius = "14px";
+            row.style.background = "var(--bg)";
+
+            const left = document.createElement("div");
+            left.style.display = "flex";
+            left.style.alignItems = "center";
+            left.style.gap = "10px";
+            left.style.minWidth = "0";
+
+            const avatar = document.createElement("div");
+            avatar.className = "avatar";
+            avatar.style.width = "34px";
+            avatar.style.height = "34px";
+            rqApplyAvatarToEl(avatar, p.avatar_url || "", p.display_name || "");
+
+            const info = document.createElement("div");
+            info.style.display = "flex";
+            info.style.flexDirection = "column";
+            info.style.minWidth = "0";
+
+            const name = document.createElement("div");
+            name.style.fontWeight = "800";
+            name.style.fontSize = "13px";
+            name.style.whiteSpace = "nowrap";
+            name.style.overflow = "hidden";
+            name.style.textOverflow = "ellipsis";
+            name.textContent = p.display_name || "(no name)";
+
+            const meta = document.createElement("div");
+            meta.style.fontSize = "12px";
+            meta.style.color = "var(--text-muted)";
+            meta.textContent = (p.country_region ? String(p.country_region) : "");
+
+            info.appendChild(name);
+            info.appendChild(meta);
+
+            left.appendChild(avatar);
+            left.appendChild(info);
+
+            const btn = document.createElement("button");
+            btn.type = "button";
+            btn.className = "pill-btn";
+            const isFollowing = !!followingMap[p.id];
+            btn.textContent = isFollowing ? "Unfollow" : "Follow";
+
+            btn.addEventListener("click", async function () {
+              btn.disabled = true;
+              try {
+                if (isFollowing) {
+                  await rqSocialUnfollow(p.id);
+                } else {
+                  await rqSocialFollow(p.id);
+                }
+                toast(isFollowing ? "Unfollowed." : "Following.");
+                // re-render
+                await renderResults(rows);
+                await renderFeed();
+              } finally {
+                btn.disabled = false;
+              }
+            });
+
+            row.appendChild(left);
+            row.appendChild(btn);
+            resultsWrap.appendChild(row);
+          }
+        }
+
+        async function renderFeed() {
+          feedWrap.innerHTML = "";
+          const data = await rqSocialFetchFeed(40);
+          const items = data && Array.isArray(data.items) ? data.items : [];
+          const profiles = data && data.profiles ? data.profiles : {};
+
+          if (!items.length) {
+            const empty = document.createElement("div");
+            empty.className = "settings-copy";
+            empty.textContent = "No activity yet. Follow someone or start watching!";
+            feedWrap.appendChild(empty);
+            return;
+          }
+
+          for (let i = 0; i < items.length; i++) {
+            const row = document.createElement("div");
+            row.style.padding = "10px";
+            row.style.border = "1px solid var(--border-subtle)";
+            row.style.borderRadius = "14px";
+            row.style.background = "var(--bg)";
+
+            const text = document.createElement("div");
+            text.style.fontSize = "13px";
+            text.textContent = rqSocialFormatActivity(items[i], profiles);
+
+            row.appendChild(text);
+            feedWrap.appendChild(row);
+          }
+
+          // Realtime subscription (refresh on new activity)
+          rqSocialStartRealtime(function () {
+            // soft refresh
+            renderFeed().catch(function () {});
+          }).catch(function () {});
+        }
+
+        searchBtn.addEventListener("click", async function () {
+          const q = searchInput.value;
+          resultsWrap.innerHTML = "";
+          const loading = document.createElement("div");
+          loading.className = "settings-copy";
+          loading.textContent = "Searching…";
+          resultsWrap.appendChild(loading);
+
+          const rows = await rqSocialSearchProfiles(q);
+          await renderResults(rows);
+        });
+
+        searchInput.addEventListener("keydown", function (e) {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            searchBtn.click();
+          }
+        });
+
+        refreshBtn.addEventListener("click", function () {
+          renderFeed().catch(function () {});
+        });
+
+        // initial feed
+        renderFeed().catch(function () {});
+      }
+
+
+
+      // Ensure auth callbacks (magic-link / OAuth / PKCE) are processed even if the user
+      // lands on a non-Account tab after clicking the email link.
+      let rqSupabaseInitStarted = false;
+
+      async function initSupabaseAuthOnLoad() {
+        if (rqSupabaseInitStarted) return;
+        rqSupabaseInitStarted = true;
+
+        try {
+          const client = await getSupabaseClient();
+          if (!client || !client.auth) return;
+
+          // Attach once: keep Account UI in sync if user navigates there.
+          if (!rqSupabaseAuthListenerAttached && client.auth.onAuthStateChange) {
+            rqSupabaseAuthListenerAttached = true;
+            try {
+              client.auth.onAuthStateChange(function () {
+                // Refresh cached user/profile + header chip, and update Account UI if visible.
+                rqRefreshAuthState("auth-change");
+                if (state && state.activeTab === "account") renderAccount();
+              try { rqCloudSyncOnAuthChange(); } catch (e) {}
+               });
+            } catch (e) { /* ignore */ }
+          }
+
+          const url = new URL(window.location.href);
+          const hasCode = url.searchParams.get("code");
+          const hasTokensInHash = !!(url.hash && (url.hash.indexOf("access_token=") !== -1 || url.hash.indexOf("refresh_token=") !== -1));
+
+          // Newer Supabase flows may return a `code` (PKCE). Exchange it for a session.
+          if (hasCode && client.auth.exchangeCodeForSession) {
+            try {
+              await client.auth.exchangeCodeForSession(window.location.href);
+            } catch (e) {
+              console.warn("Supabase exchangeCodeForSession failed:", e);
+            }
+            // Clean URL
+            url.searchParams.delete("code");
+            url.searchParams.delete("state");
+            url.searchParams.delete("type");
+            window.history.replaceState({}, document.title, url.toString());
+          } else if (hasTokensInHash) {
+            // Older magic-link flow returns tokens in the hash. Supabase will usually detect these,
+            // but we also call getSession() once to ensure it’s persisted before we clear the hash.
+            try { await client.auth.getSession(); } catch (e) {}
+            url.hash = "";
+            window.history.replaceState({}, document.title, url.toString());
+          }
+        } catch (e) {
+          console.warn("Auth init failed:", e);
+        }
+      }
+
+      
+      function renderAccount() {
+        const panel = els.accountPanel;
+        if (!panel) return;
+        panel.innerHTML = "";
+
+        const heading = document.createElement("h2");
+        heading.className = "settings-heading";
+        heading.textContent = "Account";
+
+        const copy = document.createElement("p");
+        copy.className = "settings-copy";
+        copy.textContent = "Sign in to sync your CineSafari across devices.";
+
+        const status = document.createElement("div");
+        status.className = "settings-copy";
+        status.style.marginTop = "10px";
+        status.textContent = "Status: Checking sign-in…";
+
+        
+
+        // Instant sync toggle (stored locally and, when signed in, synced across devices)
+        const syncRow = document.createElement("div");
+        syncRow.className = "settings-row";
+        syncRow.style.marginTop = "10px";
+
+        const syncLabel = document.createElement("label");
+        syncLabel.className = "settings-label";
+        syncLabel.textContent = "Instant cross-device sync";
+
+        const syncHelp = document.createElement("div");
+        syncHelp.className = "settings-copy";
+        syncHelp.style.marginTop = "6px";
+        syncHelp.textContent = "Keeps your CineSafari up to date across devices in near real time (best with Supabase Realtime enabled).";
+
+        const syncToggle = document.createElement("input");
+        syncToggle.type = "checkbox";
+        syncToggle.checked = (typeof state.syncEnabled === "boolean") ? state.syncEnabled : true;
+        syncToggle.style.transform = "scale(1.2)";
+        syncToggle.style.marginRight = "8px";
+
+        const syncToggleWrap = document.createElement("div");
+        syncToggleWrap.style.display = "flex";
+        syncToggleWrap.style.alignItems = "center";
+        const syncToggleText = document.createElement("span");
+        syncToggleText.textContent = "Enable instant sync";
+        syncToggleWrap.appendChild(syncToggle);
+        syncToggleWrap.appendChild(syncToggleText);
+
+        const syncStatus = document.createElement("div");
+        syncStatus.className = "settings-copy";
+        syncStatus.style.marginTop = "6px";
+        syncStatus.textContent = "Sync: " + (typeof rqGetSyncStatusText === "function" ? rqGetSyncStatusText() : "Off");
+
+        syncToggle.addEventListener("change", function () {
+          state.syncEnabled = !!syncToggle.checked;
+          saveState();
+          try { if (state.syncEnabled) rqCloudSyncOnAuthChange(); else rqStopCloudSync(); } catch (e) {}
+          try { syncStatus.textContent = "Sync: " + rqGetSyncStatusText(); } catch (e) {}
+        });
+
+        syncRow.appendChild(syncLabel);
+        syncRow.appendChild(syncToggleWrap);
+        syncRow.appendChild(syncHelp);
+        syncRow.appendChild(syncStatus);
+const authSub = document.createElement("div");
+        authSub.className = "settings-subheading";
+        authSub.style.marginTop = "14px";
+        authSub.textContent = "Sign in";
+
+        const emailWrap = document.createElement("div");
+        emailWrap.style.display = "flex";
+        emailWrap.style.flexWrap = "wrap";
+        emailWrap.style.gap = "10px";
+        emailWrap.style.alignItems = "center";
+
+        const emailInput = document.createElement("input");
+        emailInput.className = "search-input";
+        emailInput.placeholder = "Email address";
+        emailInput.inputMode = "email";
+        emailInput.autocomplete = "email";
+        emailInput.style.flex = "1 1 240px";
+
+        const linkBtn = document.createElement("button");
+        linkBtn.type = "button";
+        linkBtn.className = "pill-btn";
+        linkBtn.textContent = "Send magic link";
+
+        const signOutBtn = document.createElement("button");
+        signOutBtn.type = "button";
+        signOutBtn.className = "pill-btn";
+        signOutBtn.textContent = "Sign out";
+        signOutBtn.style.display = "none";
+
+        // Avoid “flash” of the email box when already signed in.
+        emailInput.style.display = "none";
+        linkBtn.style.display = "none";
+
+        function setAuthUi(isSignedIn, email) {
+          if (isSignedIn) {
+            status.textContent = "Status: Signed in as " + (email || "your account");
+            emailInput.style.display = "none";
+            linkBtn.style.display = "none";
+            signOutBtn.style.display = "inline-flex";
+          } else {
+            status.textContent = "Status: Not signed in.";
+            emailInput.style.display = "";
+            linkBtn.style.display = "";
+            signOutBtn.style.display = "none";
+            try { profileWrap.style.display = "none"; } catch (e) {}
+          }
+        }
+
+        linkBtn.addEventListener("click", async function () {
+          const email = String(emailInput.value || "").trim();
+          if (!email || email.indexOf("@") === -1) {
+            alertNice("Enter a valid email address.");
+            return;
+          }
+          try {
+            const client = await getSupabaseClient();
+            if (!client) throw new Error("Supabase client not available");
+            await client.auth.signInWithOtp({
+              email: email,
+              options: { emailRedirectTo: (location.origin + location.pathname) }
+            });
+            toast("Magic link sent.");
+            try {
+              if (isIos && typeof isIos === "function" && isStandalone && typeof isStandalone === "function" && isIos() && isStandalone()) {
+                alertNice("If CineSafari is installed on your Home Screen, the email link may open in Safari. For the sign-in to apply, open the magic link in the same place you use CineSafari (Safari vs installed app).");
+              }
+            } catch (e) {}
+          } catch (e) {
+            console.error(e);
+            alertNice("Couldn’t send the magic link: " + (e && e.message ? e.message : "unknown error"));
+          }
+        });
+
+        signOutBtn.addEventListener("click", async function () {
+          try {
+            const client = await getSupabaseClient();
+            if (!client) return;
+            await client.auth.signOut();
+            toast("Signed out.");
+            renderAccount();
+          } catch (e) {
+            console.error(e);
+            alertNice("Couldn’t sign out: " + (e && e.message ? e.message : "unknown error"));
+          }
+        });
+
+        emailWrap.appendChild(emailInput);
+        emailWrap.appendChild(linkBtn);
+        emailWrap.appendChild(signOutBtn);
+
+        panel.appendChild(heading);
+        panel.appendChild(copy);
+        panel.appendChild(authSub);
+        panel.appendChild(emailWrap);
+        panel.appendChild(status);
+
+        
+        
+        panel.appendChild(syncRow);
+
+        // Preferences shortcuts (so key settings don’t feel “missing” on the Account page)
+        const prefsSub = document.createElement("div");
+        prefsSub.className = "settings-subheading";
+        prefsSub.style.marginTop = "14px";
+        prefsSub.textContent = "Preferences";
+
+        const prefsWrap = document.createElement("div");
+        prefsWrap.className = "profile-card";
+
+        const prefsNote = document.createElement("div");
+        prefsNote.className = "settings-copy";
+        prefsNote.style.marginBottom = "10px";
+        prefsNote.textContent = "Quick shortcuts — same settings as the Preferences page.";
+        prefsWrap.appendChild(prefsNote);
+
+        // Country / region
+        const prefCountryLabel = document.createElement("label");
+        prefCountryLabel.className = "settings-label";
+        prefCountryLabel.textContent = "Country / region";
+        const prefCountrySelect = document.createElement("select");
+        prefCountrySelect.className = "controls-select";
+        prefCountrySelect.style.width = "100%";
+        prefCountrySelect.style.borderRadius = "14px";
+        prefCountrySelect.style.padding = "10px 12px";
+
+        const PREF_COUNTRIES = rqGetCountryOptions();
+        for (let i = 0; i < PREF_COUNTRIES.length; i++) {
+          const opt = document.createElement("option");
+          opt.value = PREF_COUNTRIES[i][0];
+          opt.textContent = PREF_COUNTRIES[i][1];
+          prefCountrySelect.appendChild(opt);
+        }
+
+        try { prefCountrySelect.value = (state.country || "GB").toUpperCase(); } catch (e) {}
+        prefCountryLabel.appendChild(prefCountrySelect);
+        prefsWrap.appendChild(prefCountryLabel);
+
+        prefCountrySelect.addEventListener("change", function () {
+          const cc = normaliseCountryCode(prefCountrySelect.value, state.country || "GB");
+          state.country = cc;
+          saveState();
+
+          // Keep other country dropdowns aligned (Preferences panel + Profile panel)
+          try { if (els && els.prefCountrySelect) els.prefCountrySelect.value = cc; } catch (e) {}
+          try { if (els && els.profileCountrySelect) els.profileCountrySelect.value = cc; } catch (e) {}
+
+          // Best-effort: sync to signed-in profile too
+          try { rqTrySyncCountryToProfile(cc); } catch (e) {}
+
+          if (state.activeTab === "radar") loadRadarUpcoming();
+          else render();
+        });
+
+        // TV series toggle
+        const tvBtn2 = document.createElement("button");
+        tvBtn2.type = "button";
+        tvBtn2.className = "pill-btn";
+        tvBtn2.style.marginTop = "10px";
+        tvBtn2.textContent = state.includeTv ? "TV series: Shown" : "TV series: Hidden";
+        tvBtn2.addEventListener("click", function () {
+          state.includeTv = !state.includeTv;
+          tvBtn2.textContent = state.includeTv ? "TV series: Shown" : "TV series: Hidden";
+          saveState();
+          if (state.activeTab === "for-you") loadForYouRecommendations();
+          else if (state.activeTab === "discover") loadPopularForDiscover();
+          else if (state.activeTab === "radar") loadRadarUpcoming();
+          else render();
+        });
+        prefsWrap.appendChild(tvBtn2);
+
+        // Backup & restore shortcuts
+        const backupTitle = document.createElement("div");
+        backupTitle.className = "settings-subheading";
+        backupTitle.style.marginTop = "12px";
+        backupTitle.textContent = "Backup & restore";
+        prefsWrap.appendChild(backupTitle);
+
+        const backupCopy = document.createElement("div");
+        backupCopy.className = "settings-copy";
+        backupCopy.textContent = "Export a full backup (JSON) or a portable CSV. Import supports CineSafari backups and CSV (including IMDb exports).";
+        prefsWrap.appendChild(backupCopy);
+
+        const backupRow = document.createElement("div");
+        backupRow.style.display = "flex";
+        backupRow.style.flexWrap = "wrap";
+        backupRow.style.gap = "8px";
+        backupRow.style.marginTop = "8px";
+
+        const exportJsonBtn2 = document.createElement("button");
+        exportJsonBtn2.type = "button";
+        exportJsonBtn2.className = "pill-btn";
+        exportJsonBtn2.textContent = "Export backup (JSON)";
+        exportJsonBtn2.addEventListener("click", exportDataToFile);
+
+        const exportCsvBtn2 = document.createElement("button");
+        exportCsvBtn2.type = "button";
+        exportCsvBtn2.className = "pill-btn";
+        exportCsvBtn2.textContent = "Export CSV";
+        exportCsvBtn2.addEventListener("click", exportItemsToCsvFile);
+
+        const importBtn2 = document.createElement("button");
+        importBtn2.type = "button";
+        importBtn2.className = "pill-btn";
+        importBtn2.textContent = "Import (JSON/CSV)";
+        importBtn2.addEventListener("click", function () {
+          const temp = document.createElement("input");
+          temp.type = "file";
+          temp.accept = ".json,.csv,application/json,text/csv";
+          temp.style.position = "fixed";
+          temp.style.left = "-9999px";
+          temp.style.top = "-9999px";
+          temp.style.width = "1px";
+          temp.style.height = "1px";
+          temp.style.opacity = "0";
+          document.body.appendChild(temp);
+
+          temp.addEventListener("change", function () {
+            const files = temp.files;
+            if (files && files[0]) handleImportFile(files[0]);
+            try { document.body.removeChild(temp); } catch (e) {}
+          });
+
+          temp.click();
+        });
+
+        backupRow.appendChild(exportJsonBtn2);
+        backupRow.appendChild(exportCsvBtn2);
+        backupRow.appendChild(importBtn2);
+        prefsWrap.appendChild(backupRow);
+
+        // Local auto-backup toggle (keeps the last 5 snapshots on this device)
+        const autoRow2 = document.createElement("label");
+        autoRow2.style.display = "flex";
+        autoRow2.style.alignItems = "center";
+        autoRow2.style.gap = "10px";
+        autoRow2.style.marginTop = "10px";
+
+        const autoCb2 = document.createElement("input");
+        autoCb2.type = "checkbox";
+        autoCb2.checked = !!state.autoBackupEnabled;
+        autoCb2.addEventListener("change", function () {
+          state.autoBackupEnabled = !!autoCb2.checked;
+          saveState();
+          toast(state.autoBackupEnabled ? "Auto-backup enabled." : "Auto-backup disabled.");
+        });
+
+        const autoTxt2 = document.createElement("div");
+        autoTxt2.style.fontSize = "13px";
+        autoTxt2.style.color = "var(--text-muted)";
+        autoTxt2.textContent = "Auto-backup: keep the last 5 snapshots on this device.";
+
+        autoRow2.appendChild(autoCb2);
+        autoRow2.appendChild(autoTxt2);
+        prefsWrap.appendChild(autoRow2);
+
+        panel.appendChild(prefsSub);
+        panel.appendChild(prefsWrap);
+
+// Profile (only visible when signed in)
+        
+        // Social (friends + activity feed)
+        const socialWrap = document.createElement("div");
+        socialWrap.style.marginTop = "10px";
+        panel.appendChild(socialWrap);
+
+const profileSub = document.createElement("div");
+        profileSub.className = "settings-subheading";
+        profileSub.style.marginTop = "14px";
+        profileSub.textContent = "Profile";
+
+        const profileWrap = document.createElement("div");
+        profileWrap.className = "profile-card";
+        profileWrap.style.display = "none";
+
+        const profileHead = document.createElement("div");
+        profileHead.className = "profile-head";
+
+        const avatarImg = document.createElement("img");
+        avatarImg.className = "profile-avatar";
+        avatarImg.alt = "Profile photo";
+        avatarImg.referrerPolicy = "no-referrer";
+        avatarImg.loading = "lazy";
+
+        const headText = document.createElement("div");
+
+        const headName = document.createElement("div");
+        headName.className = "profile-name";
+
+        const headEmail = document.createElement("div");
+        headEmail.className = "profile-email";
+
+        headText.appendChild(headName);
+        headText.appendChild(headEmail);
+        profileHead.appendChild(avatarImg);
+        profileHead.appendChild(headText);
+
+        const displayNameLabel = document.createElement("label");
+        displayNameLabel.className = "settings-label";
+        displayNameLabel.textContent = "Display name";
+        const displayNameInput = document.createElement("input");
+        displayNameInput.className = "search-input";
+        displayNameInput.placeholder = "e.g. William";
+        displayNameLabel.appendChild(displayNameInput);
+
+        const avatarUrlLabel = document.createElement("label");
+        avatarUrlLabel.className = "settings-label";
+        avatarUrlLabel.textContent = "Profile photo URL";
+        const avatarUrlInput = document.createElement("input");
+        avatarUrlInput.className = "search-input";
+        avatarUrlInput.placeholder = "https://… (optional — leave blank for Gravatar)";
+        avatarUrlLabel.appendChild(avatarUrlInput);
+
+
+        const gravatarLabel = document.createElement("label");
+        gravatarLabel.className = "settings-label";
+        gravatarLabel.textContent = "Gravatar";
+        const gravatarRow = document.createElement("div");
+        gravatarRow.style.display = "flex";
+        gravatarRow.style.alignItems = "center";
+        gravatarRow.style.gap = "10px";
+
+        const gravatarCb = document.createElement("input");
+        gravatarCb.type = "checkbox";
+        gravatarCb.checked = !!state.useGravatar;
+        gravatarCb.addEventListener("change", function () {
+          state.useGravatar = !!gravatarCb.checked;
+          saveState();
+          // refresh avatar immediately
+          try { rqApplyAvatarToEl(avatarImg, rqResolveAvatarUrl(rqCurrentUser, rqCurrentProfile, 128), rqGetDisplayName(rqCurrentUser, rqCurrentProfile)); } catch (e) {}
+          try { rqSetHeaderUserChip(rqCurrentUser, rqCurrentProfile); } catch (e) {}
+        });
+
+        const gravatarTxt = document.createElement("div");
+        gravatarTxt.className = "settings-copy";
+        gravatarTxt.style.margin = "0";
+        gravatarTxt.textContent = "If your photo URL is blank, use your Gravatar (based on your sign‑in email).";
+
+        gravatarRow.appendChild(gravatarCb);
+        gravatarRow.appendChild(gravatarTxt);
+        gravatarLabel.appendChild(gravatarRow);
+
+
+
+        const countryLabel = document.createElement("label");
+        countryLabel.className = "settings-label";
+        countryLabel.textContent = "Country / region";
+        const countrySelect = document.createElement("select");
+        countrySelect.className = "controls-select";
+        countrySelect.style.width = "100%";
+        countrySelect.style.borderRadius = "14px";
+        countrySelect.style.padding = "10px 12px";
+
+        const COUNTRIES = rqGetCountryOptions();
+        for (let i = 0; i < COUNTRIES.length; i++) {
+          const opt = document.createElement("option");
+          opt.value = COUNTRIES[i][0];
+          opt.textContent = COUNTRIES[i][1];
+          countrySelect.appendChild(opt);
+        }
+
+        // Keep a reference for cross-panel syncing
+        els.profileCountrySelect = countrySelect;
+
+        countryLabel.appendChild(countrySelect);
+
+        countrySelect.addEventListener("change", function () {
+          const cc = normaliseCountryCode(countrySelect.value, state.country || "GB");
+          state.country = cc;
+          saveState();
+          if (els && els.prefCountrySelect) {
+            try { els.prefCountrySelect.value = cc; } catch (e) {}
+          }
+          // We do NOT auto-save the profile here — user still clicks “Save profile”.
+        });
+
+        const saveRow = document.createElement("div");
+        saveRow.style.display = "flex";
+        saveRow.style.flexWrap = "wrap";
+        saveRow.style.gap = "10px";
+        saveRow.style.alignItems = "center";
+        saveRow.style.marginTop = "10px";
+
+        const saveBtn = document.createElement("button");
+        saveBtn.type = "button";
+        saveBtn.className = "pill-btn";
+        saveBtn.textContent = "Save profile";
+
+        const saveHint = document.createElement("div");
+        saveHint.className = "settings-copy";
+        saveHint.textContent = "";
+
+        saveRow.appendChild(saveBtn);
+        saveRow.appendChild(saveHint);
+
+        profileWrap.appendChild(profileHead);
+        profileWrap.appendChild(displayNameLabel);
+        profileWrap.appendChild(avatarUrlLabel);
+        profileWrap.appendChild(gravatarLabel);
+        profileWrap.appendChild(countryLabel);
+        profileWrap.appendChild(saveRow);
+
+        panel.appendChild(profileSub);
+        panel.appendChild(profileWrap);
+
+        function applyProfileToUi(user, profile) {
+          if (!user) {
+            headName.textContent = "";
+            headEmail.textContent = "";
+            rqApplyAvatarToEl(avatarImg, "", "");
+            displayNameInput.value = "";
+            avatarUrlInput.value = "";
+            try { countrySelect.value = (state.country || "GB").toUpperCase(); } catch (e) {}
+            saveHint.textContent = "";
+            return;
+          }
+          profileWrap.style.display = "block";
+          const name = rqGetDisplayName(user, profile);
+          headName.textContent = name;
+          headEmail.textContent = user.email || "";
+          rqApplyAvatarToEl(avatarImg, rqResolveAvatarUrl(user, profile, 128), name);
+          displayNameInput.value = profile && profile.display_name ? String(profile.display_name) : "";
+          avatarUrlInput.value = profile && profile.avatar_url ? String(profile.avatar_url) : "";
+          const cc = normaliseCountryCode((profile && profile.country_region) ? profile.country_region : "", state.country || "GB");
+          countrySelect.value = cc;
+          saveHint.textContent = "";
+        }
+
+        async function saveProfile(user) {
+          if (!user) return;
+          try {
+            const client = await getSupabaseClient();
+            if (!client) throw new Error("Supabase not available");
+            saveHint.textContent = "Saving…";
+            const payload = {
+              id: user.id,
+              email: user.email || null,
+              display_name: String(displayNameInput.value || "").trim() || null,
+              avatar_url: String(avatarUrlInput.value || "").trim() || null,
+              country_region: String(countrySelect.value || "").trim() || null
+            };
+            const res = await client.from("profiles")
+              .upsert(payload, { onConflict: "id" })
+              .select("id, display_name, avatar_url, country_region")
+              .maybeSingle();
+            if (res && res.error) throw res.error;
+            const updated = res ? res.data : null;
+            // Update cache + header chip
+            rqCurrentProfile = updated || rqCurrentProfile;
+            rqSetHeaderUserChip(user, rqCurrentProfile);
+            applyProfileToUi(user, rqCurrentProfile);
+            saveHint.textContent = "Saved.";
+            // Keep Preferences country aligned with profile
+            try {
+              const cc = normaliseCountryCode((rqCurrentProfile && rqCurrentProfile.country_region) ? rqCurrentProfile.country_region : payload.country_region, state.country || "GB");
+              state.country = cc;
+              saveState();
+              if (els && els.prefCountrySelect) els.prefCountrySelect.value = cc;
+            } catch (e) {}
+            toast("Profile saved");
+          } catch (e) {
+            console.error(e);
+            saveHint.textContent = "Couldn’t save (check you ran the profiles SQL + RLS).";
+            alertNice("Couldn’t save profile. Make sure the profiles table exists and RLS policies are in place.");
+          }
+        }
+
+        saveBtn.addEventListener("click", function () {
+          const u = rqCurrentUser;
+          if (!u) { alertNice("You need to be signed in."); return; }
+          saveProfile(u);
+        });
+
+
+        // Async: update sign-in status (+ profile) safely
+        (async function () {
+          try {
+            const authState = await rqRefreshAuthState("account");
+            const user = authState && authState.user ? authState.user : null;
+            const profile = authState && authState.profile ? authState.profile : null;
+
+            setAuthUi(!!(user && user.email), user && user.email ? user.email : "");
+            applyProfileToUi(user, profile);
+            try { await rqRenderSocialPanel(socialWrap); } catch (e) {}
+          } catch (e) {
+            console.error(e);
+            status.textContent = "Status: Couldn’t check sign-in.";
+            setAuthUi(false);
+            applyProfileToUi(null, null);
+            try { socialWrap.innerHTML = ""; } catch (e) {}
+            try { rqSocialStopRealtime(); } catch (e) {}
+          }
+        })();
+      }
+
+
+function renderListsPanel() {
+  const panel = els.listsPanel;
+  panel.innerHTML = "";
+
+  const heading = document.createElement("h2");
+  heading.className = "settings-heading";
+  heading.textContent = "Lists";
+
+  const copy = document.createElement("p");
+  copy.className = "settings-copy";
+  copy.textContent = "Create and curate your own collections (manual lists), or use smart lists that auto-fill from TMDB.";
+
+  panel.appendChild(heading);
+  panel.appendChild(copy);
+
+  const ui = state.listsUi || { mode: "index", activeListId: null, reorderMode: false };
+
+  if (ui.mode === "index") {
+    const tools = document.createElement("div");
+    tools.style.display = "flex";
+    tools.style.flexWrap = "wrap";
+    tools.style.gap = "8px";
+    tools.style.marginTop = "10px";
+
+    const createManualBtn = document.createElement("button");
+    createManualBtn.type = "button";
+    createManualBtn.className = "pill-btn";
+    createManualBtn.textContent = "Create manual list";
+    createManualBtn.addEventListener("click", function () {
+      const name = window.prompt("List name", "My favourite horror films");
+      if (name === null) return;
+      const desc = window.prompt("Optional description", "");
+      if (desc === null) return;
+      createList(name, desc);
+    });
+
+    const createSmartBtn = document.createElement("button");
+    createSmartBtn.type = "button";
+    createSmartBtn.className = "pill-btn";
+    createSmartBtn.textContent = "Create smart list";
+    createSmartBtn.addEventListener("click", function () {
+      createSmartListPreset();
+    });
+
+    tools.appendChild(createManualBtn);
+    tools.appendChild(createSmartBtn);
+
+    const importListBtn = document.createElement("button");
+    importListBtn.type = "button";
+    importListBtn.className = "pill-btn";
+    importListBtn.textContent = "Import list";
+    importListBtn.addEventListener("click", function () {
+      pickAndImportSingleList();
+    });
+
+    tools.appendChild(importListBtn);
+
+    const reorderBtn = document.createElement("button");
+    reorderBtn.type = "button";
+    reorderBtn.className = "pill-btn";
+    reorderBtn.textContent = ui.reorderMode ? "Done reordering" : "Reorder lists";
+    reorderBtn.addEventListener("click", function () {
+      toggleListsIndexReorderMode();
+    });
+    tools.appendChild(reorderBtn);
+
+    panel.appendChild(tools);
+
+    const listHeading = document.createElement("div");
+    listHeading.className = "settings-subheading";
+    listHeading.style.marginTop = "14px";
+    listHeading.textContent = "Your lists";
+    panel.appendChild(listHeading);
+
+    if (!state.lists.length) {
+      const none = document.createElement("p");
+      none.className = "settings-copy";
+      none.textContent = "No lists yet. Create one above, then add films to it from a film’s details.";
+      panel.appendChild(none);
+      return;
+    }
+
+    // Pinned lists first, then your custom order
+    const lists = state.lists.slice();
+    const idxById = {};
+    for (let i = 0; i < state.lists.length; i++) idxById[state.lists[i].id] = i;
+    lists.sort(function (a, b) {
+      const ap = a.pinned ? 1 : 0;
+      const bp = b.pinned ? 1 : 0;
+      if (ap !== bp) return bp - ap;
+      return (idxById[a.id] ?? 0) - (idxById[b.id] ?? 0);
+    });
+
+    for (let i = 0; i < lists.length; i++) {
+      const l = lists[i];
+
+      const row = document.createElement("div");
+      row.className = "list-row";
+
+      const left = document.createElement("div");
+      left.className = "list-left";
+
+      if (ui.reorderMode) {
+        row.classList.add("reorderable");
+        row.dataset.listId = l.id;
+
+        const handle = document.createElement("div");
+        handle.className = "list-drag-handle";
+        handle.textContent = "≡";
+        handle.title = "Drag to reorder";
+        handle.dataset.listId = l.id;
+        left.appendChild(handle);
+      }
+
+      const cover = document.createElement("div");
+      cover.className = "list-cover";
+      const posters = getListCoverPosterPaths(l);
+      for (let p = 0; p < posters.length; p++) {
+        const img = document.createElement("img");
+        if (posters[p]) {
+          img.src = "https://image.tmdb.org/t/p/w92" + posters[p];
+          img.alt = "";
+        } else {
+          img.alt = "";
+          img.src =
+            "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='92' height='92'%3E%3Crect width='92' height='92' fill='%232a2a2a'/%3E%3C/svg%3E";
+        }
+        cover.appendChild(img);
+      }
+
+      const text = document.createElement("div");
+      text.className = "list-text";
+
+      const name = document.createElement("div");
+      name.className = "list-name";
+      name.textContent = l.name;
+
+      const desc = document.createElement("div");
+      desc.className = "list-desc";
+      desc.textContent = l.description ? l.description : (l.type === "smart" ? "Smart list" : "Manual list");
+
+      const meta = document.createElement("div");
+      meta.className = "list-meta";
+      const count = listFilmCount(l);
+      meta.textContent = count + " film" + (count === 1 ? "" : "s") + (l.type === "smart" ? " • auto-updating" : "");
+
+      text.appendChild(name);
+      text.appendChild(desc);
+      text.appendChild(meta);
+
+      left.appendChild(cover);
+      left.appendChild(text);
+
+      const actions = document.createElement("div");
+      actions.className = "list-actions";
+
+      const pinBtn = document.createElement("button");
+      pinBtn.type = "button";
+      pinBtn.className = "pill-btn pin-btn";
+      pinBtn.title = l.pinned ? "Unpin list" : "Pin list";
+      pinBtn.textContent = l.pinned ? "★" : "☆";
+      pinBtn.addEventListener("click", function () {
+        togglePinList(l.id);
+      });
+
+      const openBtn = document.createElement("button");
+      openBtn.type = "button";
+      openBtn.className = "pill-btn";
+      openBtn.textContent = "Open";
+      openBtn.addEventListener("click", function () {
+        openList(l.id);
+      });
+
+      const descBtn = document.createElement("button");
+      descBtn.type = "button";
+      descBtn.className = "pill-btn";
+      descBtn.textContent = "Edit";
+      descBtn.addEventListener("click", function () {
+        editListDescription(l.id);
+      });
+
+      const deleteBtn = document.createElement("button");
+      deleteBtn.type = "button";
+      deleteBtn.className = "pill-btn";
+      deleteBtn.textContent = "Delete";
+      deleteBtn.addEventListener("click", function () {
+        deleteList(l.id);
+      });
+
+      actions.appendChild(pinBtn);
+      actions.appendChild(openBtn);
+      actions.appendChild(descBtn);
+      actions.appendChild(deleteBtn);
+
+      row.appendChild(left);
+      row.appendChild(actions);
+      panel.appendChild(row);
+    }
+
+    if (ui.reorderMode) {
+      attachListsIndexDragHandlers(panel);
+    }
+
+    return;
+  }
+
+  // Detail view
+  const list = getListById(ui.activeListId);
+  if (!list) {
+    state.listsUi = { mode: "index", activeListId: null, reorderMode: false };
+    saveState();
+    render();
+    return;
+  }
+
+  const topRow = document.createElement("div");
+  topRow.style.display = "flex";
+  topRow.style.alignItems = "center";
+  topRow.style.justifyContent = "space-between";
+  topRow.style.gap = "8px";
+  topRow.style.marginTop = "10px";
+
+  const backBtn = document.createElement("button");
+  backBtn.type = "button";
+  backBtn.className = "pill-btn";
+  backBtn.textContent = "Back";
+  backBtn.addEventListener("click", backToListsIndex);
+
+  const right = document.createElement("div");
+  right.style.display = "flex";
+  right.style.gap = "6px";
+  right.style.flexWrap = "wrap";
+
+  const pinBtn = document.createElement("button");
+  pinBtn.type = "button";
+  pinBtn.className = "pill-btn";
+  pinBtn.textContent = list.pinned ? "Unpin" : "Pin";
+  pinBtn.addEventListener("click", function () {
+    togglePinList(list.id);
+  });
+
+  const descBtn = document.createElement("button");
+  descBtn.type = "button";
+  descBtn.className = "pill-btn";
+  descBtn.textContent = "Edit description";
+  descBtn.addEventListener("click", function () {
+    editListDescription(list.id);
+  });
+
+  if (list.type === "smart") {
+    const refreshBtn = document.createElement("button");
+    refreshBtn.type = "button";
+    refreshBtn.className = "pill-btn";
+    refreshBtn.textContent = "Refresh";
+    refreshBtn.addEventListener("click", function () {
+      refreshSmartList(list.id);
+    });
+
+    const rulesBtn = document.createElement("button");
+    rulesBtn.type = "button";
+    rulesBtn.className = "pill-btn";
+    rulesBtn.textContent = "Edit rules";
+    rulesBtn.addEventListener("click", function () {
+      editSmartListRules(list.id);
+    });
+
+    right.appendChild(refreshBtn);
+    right.appendChild(rulesBtn);
+  } else {
+    const sortSelect = document.createElement("select");
+    sortSelect.className = "controls-select";
+    sortSelect.style.borderRadius = "14px";
+    sortSelect.style.padding = "6px 10px";
+
+    const modes = [
+      ["custom", "Custom order"],
+      ["rating", "Rating (highest)"],
+      ["year", "Year (newest)"],
+      ["title", "Title (A–Z)"]
+    ];
+
+    for (let i = 0; i < modes.length; i++) {
+      const opt = document.createElement("option");
+      opt.value = modes[i][0];
+      opt.textContent = modes[i][1];
+      sortSelect.appendChild(opt);
+    }
+    sortSelect.value = list.sortMode || "custom";
+    sortSelect.addEventListener("change", function (e) {
+      setListSortMode(list.id, e.target.value);
+    });
+
+    const reorderBtn = document.createElement("button");
+    reorderBtn.type = "button";
+    reorderBtn.className = "pill-btn";
+    reorderBtn.textContent = ui.reorderMode ? "Done reordering" : "Reorder";
+    reorderBtn.addEventListener("click", function () {
+      state.listsUi.reorderMode = !state.listsUi.reorderMode;
+      saveState();
+      render();
+    });
+
+    right.appendChild(sortSelect);
+    right.appendChild(reorderBtn);
+  }
+
+  const deleteBtn = document.createElement("button");
+  deleteBtn.type = "button";
+  deleteBtn.className = "pill-btn";
+  deleteBtn.textContent = "Delete";
+  deleteBtn.addEventListener("click", function () {
+    deleteList(list.id);
+  });
+
+  right.appendChild(pinBtn);
+  right.appendChild(descBtn);
+
+const shareBtn = document.createElement("button");
+shareBtn.type = "button";
+shareBtn.className = "pill-btn";
+shareBtn.textContent = "Share";
+shareBtn.addEventListener("click", function () {
+  shareList(list.id);
+});
+
+const exportListBtn = document.createElement("button");
+exportListBtn.type = "button";
+exportListBtn.className = "pill-btn";
+exportListBtn.textContent = "Export";
+exportListBtn.addEventListener("click", function () {
+  exportSingleListToFile(list.id);
+});
+
+  right.appendChild(shareBtn);
+  right.appendChild(exportListBtn);
+
+  right.appendChild(deleteBtn);
+
+  topRow.appendChild(backBtn);
+  topRow.appendChild(right);
+
+  const name = document.createElement("div");
+  name.className = "settings-heading";
+  name.style.marginTop = "12px";
+  name.textContent = list.name;
+
+  const meta = document.createElement("p");
+  meta.className = "settings-copy";
+  meta.textContent =
+    (list.description ? (list.description + " • ") : "") +
+    "Films in this list: " + listFilmCount(list) + ".";
+
+  const hint = document.createElement("p");
+  hint.className = "settings-copy";
+  hint.textContent = list.type === "smart"
+    ? "This list auto-updates from TMDB. Tap Refresh to fetch the latest."
+    : "Tip: open any film’s details and use “Add to list”.";
+
+  panel.appendChild(topRow);
+  panel.appendChild(name);
+  panel.appendChild(meta);
+  panel.appendChild(hint);
+
+  if (list.type === "manual" && ui.reorderMode && (list.sortMode || "custom") === "custom") {
+    ensureCustomOrder(list);
+
+    const listBox = document.createElement("div");
+    listBox.className = "reorder-list";
+
+    // Build title lookup
+    function titleFor(key) {
+      const p = parseEntryKey(key);
+      for (let i = 0; i < list.entries.length; i++) {
+        const e = list.entries[i];
+        const mt = normaliseMediaType(e.mediaType || "movie");
+        if (e.tmdbId === p.tmdbId && mt === p.mediaType) return (e.title || "Untitled") + (p.mediaType === "tv" ? " (TV)" : "");
+      }
+      return "Untitled";
+    }
+
+    for (let i = 0; i < list.customOrder.length; i++) {
+      const id = list.customOrder[i];
+      const item = document.createElement("div");
+      item.className = "reorder-item";
+
+      const t = document.createElement("div");
+      t.className = "reorder-title";
+      t.textContent = titleFor(id);
+
+      const controls = document.createElement("div");
+      controls.className = "reorder-controls";
+
+      const up = document.createElement("button");
+      up.type = "button";
+      up.className = "card-btn";
+      up.title = "Move up";
+      up.textContent = "↑";
+      up.disabled = i === 0;
+      up.addEventListener("click", function () {
+        moveEntryInList(list.id, id, -1);
+      });
+
+      const down = document.createElement("button");
+      down.type = "button";
+      down.className = "card-btn";
+      down.title = "Move down";
+      down.textContent = "↓";
+      down.disabled = i === list.customOrder.length - 1;
+      down.addEventListener("click", function () {
+        moveEntryInList(list.id, id, +1);
+      });
+
+      controls.appendChild(up);
+      controls.appendChild(down);
+
+      item.appendChild(t);
+      item.appendChild(controls);
+      listBox.appendChild(item);
+    }
+
+    panel.appendChild(listBox);
+
+    const note = document.createElement("p");
+    note.className = "settings-copy";
+    note.textContent = "Reordering updates the list’s custom order. On mobile, use the arrows.";
+    panel.appendChild(note);
+  }
+}
+
+      function getViewsForActiveList() {
+  const list = getListById(state.listsUi && state.listsUi.activeListId ? state.listsUi.activeListId : null);
+  if (!list) return [];
+
+  const term = state.searchTerm ? state.searchTerm.trim().toLowerCase() : "";
+
+  // Smart list uses cached TMDB results
+  if (list.type === "smart") {
+    let raw = Array.isArray(list.cachedResults) ? list.cachedResults.slice() : [];
+    if (term) {
+      const tmp = [];
+      for (let i = 0; i < raw.length; i++) {
+        const t = ((raw[i].title || raw[i].name || "")).toLowerCase();
+        if (t.indexOf(term) !== -1) tmp.push(raw[i]);
+      }
+      raw = tmp;
+    }
+
+    const views = [];
+    for (let i = 0; i < raw.length; i++) {
+      const m = raw[i];
+      const mt = inferMediaTypeFromTmdb(m, "movie");
+const linked = linkSavedItemFromTmdb(m, mt);
+views.push({ mode: "remote", tmdbMovie: m, item: linked, mediaType: mt });
+}
+    return applyFiltersAndSort(views);
+  }
+
+  // Manual list
+  let entries = Array.isArray(list.entries) ? list.entries.slice() : [];
+  if (term) {
+    const tmp = [];
+    for (let i = 0; i < entries.length; i++) {
+      const t = (entries[i].title || "").toLowerCase();
+      if (t.indexOf(term) !== -1) tmp.push(entries[i]);
+    }
+    entries = tmp;
+  }
+
+  // Apply per-list sorting
+  const sortMode = list.sortMode || "custom";
+  if (sortMode === "custom") {
+    ensureCustomOrder(list);
+    const map = {};
+    for (let i = 0; i < entries.length; i++) map[entries[i].tmdbId] = entries[i];
+    const ordered = [];
+    for (let i = 0; i < list.customOrder.length; i++) {
+      const id = list.customOrder[i];
+      if (map[id]) ordered.push(map[id]);
+    }
+    // any extras (shouldn't happen)
+    for (let i = 0; i < entries.length; i++) {
+      if (ordered.indexOf(entries[i]) === -1) ordered.push(entries[i]);
+    }
+    entries = ordered;
+  } else if (sortMode === "rating") {
+    entries.sort(function (a, b) { return (b.rating || 0) - (a.rating || 0); });
+  } else if (sortMode === "year") {
+    entries.sort(function (a, b) { return parseInt(b.year || "0", 10) - parseInt(a.year || "0", 10); });
+  } else if (sortMode === "title") {
+    entries.sort(function (a, b) { return String(a.title || "").localeCompare(String(b.title || ""), "en-GB"); });
+  }
+
+  const views = [];
+  for (let i = 0; i < entries.length; i++) {
+    const e = entries[i];
+    const linked = findItemByTmdbId(e.tmdbId, normaliseMediaType(e.mediaType || "movie"));
+    views.push({
+      mode: "remote",
+      tmdbMovie: {
+        id: e.tmdbId,
+        title: e.title,
+        release_date: e.year ? (e.year + "-01-01") : "",
+        poster_path: e.posterPath,
+        vote_average: typeof e.rating === "number" ? e.rating : 0,
+        popularity: 0
+      },
+      item: linked,
+      mediaType: normaliseMediaType(e.mediaType || "movie"),
+      __listEntry: true
+    });
+  }
+
+  return applyFiltersAndSort(views);
+}
 
       function updateCopyForTab() {
         let title = "";
@@ -7246,11 +8735,11 @@ function rqApplyAvatarToEl(imgEl, url, altText) {
           placeholder = "Search within your lists…";
         } else if (state.activeTab === "settings") {
           title = "Settings";
-          subtitle = "Tune ReelQuest to your taste.";
+          subtitle = "Tune CineSafari to your taste.";
           placeholder = "Search is not used in Settings.";
         } else if (state.activeTab === "account") {
           title = "Account";
-          subtitle = "Sign in to sync your ReelQuest across devices.";
+          subtitle = "Sign in to sync your CineSafari across devices.";
           placeholder = "Search is not used in Account.";
         }
 
@@ -7689,39 +9178,7 @@ container.appendChild(pickBtn);
         }
       }
 
-      function renderSocialPage() {
-        const panel = els.socialPanel;
-        if (!panel) return;
-        panel.innerHTML = "";
-
-        const heading = document.createElement("h2");
-        heading.className = "settings-heading";
-        heading.textContent = "Social";
-
-        const copy = document.createElement("p");
-        copy.className = "settings-copy";
-        copy.textContent = "Follow friends, see activity, and share what you’re watching.";
-
-        panel.appendChild(heading);
-        panel.appendChild(copy);
-
-        if (!rqIsSignedIn()) {
-          const msg = document.createElement("div");
-          msg.className = "settings-copy";
-          msg.style.marginTop = "12px";
-          msg.textContent = "Please sign in for Social features!";
-          panel.appendChild(msg);
-          return;
-        }
-
-        const wrap = document.createElement("div");
-        wrap.style.marginTop = "10px";
-        panel.appendChild(wrap);
-
-        try { rqRenderSocialPanel(wrap); } catch (e) { console.error(e); }
-      }
-
-function render() {
+      function render() {
         updateCopyForTab();
 
         for (let i = 0; i < els.tabButtons.length; i++) {
@@ -7734,33 +9191,15 @@ function render() {
         if (els.moodSelect) els.moodSelect.value = state.mood || "any";
         if (els.streamingSelect) els.streamingSelect.value = state.streamingMode || "any";
 
-        try {
-          if (state.activeTab === "social" && !rqIsSignedIn()) {
-            toast("Please sign in for Social features!");
-            state.activeTab = "for-you";
-          }
-        } catch (e) {}
-
         // Always hide all panels first (prevents tab panels "sticking" when navigating)
         if (els.settingsPanel) els.settingsPanel.style.display = "none";
         if (els.accountPanel) els.accountPanel.style.display = "none";
-        if (els.socialPanel) els.socialPanel.style.display = "none";
         if (els.listsPanel) els.listsPanel.style.display = "none";
         if (els.grid) els.grid.style.display = "grid";
         if (els.controlsBar) els.controlsBar.style.display = "flex";
         if (els.message) els.message.style.display = "none";
 
 
-
-        if (state.activeTab === "social") {
-          els.searchForm.style.display = "none";
-          if (els.grid) els.grid.style.display = "none";
-          if (els.controlsBar) els.controlsBar.style.display = "none";
-          if (els.message) els.message.style.display = "none";
-          if (els.socialPanel) els.socialPanel.style.display = "block";
-          renderSocialPage();
-          return;
-        }
 
         if (state.activeTab === "account") {
           els.searchForm.style.display = "none";
@@ -8838,12 +10277,6 @@ els.detailActions.appendChild(orgWrap);
 
       function switchToTab(tab) {
         if (!tab) return;
-        // Gate Social: require sign-in
-        if (tab === "social" && !rqIsSignedIn()) {
-          toast("Please sign in for Social features!");
-          return;
-        }
-
         if (tab === state.activeTab) {
           render();
           return;
@@ -8872,7 +10305,7 @@ els.detailActions.appendChild(orgWrap);
       function buildExportPayload() {
         // Only store user data (not API keys or cached TMDB details)
         const payload = {
-          app: "ReelQuest",
+          app: "CineSafari",
           version: "v1",
           exportedAt: new Date().toISOString(),
           data: {
@@ -8908,7 +10341,7 @@ els.detailActions.appendChild(orgWrap);
           const yyyy = stamp.getFullYear();
           const mm = String(stamp.getMonth() + 1).padStart(2, "0");
           const dd = String(stamp.getDate()).padStart(2, "0");
-          const filename = "reelquest-backup-" + yyyy + "-" + mm + "-" + dd + ".json";
+          const filename = "cinesafari-backup-" + yyyy + "-" + mm + "-" + dd + ".json";
 
           const a = document.createElement("a");
           a.href = url;
@@ -9266,7 +10699,7 @@ function mergeImportedData(imported) {
         return;
       }
 
-      // JSON import (ReelQuest backup)
+      // JSON import (CineSafari backup)
       const parsed = JSON.parse(text);
 
       const wantMerge = window.confirm(
@@ -9359,7 +10792,6 @@ function init() {
           grid: document.getElementById("card-grid"),
           settingsPanel: document.getElementById("settings-panel"),
           listsPanel: document.getElementById("lists-panel"),
-          socialPanel: document.getElementById("social-panel"),
           accountPanel: document.getElementById("account-panel"),
           userChip: document.getElementById("user-chip"),
           userChipAvatar: document.getElementById("user-chip-avatar"),
@@ -9513,7 +10945,7 @@ try { rqCloudSyncOnAuthChange(); } catch (e) {}render();
           });
         }
 
-        updateDebug("ReelQuest ready (JS initialised) • build v16-stability-hotfix");
+        updateDebug("CineSafari ready (JS initialised) • build v16-stability-hotfix");
       }
 
       document.addEventListener("DOMContentLoaded", init);
@@ -9522,7 +10954,7 @@ try { rqCloudSyncOnAuthChange(); } catch (e) {}render();
 
 (function hideCompetitiveFeatureAnalysis(){
   try {
-    const phrase = "ReelQuest Competitive Feature Analysis";
+    const phrase = "CineSafari Competitive Feature Analysis";
     // Look for any element whose text contains the phrase.
     const all = document.querySelectorAll("body *");
     for (let i = 0; i < all.length; i++) {
