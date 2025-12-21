@@ -7779,11 +7779,13 @@ const authSub = document.createElement("div");
             emailInput.style.display = "none";
             linkBtn.style.display = "none";
             signOutBtn.style.display = "inline-flex";
+            try { profileSub.style.display = ""; } catch (e) {}
           } else {
             status.textContent = "Status: Not signed in.";
             emailInput.style.display = "";
             linkBtn.style.display = "";
             signOutBtn.style.display = "none";
+            try { profileSub.style.display = "none"; } catch (e) {}
             try { profileWrap.style.display = "none"; } catch (e) {}
           }
         }
@@ -8045,15 +8047,13 @@ Wait a bit and try again, or configure Custom SMTP for reliable delivery.`);
 
 // Profile (only visible when signed in)
         
-        // Social (friends + activity feed)
-        const socialWrap = document.createElement("div");
-        socialWrap.style.marginTop = "10px";
-        panel.appendChild(socialWrap);
+        // Social is on the Social page (not here)
 
 const profileSub = document.createElement("div");
         profileSub.className = "settings-subheading";
         profileSub.style.marginTop = "14px";
         profileSub.textContent = "Profile";
+        profileSub.style.display = "none";
 
         const profileWrap = document.createElement("div");
         profileWrap.className = "profile-card";
@@ -8267,15 +8267,13 @@ const profileSub = document.createElement("div");
 
             setAuthUi(!!(user && user.email), user && user.email ? user.email : "");
             applyProfileToUi(user, profile);
-            try { await rqRenderSocialPanel(socialWrap); } catch (e) {}
-          } catch (e) {
+            // Social feed rendered on Social page
+} catch (e) {
             console.error(e);
             status.textContent = "Status: Couldn’t check sign-in.";
             setAuthUi(false);
             applyProfileToUi(null, null);
-            try { socialWrap.innerHTML = ""; } catch (e) {}
-            try { rqSocialStopRealtime(); } catch (e) {}
-          }
+}
         })();
       }
 
