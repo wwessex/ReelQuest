@@ -1,7 +1,7 @@
 /* ReelQuest service worker (network-first for navigation)
    Keeps the app loading after updates, and caches TMDB + images opportunistically.
 */
-const VERSION = "rq-sw-v36";
+const VERSION = "rq-sw-v37";
 const SHELL = [
   "./",
   "./index.html",
