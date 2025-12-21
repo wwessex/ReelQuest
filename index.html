@@ -560,6 +560,72 @@
       color: var(--text-softer);
       margin-bottom: 12px;
     }
+    .settings-heading-row{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+    }
+    .settings-heading-row .pill-btn{
+      padding: 7px 12px;
+      font-size: 12px;
+    }
+
+    .cs-modal-backdrop{
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.55);
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      z-index: 9999;
+      padding: 18px;
+    }
+    .cs-modal{
+      width: min(560px, 92vw);
+      background: rgba(17, 24, 39, 0.92);
+      border: 1px solid rgba(255,255,255,0.10);
+      border-radius: 18px;
+      box-shadow: 0 22px 60px rgba(0,0,0,0.55);
+      overflow:hidden;
+    }
+    .cs-modal-header{
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap: 12px;
+      padding: 16px 16px 10px 16px;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+    }
+    .cs-modal-title{
+      font-size: 16px;
+      font-weight: 800;
+      letter-spacing: -0.01em;
+      margin: 0;
+      color: var(--text);
+    }
+    .cs-modal-body{
+      padding: 14px 16px 16px 16px;
+      color: var(--text-soft);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+    .cs-modal-body ul{
+      margin: 10px 0 0 18px;
+      padding: 0;
+    }
+    .cs-modal-body li{
+      margin: 6px 0;
+    }
+    .cs-modal-footer{
+      padding: 12px 16px 16px 16px;
+      display:flex;
+      justify-content:flex-end;
+      gap: 10px
+    }
+
 
     .settings-subheading {
       font-size: 13px;
@@ -2362,6 +2428,104 @@ function toast(message, options) {
 function alertNice(message) {
   toast(message);
 }
+
+function showAboutModal() {
+  try {
+    // If already open, don't duplicate
+    if (document.getElementById("cs-about-backdrop")) return;
+
+    const backdrop = document.createElement("div");
+    backdrop.className = "cs-modal-backdrop";
+    backdrop.id = "cs-about-backdrop";
+
+    const modal = document.createElement("div");
+    modal.className = "cs-modal";
+    modal.setAttribute("role", "dialog");
+    modal.setAttribute("aria-modal", "true");
+
+    const header = document.createElement("div");
+    header.className = "cs-modal-header";
+
+    const titleWrap = document.createElement("div");
+    const title = document.createElement("h3");
+    title.className = "cs-modal-title";
+    title.textContent = "About CineSafari";
+
+    const ver = document.createElement("div");
+    ver.className = "settings-copy";
+    ver.style.margin = "6px 0 0 0";
+    ver.style.opacity = "0.95";
+    try {
+      if (typeof els !== "undefined" && els && els.debug && els.debug.textContent) {
+        ver.textContent = els.debug.textContent;
+      } else {
+        ver.textContent = "";
+      }
+    } catch (e) {
+      ver.textContent = "";
+    }
+
+    titleWrap.appendChild(title);
+    titleWrap.appendChild(ver);
+
+    const closeX = document.createElement("button");
+    closeX.className = "icon-btn";
+    closeX.type = "button";
+    closeX.setAttribute("aria-label", "Close");
+    closeX.innerHTML = "✕";
+
+    header.appendChild(titleWrap);
+    header.appendChild(closeX);
+
+    const body = document.createElement("div");
+    body.className = "cs-modal-body";
+    body.innerHTML =
+      "<p>CineSafari is a simple tracker for films & TV: keep watchlists, log what you’ve watched, add notes, and export your data whenever you like.</p>" +
+      "<ul>" +
+      "<li><b>Privacy-first:</b> your data stays yours — export/backup anytime.</li>" +
+      "<li><b>Import tools:</b> supports IMDb CSV imports and CineSafari backups.</li>" +
+      "<li><b>Sync (optional):</b> sign in to sync across devices.</li>" +
+      "</ul>" +
+      "<p style='margin-top:10px;opacity:.9'>Tip: If something looks stuck after an update, refresh once (or reopen the site) to clear cached files.</p>";
+
+    const footer = document.createElement("div");
+    footer.className = "cs-modal-footer";
+
+    const closeBtn = document.createElement("button");
+    closeBtn.className = "pill-btn";
+    closeBtn.type = "button";
+    closeBtn.textContent = "Close";
+
+    footer.appendChild(closeBtn);
+
+    modal.appendChild(header);
+    modal.appendChild(body);
+    modal.appendChild(footer);
+    backdrop.appendChild(modal);
+    document.body.appendChild(backdrop);
+
+    // Prevent background scroll on iOS
+    try {
+      document.body.dataset.csPrevOverflow = document.body.style.overflow || "";
+      document.body.style.overflow = "hidden";
+    } catch (e) {}
+
+    function close() {
+      try { backdrop.remove(); } catch (e) {}
+      try { document.body.style.overflow = document.body.dataset.csPrevOverflow || ""; } catch (e) {}
+    }
+
+    closeX.addEventListener("click", close);
+    closeBtn.addEventListener("click", close);
+    backdrop.addEventListener("click", function (ev) {
+      if (ev.target === backdrop) close();
+    });
+  } catch (e) {
+    // Fallback: at least show something
+    try { toast("About: CineSafari movie & TV tracker."); } catch (x) {}
+  }
+}
+
 
       function saveState() {
         try {
@@ -5060,9 +5224,23 @@ views.push({ mode: "remote", tmdbMovie: m, item: linked, mediaType: mt });
         const panel = els.settingsPanel;
         panel.innerHTML = "";
 
+        const headingRow = document.createElement("div");
+        headingRow.className = "settings-heading-row";
+
         const heading = document.createElement("h2");
         heading.className = "settings-heading";
         heading.textContent = "Preferences";
+
+        const aboutBtn = document.createElement("button");
+        aboutBtn.className = "pill-btn";
+        aboutBtn.type = "button";
+        aboutBtn.textContent = "About";
+        aboutBtn.addEventListener("click", function(){
+          showAboutModal();
+        });
+
+        headingRow.appendChild(heading);
+        headingRow.appendChild(aboutBtn);
 
         const copy = document.createElement("p");
         copy.className = "settings-copy";
@@ -5096,7 +5274,7 @@ views.push({ mode: "remote", tmdbMovie: m, item: linked, mediaType: mt });
           grid.appendChild(btn);
         }
 
-        panel.appendChild(heading);
+        panel.appendChild(headingRow);
         panel.appendChild(copy);
 
 // App

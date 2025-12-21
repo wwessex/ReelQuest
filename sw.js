@@ -1,7 +1,7 @@
 /* CineSafari service worker (network-first for navigation)
    Keeps the app loading after updates, and caches TMDB + images opportunistically.
 */
-const VERSION = "cs-sw-v10";
+const VERSION = "cs-sw-v11";
 const SHELL = [
   "./",
   "./index.html",
