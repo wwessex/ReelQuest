@@ -1494,7 +1494,6 @@
 <button class="tab-btn" data-tab="watchlist">Watchlist</button>
 <button class="tab-btn" data-tab="watched">Watched</button>
 <button class="tab-btn" data-tab="rewatch">Rewatch</button>
-<button class="tab-btn" data-tab="social">Social</button>
 <button class="tab-btn" data-tab="lists">Lists</button>
 <button class="tab-btn" data-tab="account">Account</button>
 </nav>
@@ -1561,7 +1560,6 @@
 <div class="settings-panel" id="settings-panel"></div>
 <div class="settings-panel" id="lists-panel"></div>
 <div class="settings-panel" id="account-panel"></div>
-<div class="settings-panel" id="social-panel"></div>
 <input accept="application/json" class="file-input-hidden" id="import-input" type="file"/>
 <div class="grid" id="card-grid"></div>
 <div class="debug" id="debug"></div>
@@ -1602,7 +1600,6 @@
 <button class="menu-item" data-tab="discover" type="button">Discover</button>
 <button class="menu-item" data-tab="watchlist" type="button">Watchlist</button>
 <button class="menu-item" data-tab="watched" type="button">Watched</button>
-<button class="menu-item" data-tab="social" type="button">Social</button>
 <button class="menu-item" data-tab="lists" type="button">Lists</button>
 <button class="menu-item" data-tab="account" type="button">Account</button>
 <button class="menu-item" data-tab="settings" type="button">Settings</button>
@@ -1614,6 +1611,33 @@
 </div>
 </div>
 <script>
+
+/* --- Safety net: never let a single runtime error blank the app --- */
+(function () {
+  function rqShowFatal(msg) {
+    try {
+      var el = document.getElementById("message");
+      if (el) {
+        el.textContent = msg;
+        el.style.display = "block";
+      } else {
+        // Last resort: alert only if absolutely nothing else exists.
+        try { alert(msg); } catch (e) {}
+      }
+    } catch (e) {}
+  }
+
+  window.addEventListener("error", function (ev) {
+    try { console.error(ev && ev.error ? ev.error : ev); } catch (e) {}
+    rqShowFatal("ReelQuest hit an error. If this happened after an update, open the site once with ?nosw=1 to clear the cache, then reload.");
+  });
+
+  window.addEventListener("unhandledrejection", function (ev) {
+    try { console.error(ev && ev.reason ? ev.reason : ev); } catch (e) {}
+    rqShowFatal("ReelQuest hit an error. If this happened after an update, open the site once with ?nosw=1 to clear the cache, then reload.");
+  });
+})();
+
 (function () {
       const TMDB_API_KEY = "b24323f85318cb1b12fd1ea0a94420de";
 
@@ -6443,11 +6467,6 @@ function moveEntryInList(listId, entryKeyValue, direction) {
       let rqCurrentUser = null;
       let rqCurrentProfile = null;
 
-      function rqIsSignedIn() {
-        try { return !!(rqCurrentUser && rqCurrentUser.id); } catch (e) { return false; }
-      }
-
-
       function rqGetDisplayName(user, profile) {
         const dn = profile && profile.display_name ? String(profile.display_name).trim() : "";
         if (dn) return dn;
@@ -6459,22 +6478,6 @@ function moveEntryInList(listId, entryKeyValue, direction) {
       // --- Gravatar support (optional) ---
       // If the user hasn't set a custom profile photo URL, we can fall back to Gravatar
       // using the signed-in email (hashed with MD5). Kept dependency-free.
-
-      function rqDefaultDisplayName(user) {
-        try {
-          const u = user || rqCurrentUser;
-          if (!u) return "User";
-          const meta = (u.user_metadata && typeof u.user_metadata === "object") ? u.user_metadata : {};
-          const fromMeta = String(meta.full_name || meta.name || meta.username || "").trim();
-          if (fromMeta) return fromMeta;
-          const email = String(u.email || "").trim();
-          if (email && email.indexOf("@") !== -1) return email.split("@")[0];
-          const id = String(u.id || "").trim();
-          if (id) return "User-" + id.slice(0, 6);
-        } catch (e) {}
-        return "User";
-      }
-
       function rqMd5(str) {
         // Minimal MD5 implementation (public-domain style); fast enough for a single email hash.
         function cmn(q, a, b, x, s, t) {
@@ -6666,30 +6669,13 @@ function rqApplyAvatarToEl(imgEl, url, altText) {
       async function rqEnsureUserProfile(client, user) {
         if (!client || !user || !user.id) return null;
         let profile = await rqFetchUserProfile(client, user.id);
-        if (profile) {
-          // If profile exists but has no display name, set a sensible default (helps Social search)
-          try {
-            const dn = String(profile.display_name || "").trim();
-            if (!dn) {
-              const upd = await client.from("profiles")
-                .update({ display_name: rqDefaultDisplayName(user), country_region: profile.country_region || state.country || null })
-                .eq("id", user.id)
-                .select("id, display_name, avatar_url, country_region")
-                .maybeSingle();
-              if (upd && upd.error) throw upd.error;
-              return upd ? (upd.data || profile) : profile;
-            }
-          } catch (e) {}
-          return profile;
-        }
+        if (profile) return profile;
 
         // Create a profile row if missing (safe if table doesn't exist: will be caught)
         try {
           const ins = await client.from("profiles").upsert({
             id: user.id,
-            display_name: rqDefaultDisplayName(user),
-            avatar_url: null,
-            country_region: state.country || null
+            email: user.email || null
           }, { onConflict: "id" }).select("id, display_name, avatar_url, country_region").maybeSingle();
           if (ins && ins.error) throw ins.error;
           return ins ? ins.data : null;
@@ -7147,8 +7133,6 @@ function rqApplyAvatarToEl(imgEl, url, altText) {
       async function rqSocialSearchProfiles(q) {
         const query = String(q || "").trim();
         if (!query) return [];
-        const localPart = (query.indexOf("@") !== -1) ? query.split("@")[0] : query;
-
         const client = await rqSocialClient();
         if (!client) return [];
 
@@ -7156,14 +7140,14 @@ function rqApplyAvatarToEl(imgEl, url, altText) {
           const res = await client
             .from("profiles")
             .select("id, display_name, avatar_url, country_region")
-            .ilike("display_name", "%" + localPart + "%")
+            .ilike("display_name", "%" + query + "%")
             .limit(20);
 
           if (res && res.error) throw res.error;
 
           const rows = Array.isArray(res && res.data) ? res.data : [];
-          return rows;
-});
+          // Don't show self
+          return rows.filter(function (p) { return !(rqCurrentUser && p && p.id === rqCurrentUser.id); });
         } catch (e) {
           rqSocialMarkMissingIfNeeded(e);
           return [];
@@ -7434,7 +7418,7 @@ function rqApplyAvatarToEl(imgEl, url, altText) {
           if (!rows.length) {
             const empty = document.createElement("div");
             empty.className = "settings-copy";
-            empty.textContent = "No users found. Try searching a friend’s display name (you’ll now appear as “(you)” if you match).";
+            empty.textContent = "No users found.";
             resultsWrap.appendChild(empty);
             return;
           }
@@ -7493,17 +7477,10 @@ function rqApplyAvatarToEl(imgEl, url, altText) {
             const btn = document.createElement("button");
             btn.type = "button";
             btn.className = "pill-btn";
-            const isSelf = !!(rqCurrentUser && p && p.id === rqCurrentUser.id);
             const isFollowing = !!followingMap[p.id];
-            if (isSelf) {
-              btn.textContent = "You";
-              btn.disabled = true;
-            } else {
-              btn.textContent = isFollowing ? "Unfollow" : "Follow";
-            }
+            btn.textContent = isFollowing ? "Unfollow" : "Follow";
 
             btn.addEventListener("click", async function () {
-              if (isSelf) return;
               btn.disabled = true;
               try {
                 if (isFollowing) {
@@ -7969,8 +7946,10 @@ const authSub = document.createElement("div");
 
 // Profile (only visible when signed in)
         
-        // Social moved to dedicated Social page
-        const socialWrap = null;
+        // Social (friends + activity feed)
+        const socialWrap = document.createElement("div");
+        socialWrap.style.marginTop = "10px";
+        panel.appendChild(socialWrap);
 
 const profileSub = document.createElement("div");
         profileSub.className = "settings-subheading";
@@ -8127,7 +8106,7 @@ const profileSub = document.createElement("div");
           headName.textContent = name;
           headEmail.textContent = user.email || "";
           rqApplyAvatarToEl(avatarImg, rqResolveAvatarUrl(user, profile, 128), name);
-          displayNameInput.value = profile && profile.display_name ? String(profile.display_name) : rqDefaultDisplayName(user);
+          displayNameInput.value = profile && profile.display_name ? String(profile.display_name) : "";
           avatarUrlInput.value = profile && profile.avatar_url ? String(profile.avatar_url) : "";
           const cc = normaliseCountryCode((profile && profile.country_region) ? profile.country_region : "", state.country || "GB");
           countrySelect.value = cc;
@@ -8142,10 +8121,8 @@ const profileSub = document.createElement("div");
             saveHint.textContent = "Saving…";
             const payload = {
               id: user.id,
-              display_name: (function () {
-                const v = String(displayNameInput.value || "").trim();
-                return v ? v : rqDefaultDisplayName(user);
-              })(),
+              email: user.email || null,
+              display_name: String(displayNameInput.value || "").trim() || null,
               avatar_url: String(avatarUrlInput.value || "").trim() || null,
               country_region: String(countrySelect.value || "").trim() || null
             };
@@ -8191,7 +8168,7 @@ const profileSub = document.createElement("div");
 
             setAuthUi(!!(user && user.email), user && user.email ? user.email : "");
             applyProfileToUi(user, profile);
-            // Social now lives on the Social page
+            try { await rqRenderSocialPanel(socialWrap); } catch (e) {}
           } catch (e) {
             console.error(e);
             status.textContent = "Status: Couldn’t check sign-in.";
@@ -8202,42 +8179,6 @@ const profileSub = document.createElement("div");
           }
         })();
       }
-
-      function renderSocialPage() {
-        const panel = els.socialPanel;
-        if (!panel) return;
-        panel.innerHTML = "";
-
-        const heading = document.createElement("h2");
-        heading.className = "settings-heading";
-        heading.textContent = "Social";
-
-        const copy = document.createElement("p");
-        copy.className = "settings-copy";
-        copy.textContent = "Follow friends, see activity, and share what you’re watching.";
-
-        panel.appendChild(heading);
-        panel.appendChild(copy);
-
-        // Gate: must be signed in
-        try {
-          if (!rqIsSignedIn()) {
-            const msg = document.createElement("div");
-            msg.className = "settings-copy";
-            msg.style.marginTop = "12px";
-            msg.textContent = "Please sign in for Social features!";
-            panel.appendChild(msg);
-            return;
-          }
-        } catch (e) {}
-
-        const wrap = document.createElement("div");
-        wrap.style.marginTop = "10px";
-        panel.appendChild(wrap);
-
-        try { rqRenderSocialPanel(wrap); } catch (e) { rqSocialMarkMissingIfNeeded(e); }
-      }
-
 
 
 function renderListsPanel() {
@@ -9250,34 +9191,15 @@ container.appendChild(pickBtn);
         if (els.moodSelect) els.moodSelect.value = state.mood || "any";
         if (els.streamingSelect) els.streamingSelect.value = state.streamingMode || "any";
 
-        // If someone tries to land on Social while signed out, bounce back
-        try {
-          if (state.activeTab === "social" && (!rqIsSignedIn())) {
-            toast("Please sign in for Social features!");
-            state.activeTab = "for-you";
-          }
-        } catch (e) {}
-
         // Always hide all panels first (prevents tab panels "sticking" when navigating)
         if (els.settingsPanel) els.settingsPanel.style.display = "none";
         if (els.accountPanel) els.accountPanel.style.display = "none";
         if (els.listsPanel) els.listsPanel.style.display = "none";
-        if (els.socialPanel) els.socialPanel.style.display = "none";
         if (els.grid) els.grid.style.display = "grid";
         if (els.controlsBar) els.controlsBar.style.display = "flex";
         if (els.message) els.message.style.display = "none";
 
 
-
-        if (state.activeTab === "social") {
-          els.searchForm.style.display = "none";
-          if (els.grid) els.grid.style.display = "none";
-          if (els.controlsBar) els.controlsBar.style.display = "none";
-          if (els.message) els.message.style.display = "none";
-          if (els.socialPanel) els.socialPanel.style.display = "block";
-          renderSocialPage();
-          return;
-        }
 
         if (state.activeTab === "account") {
           els.searchForm.style.display = "none";
@@ -10355,19 +10277,6 @@ els.detailActions.appendChild(orgWrap);
 
       function switchToTab(tab) {
         if (!tab) return;
-        // Gate Social: require sign-in
-        if (tab === "social") {
-          try {
-            if (!rqIsSignedIn()) {
-              toast("Please sign in for Social features!");
-              return;
-            }
-          } catch (e) {
-            toast("Please sign in for Social features!");
-            return;
-          }
-        }
-
         if (tab === state.activeTab) {
           render();
           return;
@@ -10884,7 +10793,6 @@ function init() {
           settingsPanel: document.getElementById("settings-panel"),
           listsPanel: document.getElementById("lists-panel"),
           accountPanel: document.getElementById("account-panel"),
-          socialPanel: document.getElementById("social-panel"),
           userChip: document.getElementById("user-chip"),
           userChipAvatar: document.getElementById("user-chip-avatar"),
           userChipName: document.getElementById("user-chip-name"),
@@ -11037,7 +10945,7 @@ try { rqCloudSyncOnAuthChange(); } catch (e) {}render();
           });
         }
 
-        updateDebug("ReelQuest ready (JS initialised) • build v15-profile-account-fix");
+        updateDebug("ReelQuest ready (JS initialised) • build v16-stability-hotfix");
       }
 
       document.addEventListener("DOMContentLoaded", init);
