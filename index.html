@@ -5406,6 +5406,17 @@ tvBtn.addEventListener("click", function () {
         toolsRow.appendChild(exportFullCsvBtn);
         toolsRow.appendChild(importBtn);
 
+        const importImdbBtn = document.createElement("button");
+        importImdbBtn.type = "button";
+        importImdbBtn.className = "pill-btn";
+        importImdbBtn.textContent = "Import from IMDb";
+        importImdbBtn.addEventListener("click", function () {
+          try { openImdbImportWizard(); } catch (e) { console.error(e); toast("Couldn’t open IMDb import."); }
+        });
+
+        toolsRow.appendChild(importImdbBtn);
+
+
         // Auto-backup toggle + snapshots
         const snapWrap = document.createElement("div");
         snapWrap.style.marginTop = "10px";
@@ -10867,6 +10878,202 @@ function mergeImportedData(imported) {
 
   reader.readAsText(file);
 }
+
+// --- IMDb Import Wizard (CSV upload flow) ---
+// This is the "feels direct" IMDb import: user downloads their IMDb CSVs and uploads them here.
+function openImdbImportWizard() {
+  // Build overlay
+  const overlay = document.createElement("div");
+  overlay.style.position = "fixed";
+  overlay.style.inset = "0";
+  overlay.style.zIndex = "99999";
+  overlay.style.background = "rgba(0,0,0,0.55)";
+  overlay.style.backdropFilter = "blur(6px)";
+  overlay.style.display = "flex";
+  overlay.style.alignItems = "flex-start";
+  overlay.style.justifyContent = "center";
+  overlay.style.padding = "18px";
+
+  const card = document.createElement("div");
+  card.style.width = "min(720px, 100%)";
+  card.style.marginTop = "8px";
+  card.style.borderRadius = "18px";
+  card.style.padding = "16px";
+  card.style.border = "1px solid rgba(255,255,255,0.12)";
+  card.style.background = "rgba(20,24,40,0.92)";
+  card.style.boxShadow = "0 24px 60px rgba(0,0,0,0.45)";
+  card.style.color = "inherit";
+
+  const head = document.createElement("div");
+  head.style.display = "flex";
+  head.style.alignItems = "center";
+  head.style.justifyContent = "space-between";
+  head.style.gap = "10px";
+
+  const title = document.createElement("div");
+  title.style.fontSize = "18px";
+  title.style.fontWeight = "700";
+  title.textContent = "Import from IMDb";
+
+  const closeBtn = document.createElement("button");
+  closeBtn.type = "button";
+  closeBtn.className = "pill-btn";
+  closeBtn.textContent = "Close";
+  closeBtn.addEventListener("click", function () {
+    try { document.body.removeChild(overlay); } catch (e) {}
+  });
+
+  head.appendChild(title);
+  head.appendChild(closeBtn);
+
+  const help = document.createElement("div");
+  help.style.marginTop = "10px";
+  help.style.fontSize = "14px";
+  help.style.opacity = "0.92";
+  help.innerHTML =
+    "<b>Step 1:</b> On IMDb (desktop), export your lists as CSV.<br/>" +
+    "<b>Step 2:</b> Upload <code>watchlist.csv</code> and/or <code>ratings.csv</code> below.<br/>" +
+    "<span style='opacity:.85'>Tip: IMDb export can be awkward on mobile — desktop mode works best.</span>";
+
+  const grid = document.createElement("div");
+  grid.style.display = "grid";
+  grid.style.gridTemplateColumns = "1fr";
+  grid.style.gap = "12px";
+  grid.style.marginTop = "14px";
+
+  function makeFileRow(labelText, hintText) {
+    const wrap = document.createElement("div");
+    wrap.style.border = "1px solid rgba(255,255,255,0.10)";
+    wrap.style.borderRadius = "14px";
+    wrap.style.padding = "12px";
+    wrap.style.background = "rgba(0,0,0,0.18)";
+
+    const label = document.createElement("div");
+    label.style.fontWeight = "700";
+    label.textContent = labelText;
+
+    const hint = document.createElement("div");
+    hint.style.marginTop = "4px";
+    hint.style.fontSize = "13px";
+    hint.style.opacity = "0.9";
+    hint.textContent = hintText;
+
+    const row = document.createElement("div");
+    row.style.display = "flex";
+    row.style.flexWrap = "wrap";
+    row.style.gap = "10px";
+    row.style.alignItems = "center";
+    row.style.marginTop = "10px";
+
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".csv,text/csv";
+    input.style.flex = "1 1 240px";
+
+    const name = document.createElement("div");
+    name.style.fontSize = "13px";
+    name.style.opacity = "0.9";
+    name.textContent = "No file selected";
+
+    input.addEventListener("change", function () {
+      const f = input.files && input.files[0] ? input.files[0] : null;
+      name.textContent = f ? (f.name || "selected.csv") : "No file selected";
+    });
+
+    wrap.appendChild(label);
+    wrap.appendChild(hint);
+    row.appendChild(input);
+    row.appendChild(name);
+    wrap.appendChild(row);
+
+    return { wrap, input };
+  }
+
+  const watchRow = makeFileRow("IMDb Watchlist CSV", "Imports into your Watchlist (planned).");
+  const ratingsRow = makeFileRow("IMDb Ratings CSV", "Marks titles as watched and imports ratings.");
+
+  const actions = document.createElement("div");
+  actions.style.display = "flex";
+  actions.style.flexWrap = "wrap";
+  actions.style.gap = "10px";
+  actions.style.marginTop = "14px";
+
+  const importBothBtn = document.createElement("button");
+  importBothBtn.type = "button";
+  importBothBtn.className = "pill-btn";
+  importBothBtn.textContent = "Import selected files";
+
+  const cancelBtn = document.createElement("button");
+  cancelBtn.type = "button";
+  cancelBtn.className = "pill-btn";
+  cancelBtn.textContent = "Cancel";
+  cancelBtn.addEventListener("click", function () {
+    try { document.body.removeChild(overlay); } catch (e) {}
+  });
+
+  actions.appendChild(importBothBtn);
+  actions.appendChild(cancelBtn);
+
+  async function readFileText(file) {
+    return await new Promise(function (resolve, reject) {
+      const r = new FileReader();
+      r.onload = function () { resolve(String(r.result || "")); };
+      r.onerror = function () { reject(new Error("read failed")); };
+      r.readAsText(file);
+    });
+  }
+
+  importBothBtn.addEventListener("click", async function () {
+    const wf = watchRow.input.files && watchRow.input.files[0] ? watchRow.input.files[0] : null;
+    const rf = ratingsRow.input.files && ratingsRow.input.files[0] ? ratingsRow.input.files[0] : null;
+
+    if (!wf && !rf) {
+      toast("Pick at least one CSV file.");
+      return;
+    }
+
+    importBothBtn.disabled = true;
+    importBothBtn.textContent = "Importing…";
+
+    try {
+      if (wf) {
+        const wtxt = await readFileText(wf);
+        // Ensure filename hint helps heuristics (watchlist should import as watchlist)
+        await importFromCsvText(wtxt, wf.name || "watchlist.csv");
+      }
+      if (rf) {
+        const rtxt = await readFileText(rf);
+        await importFromCsvText(rtxt, rf.name || "ratings.csv");
+      }
+      toast("IMDb import complete.");
+      try { document.body.removeChild(overlay); } catch (e) {}
+    } catch (e) {
+      console.error(e);
+      alertNice("Couldn’t import those IMDb files.");
+      importBothBtn.disabled = false;
+      importBothBtn.textContent = "Import selected files";
+    }
+  });
+
+  grid.appendChild(watchRow.wrap);
+  grid.appendChild(ratingsRow.wrap);
+
+  card.appendChild(head);
+  card.appendChild(help);
+  card.appendChild(grid);
+  card.appendChild(actions);
+
+  overlay.addEventListener("click", function (e) {
+    if (e.target === overlay) {
+      try { document.body.removeChild(overlay); } catch (x) {}
+    }
+  });
+
+  overlay.appendChild(card);
+  document.body.appendChild(overlay);
+}
+
+
 
 
       // PWA (optional): service worker + install hint
