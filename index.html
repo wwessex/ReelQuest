@@ -7139,30 +7139,46 @@ function rqApplyAvatarToEl(imgEl, url, altText) {
       }
 
       async function rqSocialSearchProfiles(q) {
-        const query = String(q || "").trim();
+        const raw = String(q || "").trim();
+        const query = raw; // Postgres ILIKE is case-insensitive already
         if (!query) return [];
         const client = await rqSocialClient();
         if (!client) return [];
 
-        try {
-          const res = await client
+        // Debug channel (shown in UI if search returns nothing)
+        try { window.__csSocialLastError = null; } catch (e) {}
+
+        const like = "%" + query + "%";
+
+        async function runSearch(columnName) {
+          return await client
             .from("profiles")
-            .select("id, display_name, avatar_url, country_region")
-            .ilike("display_name", "%" + query + "%")
+            .select("*")
+            .ilike(columnName, like)
             .limit(20);
+        }
+
+        try {
+          // Prefer display_name
+          let res = await runSearch("display_name");
+
+          // Some schemas use "username" instead
+          if (res && res.error && /display_name/i.test(String(res.error.message || ""))) {
+            res = await runSearch("username");
+          }
 
           if (res && res.error) throw res.error;
 
           const rows = Array.isArray(res && res.data) ? res.data : [];
-          // Don't show self
-          return rows.filter(function (p) { return !(rqCurrentUser && p && p.id === rqCurrentUser.id); });
+          return rows; // include self; UI will mark "(you)"
         } catch (e) {
           rqSocialMarkMissingIfNeeded(e);
+          try { window.__csSocialLastError = String((e && (e.message || e.details)) || e || "Unknown error"); } catch (x) {}
           return [];
         }
       }
 
-      async function rqSocialIsFollowingMap(targetIds) {
+async function rqSocialIsFollowingMap(targetIds) {
         const ids = Array.isArray(targetIds) ? targetIds.filter(Boolean) : [];
         if (!ids.length || !rqCurrentUser || !rqCurrentUser.id) return {};
         const client = await rqSocialClient();
@@ -7427,6 +7443,17 @@ function rqApplyAvatarToEl(imgEl, url, altText) {
             const empty = document.createElement("div");
             empty.className = "settings-copy";
             empty.textContent = "No users found.";
+            try {
+              if (window.__csSocialLastError) {
+                const err = document.createElement("div");
+                err.className = "settings-copy";
+                err.style.marginTop = "6px";
+                err.style.opacity = "0.9";
+                err.textContent = "Search error: " + window.__csSocialLastError;
+                resultsWrap.appendChild(err);
+              }
+            } catch (e) {}
+
             resultsWrap.appendChild(empty);
             return;
           }
@@ -7469,7 +7496,9 @@ function rqApplyAvatarToEl(imgEl, url, altText) {
             name.style.whiteSpace = "nowrap";
             name.style.overflow = "hidden";
             name.style.textOverflow = "ellipsis";
-            name.textContent = p.display_name || "(no name)";
+            const isSelf = !!(rqCurrentUser && p && p.id === rqCurrentUser.id);
+            const disp = (p.display_name || p.username || ("User-" + String(p.id || "").slice(0, 6)));
+            name.textContent = String(disp || "(no name)") + (isSelf ? " (you)" : "");
 
             const meta = document.createElement("div");
             meta.style.fontSize = "12px";
@@ -7486,9 +7515,15 @@ function rqApplyAvatarToEl(imgEl, url, altText) {
             btn.type = "button";
             btn.className = "pill-btn";
             const isFollowing = !!followingMap[p.id];
-            btn.textContent = isFollowing ? "Unfollow" : "Follow";
+            if (isSelf) {
+              btn.textContent = "You";
+              btn.disabled = true;
+            } else {
+              btn.textContent = isFollowing ? "Unfollow" : "Follow";
+            }
 
             btn.addEventListener("click", async function () {
+              if (isSelf) return;
               btn.disabled = true;
               try {
                 if (isFollowing) {
