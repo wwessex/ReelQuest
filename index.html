@@ -7793,30 +7793,26 @@ const authSub = document.createElement("div");
             });
 
             if (error) {
-              // Common Supabase default SMTP limitation: only sends to pre-authorized team addresses.
               const msg = String(error.message || error.error_description || error);
               console.error("Magic link error:", error);
 
+              // Supabase default SMTP is restricted/limited. This will surface the real reason instead of silently failing.
               if (/not authorized/i.test(msg) || /Email address not authorized/i.test(msg)) {
-                alertNice(
-                  "Supabase didn’t send an email because the default SMTP only sends to pre-authorized team emails.
+                alertNice(`Magic link NOT sent.
 
-" +
-                  "Fix: Supabase Dashboard → Auth → SMTP → set up a custom SMTP provider (recommended),
-" +
-                  "or add this email as an Organization member for testing."
-                );
+Supabase default email sending only sends to pre-authorized team/org emails.
+
+Fix:
+• Supabase Dashboard → Auth → SMTP → set up Custom SMTP (recommended)
+or
+• Add this email as an Organization member for testing.`);
               } else if (/rate/i.test(msg) || /too many/i.test(msg) || /429/.test(msg)) {
-                alertNice(
-                  "Rate limit hit. Supabase’s default email service is heavily limited.
+                alertNice(`Rate limit hit.
 
-" +
-                  "Wait a bit and try again, or set up a custom SMTP provider for reliable delivery."
-                );
+Supabase default email sending is heavily limited.
+Wait a bit and try again, or configure Custom SMTP for reliable delivery.`);
               } else {
-                alertNice("Couldn’t send magic link:
-
-" + msg);
+                alertNice("Couldn’t send magic link:\n\n" + msg);
               }
               return;
             }
@@ -10976,8 +10972,7 @@ function init() {
         try { initSupabaseAuthOnLoad(); } catch (e) {}
         try { rqRefreshAuthState("init"); } catch (e) {}
         
-try { rqCloudSyncOnAuthChange(); } catch (e) {}
-        render();
+try { rqCloudSyncOnAuthChange(); } catch (e) {}render();
 
         // Initial load for the starting tab
         if (state.activeTab === "discover") {
