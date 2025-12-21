@@ -10976,7 +10976,8 @@ function init() {
         try { initSupabaseAuthOnLoad(); } catch (e) {}
         try { rqRefreshAuthState("init"); } catch (e) {}
         
-try { rqCloudSyncOnAuthChange(); } catch (e) {}render();
+try { rqCloudSyncOnAuthChange(); } catch (e) {}
+        render();
 
         // Initial load for the starting tab
         if (state.activeTab === "discover") {
@@ -11088,107 +11089,10 @@ try { rqCloudSyncOnAuthChange(); } catch (e) {}render();
           });
         }
 
-        updateDebug("CineSafari ready (JS initialised) • build v16.1-crash-overlay");
+        updateDebug("CineSafari ready (JS initialised) • build v16-stability-hotfix");
       }
 
-      
-      // ---------- Crash overlay (so "blank page" becomes actionable) ----------
-      function rqShowFatal(title, err) {
-        try {
-          const existing = document.getElementById("fatal-overlay");
-          if (existing) existing.remove();
-
-          const wrap = document.createElement("div");
-          wrap.id = "fatal-overlay";
-          wrap.style.position = "fixed";
-          wrap.style.inset = "0";
-          wrap.style.background = "rgba(0,0,0,0.85)";
-          wrap.style.zIndex = "999999";
-          wrap.style.padding = "18px";
-          wrap.style.overflow = "auto";
-          wrap.style.fontFamily = "system-ui, -apple-system, Segoe UI, Roboto, sans-serif";
-          wrap.style.color = "#fff";
-
-          const h = document.createElement("h2");
-          h.textContent = title || "CineSafari crashed";
-          h.style.margin = "0 0 10px 0";
-
-          const p = document.createElement("p");
-          p.textContent = "This usually means a JavaScript error or a cached Service Worker version. The details below help fix it.";
-          p.style.opacity = "0.9";
-          p.style.margin = "0 0 12px 0";
-
-          const pre = document.createElement("pre");
-          const msg = (err && (err.stack || err.message)) ? (err.stack || err.message) : String(err || "Unknown error");
-          pre.textContent = msg;
-          pre.style.whiteSpace = "pre-wrap";
-          pre.style.wordBreak = "break-word";
-          pre.style.background = "rgba(255,255,255,0.08)";
-          pre.style.padding = "12px";
-          pre.style.borderRadius = "10px";
-          pre.style.fontSize = "12px";
-
-          const btnRow = document.createElement("div");
-          btnRow.style.display = "flex";
-          btnRow.style.gap = "10px";
-          btnRow.style.marginTop = "12px";
-
-          const copyBtn = document.createElement("button");
-          copyBtn.textContent = "Copy error";
-          copyBtn.style.padding = "10px 12px";
-          copyBtn.style.borderRadius = "10px";
-          copyBtn.style.border = "0";
-          copyBtn.style.cursor = "pointer";
-          copyBtn.addEventListener("click", async function () {
-            try {
-              await navigator.clipboard.writeText(msg);
-              copyBtn.textContent = "Copied!";
-              setTimeout(() => (copyBtn.textContent = "Copy error"), 1200);
-            } catch (e) {
-              alert("Copy failed. Please screenshot this error.");
-            }
-          });
-
-          const reloadBtn = document.createElement("button");
-          reloadBtn.textContent = "Reload";
-          reloadBtn.style.padding = "10px 12px";
-          reloadBtn.style.borderRadius = "10px";
-          reloadBtn.style.border = "0";
-          reloadBtn.style.cursor = "pointer";
-          reloadBtn.addEventListener("click", function () {
-            try { location.reload(); } catch (e) {}
-          });
-
-          btnRow.appendChild(copyBtn);
-          btnRow.appendChild(reloadBtn);
-
-          wrap.appendChild(h);
-          wrap.appendChild(p);
-          wrap.appendChild(pre);
-          wrap.appendChild(btnRow);
-
-          document.body.appendChild(wrap);
-        } catch (e2) {
-          // last resort
-          alert("CineSafari crashed: " + (err && err.message ? err.message : String(err)));
-        }
-      }
-
-      window.addEventListener("error", function (e) {
-        try { rqShowFatal("CineSafari crashed (error)", e && e.error ? e.error : e); } catch (x) {}
-      });
-
-      window.addEventListener("unhandledrejection", function (e) {
-        try { rqShowFatal("CineSafari crashed (unhandled promise)", e && e.reason ? e.reason : e); } catch (x) {}
-      });
-
-      function safeInit() {
-        try { init(); } catch (e) { rqShowFatal("CineSafari crashed during startup", e); }
-      }
-      // -----------------------------------------------------------------------
-
-      document.addEventListener("DOMContentLoaded", safeInit);
-
+      document.addEventListener("DOMContentLoaded", init);
     })();
 
 

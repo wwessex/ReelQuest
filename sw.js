@@ -1,39 +1,89 @@
-/* CineSafari Service Worker (RECOVERY MODE)
-   - Clears old caches on activation
-   - Network-only fetch (avoids serving stale/broken cached app)
+/* CineSafari service worker (network-first for navigation)
+   Keeps the app loading after updates, and caches TMDB + images opportunistically.
 */
-const VERSION = "cs-sw-recover-1";
+const VERSION = "cs-sw-v6";
+const SHELL = [
+  "./",
+  "./index.html",
+  "./manifest.webmanifest",
+  "./icon-192.png",
+  "./icon-512.png",
+  "./sw.js"
+];
 
 self.addEventListener("install", (event) => {
-  self.skipWaiting();
+  event.waitUntil((async () => {
+    const cache = await caches.open(VERSION);
+    await cache.addAll(SHELL);
+    self.skipWaiting();
+  })());
 });
 
 self.addEventListener("activate", (event) => {
   event.waitUntil((async () => {
-    try {
-      const keys = await caches.keys();
-      await Promise.all(keys.map((k) => caches.delete(k)));
-    } catch (e) {}
-    try { await self.clients.claim(); } catch (e) {}
+    const keys = await caches.keys();
+    await Promise.all(keys.map((k) => (k === VERSION ? Promise.resolve() : caches.delete(k))));
+    self.clients.claim();
   })());
 });
 
+async function cacheFirst(request) {
+  const cache = await caches.open(VERSION);
+  const cached = await cache.match(request);
+  if (cached) return cached;
+  const res = await fetch(request);
+  if (res && res.status === 200) cache.put(request, res.clone()).catch(() => {});
+  return res;
+}
+
+async function staleWhileRevalidate(request, cacheName) {
+  const cache = await caches.open(cacheName);
+  const cached = await cache.match(request);
+  const fetchPromise = fetch(request).then((res) => {
+    if (res && (res.status === 200 || res.type === "opaque")) cache.put(request, res.clone()).catch(() => {});
+    return res;
+  }).catch(() => null);
+  return cached || (await fetchPromise) || cached;
+}
+
 self.addEventListener("fetch", (event) => {
   const req = event.request;
-  if (!req || req.method !== "GET") return;
+  if (req.method !== "GET") return;
 
-  event.respondWith((async () => {
-    try {
-      // Always prefer the network to avoid stale cached HTML/JS.
-      return await fetch(req);
-    } catch (e) {
-      // Minimal offline fallback: try cache, else plain text.
+  const url = new URL(req.url);
+  const sameOrigin = url.origin === self.location.origin;
+
+  // Navigation: network-first, then cache, then fallback to cached index
+  if (req.mode === "navigate") {
+    event.respondWith((async () => {
       try {
-        const cache = await caches.open("cinesafari-offline-" + VERSION);
-        const hit = await cache.match(req);
-        if (hit) return hit;
-      } catch (e2) {}
-      return new Response("Offline", { status: 503, headers: { "Content-Type": "text/plain; charset=utf-8" } });
-    }
-  })());
+        const fresh = await fetch(req);
+        const cache = await caches.open(VERSION);
+        if (fresh && fresh.status === 200) {
+          // Keep the exact navigation response cached too
+          cache.put(req, fresh.clone()).catch(() => {});
+          return fresh;
+        }
+      } catch (e) {}
+      const cache = await caches.open(VERSION);
+      const cachedNav = await cache.match(req);
+      if (cachedNav) return cachedNav;
+      const cachedIndex = await cache.match("./index.html");
+      if (cachedIndex) return cachedIndex;
+      return fetch(req);
+    })());
+    return;
+  }
+
+  // App assets: cache-first
+  if (sameOrigin && (url.pathname.endsWith(".png") || url.pathname.endsWith(".webmanifest") || url.pathname.endsWith(".js"))) {
+    event.respondWith(cacheFirst(req));
+    return;
+  }
+
+  // TMDB + images: stale-while-revalidate
+  if (url.hostname.includes("themoviedb.org") || url.hostname.includes("tmdb.org")) {
+    event.respondWith(staleWhileRevalidate(req, VERSION + "-tmdb"));
+    return;
+  }
 });
