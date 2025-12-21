@@ -8919,6 +8919,7 @@ els.detailActions.appendChild(orgWrap);
           return;
         }
         state.activeTab = tab;
+        kickViewAnimation();
         state.searchTerm = "";
         if (els.searchInput) els.searchInput.value = "";
         if (tab === "for-you") {
@@ -9606,6 +9607,72 @@ function showInstallHint() {
   }
 }
 
+/* -----------------------------
+   UI polish: Glass motion + ripple
+   ----------------------------- */
+function kickViewAnimation() {
+  try {
+    if (!els || !els.main) return;
+    // Toggle a class to trigger CSS keyframe animations.
+    els.main.classList.remove("cs-view-anim");
+    // Force reflow so the animation restarts reliably.
+    void els.main.offsetWidth;
+    els.main.classList.add("cs-view-anim");
+    window.clearTimeout(kickViewAnimation._t);
+    kickViewAnimation._t = window.setTimeout(function () {
+      try { els.main.classList.remove("cs-view-anim"); } catch (e) {}
+    }, 260);
+  } catch (e) {}
+}
+
+function setupRipples() {
+  try {
+    // Use a single delegated listener to keep it cheap.
+    document.addEventListener(
+      "pointerdown",
+      function (e) {
+        try {
+          const target = e.target && e.target.closest
+            ? e.target.closest(
+                ".theme-toggle, .pill-btn, .tab-btn, .menu-item, .card-btn, .toast-btn, .user-chip"
+              )
+            : null;
+          if (!target) return;
+          if (target.disabled) return;
+          if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+
+          const rect = target.getBoundingClientRect();
+          const size = Math.max(rect.width, rect.height) * 1.25;
+
+          const ink = document.createElement("span");
+          ink.className = "ripple-ink";
+          ink.style.width = size + "px";
+          ink.style.height = size + "px";
+          ink.style.left = e.clientX - rect.left - size / 2 + "px";
+          ink.style.top = e.clientY - rect.top - size / 2 + "px";
+
+          target.classList.add("ripple-host");
+          target.appendChild(ink);
+
+          ink.addEventListener(
+            "animationend",
+            function () {
+              try { ink.remove(); } catch (err) {}
+              try {
+                if (!target.querySelector(".ripple-ink")) {
+                  target.classList.remove("ripple-host");
+                }
+              } catch (err) {}
+            },
+            { once: true }
+          );
+        } catch (err) {}
+      },
+      { passive: true }
+    );
+  } catch (e) {}
+}
+
 async function init() {
         try {
           const qs = new URLSearchParams(location.search || "");
@@ -9653,8 +9720,16 @@ async function init() {
           menuOverlay: document.getElementById("menu-overlay"),
           menuClose: document.getElementById("menu-close"),
           menuItems: document.querySelectorAll(".menu-item"),
-          brandHome: document.getElementById("brand-home")
+          brandHome: document.getElementById("brand-home"),
+          app: document.querySelector(".app"),
+          main: document.querySelector(".app > main"),
+          pagehead: document.getElementById("pagehead")
         };
+
+        // UI polish
+        setupRipples();
+        kickViewAnimation();
+
 
         try { await csStorage.migrateFromLocalStorage(STORAGE_KEY); } catch (e) {}
         await loadState();
