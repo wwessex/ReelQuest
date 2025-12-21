@@ -7162,8 +7162,8 @@ function rqApplyAvatarToEl(imgEl, url, altText) {
           if (res && res.error) throw res.error;
 
           const rows = Array.isArray(res && res.data) ? res.data : [];
-          // Don't show self
-          return rows.filter(function (p) { return !(rqCurrentUser && p && p.id === rqCurrentUser.id); });
+          return rows;
+});
         } catch (e) {
           rqSocialMarkMissingIfNeeded(e);
           return [];
@@ -7434,7 +7434,7 @@ function rqApplyAvatarToEl(imgEl, url, altText) {
           if (!rows.length) {
             const empty = document.createElement("div");
             empty.className = "settings-copy";
-            empty.textContent = "No users found.";
+            empty.textContent = "No users found. Try searching a friend’s display name (you’ll now appear as “(you)” if you match).";
             resultsWrap.appendChild(empty);
             return;
           }
@@ -7493,10 +7493,17 @@ function rqApplyAvatarToEl(imgEl, url, altText) {
             const btn = document.createElement("button");
             btn.type = "button";
             btn.className = "pill-btn";
+            const isSelf = !!(rqCurrentUser && p && p.id === rqCurrentUser.id);
             const isFollowing = !!followingMap[p.id];
-            btn.textContent = isFollowing ? "Unfollow" : "Follow";
+            if (isSelf) {
+              btn.textContent = "You";
+              btn.disabled = true;
+            } else {
+              btn.textContent = isFollowing ? "Unfollow" : "Follow";
+            }
 
             btn.addEventListener("click", async function () {
+              if (isSelf) return;
               btn.disabled = true;
               try {
                 if (isFollowing) {
