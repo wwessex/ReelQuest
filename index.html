@@ -6459,6 +6459,22 @@ function moveEntryInList(listId, entryKeyValue, direction) {
       // --- Gravatar support (optional) ---
       // If the user hasn't set a custom profile photo URL, we can fall back to Gravatar
       // using the signed-in email (hashed with MD5). Kept dependency-free.
+
+      function rqDefaultDisplayName(user) {
+        try {
+          const u = user || rqCurrentUser;
+          if (!u) return "User";
+          const meta = (u.user_metadata && typeof u.user_metadata === "object") ? u.user_metadata : {};
+          const fromMeta = String(meta.full_name || meta.name || meta.username || "").trim();
+          if (fromMeta) return fromMeta;
+          const email = String(u.email || "").trim();
+          if (email && email.indexOf("@") !== -1) return email.split("@")[0];
+          const id = String(u.id || "").trim();
+          if (id) return "User-" + id.slice(0, 6);
+        } catch (e) {}
+        return "User";
+      }
+
       function rqMd5(str) {
         // Minimal MD5 implementation (public-domain style); fast enough for a single email hash.
         function cmn(q, a, b, x, s, t) {
@@ -6650,13 +6666,30 @@ function rqApplyAvatarToEl(imgEl, url, altText) {
       async function rqEnsureUserProfile(client, user) {
         if (!client || !user || !user.id) return null;
         let profile = await rqFetchUserProfile(client, user.id);
-        if (profile) return profile;
+        if (profile) {
+          // If profile exists but has no display name, set a sensible default (helps Social search)
+          try {
+            const dn = String(profile.display_name || "").trim();
+            if (!dn) {
+              const upd = await client.from("profiles")
+                .update({ display_name: rqDefaultDisplayName(user), country_region: profile.country_region || state.country || null })
+                .eq("id", user.id)
+                .select("id, display_name, avatar_url, country_region")
+                .maybeSingle();
+              if (upd && upd.error) throw upd.error;
+              return upd ? (upd.data || profile) : profile;
+            }
+          } catch (e) {}
+          return profile;
+        }
 
         // Create a profile row if missing (safe if table doesn't exist: will be caught)
         try {
           const ins = await client.from("profiles").upsert({
             id: user.id,
-            email: user.email || null
+            display_name: rqDefaultDisplayName(user),
+            avatar_url: null,
+            country_region: state.country || null
           }, { onConflict: "id" }).select("id, display_name, avatar_url, country_region").maybeSingle();
           if (ins && ins.error) throw ins.error;
           return ins ? ins.data : null;
@@ -7114,6 +7147,8 @@ function rqApplyAvatarToEl(imgEl, url, altText) {
       async function rqSocialSearchProfiles(q) {
         const query = String(q || "").trim();
         if (!query) return [];
+        const localPart = (query.indexOf("@") !== -1) ? query.split("@")[0] : query;
+
         const client = await rqSocialClient();
         if (!client) return [];
 
@@ -7121,7 +7156,7 @@ function rqApplyAvatarToEl(imgEl, url, altText) {
           const res = await client
             .from("profiles")
             .select("id, display_name, avatar_url, country_region")
-            .ilike("display_name", "%" + query + "%")
+            .ilike("display_name", "%" + localPart + "%")
             .limit(20);
 
           if (res && res.error) throw res.error;
@@ -8085,7 +8120,7 @@ const profileSub = document.createElement("div");
           headName.textContent = name;
           headEmail.textContent = user.email || "";
           rqApplyAvatarToEl(avatarImg, rqResolveAvatarUrl(user, profile, 128), name);
-          displayNameInput.value = profile && profile.display_name ? String(profile.display_name) : "";
+          displayNameInput.value = profile && profile.display_name ? String(profile.display_name) : rqDefaultDisplayName(user);
           avatarUrlInput.value = profile && profile.avatar_url ? String(profile.avatar_url) : "";
           const cc = normaliseCountryCode((profile && profile.country_region) ? profile.country_region : "", state.country || "GB");
           countrySelect.value = cc;
@@ -8100,8 +8135,10 @@ const profileSub = document.createElement("div");
             saveHint.textContent = "Saving…";
             const payload = {
               id: user.id,
-              email: user.email || null,
-              display_name: String(displayNameInput.value || "").trim() || null,
+              display_name: (function () {
+                const v = String(displayNameInput.value || "").trim();
+                return v ? v : rqDefaultDisplayName(user);
+              })(),
               avatar_url: String(avatarUrlInput.value || "").trim() || null,
               country_region: String(countrySelect.value || "").trim() || null
             };
