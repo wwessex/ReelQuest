@@ -1935,6 +1935,14 @@ body.theme-light .ripple-ink {
   display:flex;
   flex-direction:column;
   overflow:hidden;
+  /* Create a stacking context so our glass highlights never sit above controls on iOS Safari */
+  isolation:isolate;
+}
+
+/* Ensure interactive content sits above glass highlight/noise layers */
+.detail-panel > *{
+  position:relative;
+  z-index: 1;
 }
 .detail-hero{
   min-height: 140px;
@@ -1966,6 +1974,7 @@ body.theme-light .detail-hero::before{
 
 .detail-tabs{
   display:flex;
+  align-items:center;
   gap:8px;
   padding:10px 12px 8px;
   overflow:auto;
@@ -1973,14 +1982,26 @@ body.theme-light .detail-hero::before{
   background: rgba(0,0,0,0.10);
   border-top:1px solid rgba(255,255,255,0.10);
   border-bottom:1px solid rgba(255,255,255,0.10);
+  /* iOS Safari: keep taps reliable inside scrollable chips row */
+  position:relative;
+  z-index: 2;
 }
+
 .detail-tab-btn{
+  flex: 0 0 auto;
   white-space:nowrap;
   padding:8px 12px;
   border-radius:999px;
   background: rgba(255,255,255,0.06);
   border:1px solid rgba(255,255,255,0.12);
   color: var(--text-muted);
+  cursor: pointer;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  line-height: 1;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
 }
 .detail-tab-btn.active{
   color: var(--text-main);
@@ -2083,6 +2104,7 @@ body.theme-light .detail-sticky{ background: rgba(255,255,255,0.45); }
 .detail-panel::after{
   content:"";
   position:absolute;
+  z-index:0;
   inset:0;
   pointer-events:none;
   background:
@@ -2093,6 +2115,7 @@ body.theme-light .detail-sticky{ background: rgba(255,255,255,0.45); }
 .detail-panel::before{
   content:"";
   position:absolute;
+  z-index:0;
   inset:0;
   pointer-events:none;
   background-image:

@@ -8653,7 +8653,8 @@ function handleStreamingModeChange(e) {
           mediaType = normaliseMediaType(view.item.mediaType || "movie");
         } else if (view.tmdbMovie) {
           tmdbId = view.tmdbMovie.id;
-          mediaType = normaliseMediaType(view.mediaType || view.tmdbMovie.media_type || "movie");
+          const hinted = (view.tmdbMovie && (view.tmdbMovie.first_air_date || view.tmdbMovie.name)) ? "tv" : "movie";
+          mediaType = normaliseMediaType(view.mediaType || view.tmdbMovie.media_type || hinted || "movie");
         }
 
         if (!tmdbId) {
@@ -8687,13 +8688,25 @@ function handleStreamingModeChange(e) {
             : "";
           let title = "";
           if (details.title) {
-            title = details.title;
+            title = details.title; // movie
+          } else if (details.name) {
+            title = details.name; // tv
           } else if (view.item && view.item.title) {
             title = view.item.title;
+          } else if (view.item && view.item.name) {
+            title = view.item.name;
+          } else if (view.tmdbMovie && (view.tmdbMovie.title || view.tmdbMovie.name)) {
+            title = view.tmdbMovie.title || view.tmdbMovie.name;
           } else {
             title = "Untitled";
           }
-          const runtime = details.runtime ? details.runtime + " min" : "";
+          let runtime = "";
+          if (normaliseMediaType(mediaType) === "movie") {
+            runtime = details.runtime ? details.runtime + " min" : "";
+          } else {
+            const er = Array.isArray(details.episode_run_time) && details.episode_run_time.length ? details.episode_run_time[0] : null;
+            runtime = er ? (er + " min/ep") : "";
+          }
           const genresText = (details.genres || [])
             .map(function (g) {
               return g.name;
@@ -8737,6 +8750,8 @@ function handleStreamingModeChange(e) {
           const chips = [];
           if (details.release_date) {
             chips.push("Released " + details.release_date);
+          } else if (details.first_air_date) {
+            chips.push("First aired " + details.first_air_date);
           }
           if (details.original_language) {
             chips.push(
