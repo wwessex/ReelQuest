@@ -42,6 +42,13 @@
   --glass-shadow: 0 22px 60px rgba(0, 0, 0, 0.55);
   --glass-blur: 16px;
 
+  /* Extra-glassy detail popup (separate from general glass so we can push transparency safely) */
+  --detail-glass-bg: rgba(17, 24, 39, 0.42);
+  --detail-glass-border: rgba(148, 163, 184, 0.20);
+  --detail-glass-blur: 22px;
+  --detail-glass-sheen-1: rgba(255, 255, 255, 0.12);
+  --detail-glass-sheen-2: rgba(255, 255, 255, 0.02);
+
   /* Cloud gradients */
   --cloud-a: rgba(64, 188, 244, 0.18);
   --cloud-b: rgba(255, 128, 0, 0.12);
@@ -75,6 +82,13 @@ body.theme-light {
   --glass-border: rgba(15, 23, 42, 0.12);
   --glass-shadow: 0 22px 60px rgba(15, 23, 42, 0.18);
   --glass-blur: 18px;
+
+  /* Extra-glassy detail popup (light theme) */
+  --detail-glass-bg: rgba(255, 255, 255, 0.44);
+  --detail-glass-border: rgba(15, 23, 42, 0.10);
+  --detail-glass-blur: 24px;
+  --detail-glass-sheen-1: rgba(255, 255, 255, 0.16);
+  --detail-glass-sheen-2: rgba(255, 255, 255, 0.05);
 
   --cloud-a: rgba(64, 188, 244, 0.20);
   --cloud-b: rgba(255, 128, 0, 0.14);
@@ -1937,6 +1951,14 @@ body.theme-light .ripple-ink {
   overflow:hidden;
   /* Create a stacking context so our glass highlights never sit above controls on iOS Safari */
   isolation:isolate;
+
+  /* Make the popup *extra* glassy (more transparent + stronger blur) */
+  background:
+    linear-gradient(180deg, var(--detail-glass-sheen-1), var(--detail-glass-sheen-2)),
+    var(--detail-glass-bg) !important;
+  border: 1px solid var(--detail-glass-border) !important;
+  backdrop-filter: blur(var(--detail-glass-blur)) saturate(180%);
+  -webkit-backdrop-filter: blur(var(--detail-glass-blur)) saturate(180%);
 }
 
 /* Ensure interactive content sits above glass highlight/noise layers */
@@ -1990,7 +2012,8 @@ body.theme-light .detail-hero::before{
 .detail-tab-btn{
   flex: 0 0 auto;
   white-space:nowrap;
-  padding:8px 12px;
+  height: 34px;
+  padding:0 14px;
   border-radius:999px;
   background: rgba(255,255,255,0.06);
   border:1px solid rgba(255,255,255,0.12);
@@ -1999,7 +2022,9 @@ body.theme-light .detail-hero::before{
   display:flex;
   align-items:center;
   justify-content:center;
-  line-height: 1;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.15;
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
 }
