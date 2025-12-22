@@ -5716,12 +5716,16 @@ async function rqSocialIsFollowingMap(targetIds) {
         if (!client) return false;
 
         try {
+          // Upsert so tapping Follow repeatedly doesn't fail if a unique constraint exists.
           const payload = { follower_id: rqCurrentUser.id, following_id: targetId, created_at: new Date().toISOString() };
-          const res = await client.from(RQ_SOCIAL_FOLLOWS_TABLE).insert(payload);
+          const res = await client
+            .from(RQ_SOCIAL_FOLLOWS_TABLE)
+            .upsert(payload, { onConflict: "follower_id,following_id", ignoreDuplicates: true });
           if (res && res.error) throw res.error;
           return true;
         } catch (e) {
           rqSocialMarkMissingIfNeeded(e);
+          try { window.__csSocialLastError = String((e && (e.message || e.details)) || e || "Unknown error"); } catch (x) {}
           return false;
         }
       }
@@ -5742,6 +5746,7 @@ async function rqSocialIsFollowingMap(targetIds) {
           return true;
         } catch (e) {
           rqSocialMarkMissingIfNeeded(e);
+          try { window.__csSocialLastError = String((e && (e.message || e.details)) || e || "Unknown error"); } catch (x) {}
           return false;
         }
       }
@@ -6021,29 +6026,51 @@ async function rqSocialIsFollowingMap(targetIds) {
             const btn = document.createElement("button");
             btn.type = "button";
             btn.className = "pill-btn";
-            const isFollowing = !!followingMap[p.id];
-            if (isSelf) {
-              btn.textContent = "You";
-              btn.disabled = true;
-            } else {
-              btn.textContent = isFollowing ? "Unfollow" : "Follow";
+
+            // Use a friendlier label: Follow <-> Following (tap again to unfollow)
+            let isFollowing = !!followingMap[p.id];
+            function applyFollowBtnState(pending) {
+              if (isSelf) {
+                btn.textContent = "You";
+                btn.disabled = true;
+                btn.classList.remove("active");
+                return;
+              }
+              btn.disabled = !!pending;
+              if (pending) {
+                btn.textContent = isFollowing ? "Unfollowing…" : "Following…";
+                btn.classList.add("active");
+              } else {
+                btn.textContent = isFollowing ? "Following" : "Follow";
+                if (isFollowing) btn.classList.add("active");
+                else btn.classList.remove("active");
+              }
             }
+            applyFollowBtnState(false);
 
             btn.addEventListener("click", async function () {
               if (isSelf) return;
-              btn.disabled = true;
+              applyFollowBtnState(true);
               try {
-                if (isFollowing) {
-                  await rqSocialUnfollow(p.id);
-                } else {
-                  await rqSocialFollow(p.id);
+                const ok = isFollowing ? await rqSocialUnfollow(p.id) : await rqSocialFollow(p.id);
+
+                if (!ok) {
+                  const err = (function(){
+                    try { return window.__csSocialLastError ? String(window.__csSocialLastError) : ""; } catch(e) { return ""; }
+                  })();
+                  toast(err ? ("Couldn’t update follow: " + err) : "Couldn’t update follow (check server tables / permissions)." );
+                  applyFollowBtnState(false);
+                  return;
                 }
-                toast(isFollowing ? "Unfollowed." : "Following.");
-                // re-render
+
+                isFollowing = !isFollowing;
+                toast(isFollowing ? "Following." : "Unfollowed.");
+
+                // Re-render results to keep everything consistent (and refresh feed/realtime list)
                 await renderResults(rows);
                 await renderFeed();
               } finally {
-                btn.disabled = false;
+                applyFollowBtnState(false);
               }
             });
 
