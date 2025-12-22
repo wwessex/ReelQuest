@@ -1,7 +1,7 @@
 /* CineSafari service worker (network-first for navigation)
    Keeps the app loading after updates, and caches TMDB + images opportunistically.
 */
-const VERSION = "cs-sw-v19-detail-glass-tabs-align";
+const VERSION = "cs-sw-v20-header-gravatar-scrollfix";
 const SHELL = [
   "./",
   "./index.html",

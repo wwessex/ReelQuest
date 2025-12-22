@@ -9394,6 +9394,18 @@ const videos = details.videos && details.videos.results
         }
         state.activeTab = tab;
         kickViewAnimation();
+
+        // UX: when switching pages via bottom nav, always bring the user back to the top.
+        // This also guards against rare iOS Safari cases where the outer page scrolls and
+        // the top bar appears to "vanish".
+        try {
+          const reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+          if (els && els.main && typeof els.main.scrollTo === "function") {
+            els.main.scrollTo({ top: 0, behavior: reduce ? "auto" : "smooth" });
+          }
+        } catch (e) {}
+        try { window.scrollTo(0, 0); } catch (e) {}
+
         state.searchTerm = "";
         if (els.searchInput) els.searchInput.value = "";
         if (tab === "for-you") {

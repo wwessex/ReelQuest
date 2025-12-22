@@ -3,7 +3,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8"/>
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://image.tmdb.org; connect-src 'self' https://api.themoviedb.org https://image.tmdb.org https://*.supabase.co wss://*.supabase.co; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none';"/>
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://image.tmdb.org https://www.gravatar.com https://secure.gravatar.com; connect-src 'self' https://api.themoviedb.org https://image.tmdb.org https://*.supabase.co wss://*.supabase.co; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none';"/>
 <title>CineSafari</title>
 <meta content="width=device-width, initial-scale=1" name="viewport"/>
 <style>
@@ -141,6 +141,7 @@ color: var(--text-main);
       align-items: center;
       justify-content: space-between;
       gap: 12px;
+      flex-wrap: wrap;
     }
 
     .brand {
@@ -211,6 +212,13 @@ color: var(--text-main);
       align-items: center;
       gap: 8px;
       margin-left: auto;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    @media (max-width: 520px) {
+      /* Prevent the sync pill from ever colliding with the brand on narrow screens */
+      #status-pill { order: 99; }
     }
 
     .theme-toggle {
@@ -1480,8 +1488,9 @@ color: var(--text-main);
 }
 
 
-/* Watch progress status (Watchlist reality check) */
-.status-pill{
+/* Watch progress status (Watchlist reality check)
+   IMPORTANT: scope to cards so it doesn't affect the header sync pill. */
+.poster-wrapper .status-pill{
   position:absolute;
   left:10px;
   bottom:10px;
@@ -1818,6 +1827,7 @@ body.theme-light .ripple-ink {
 
 /* Status pill */
 .status-pill{
+  position: static;
   display:inline-flex;
   align-items:center;
   gap:8px;
@@ -1829,6 +1839,11 @@ body.theme-light .ripple-ink {
   border:1px solid var(--glass-border);
   backdrop-filter: blur(calc(var(--glass-blur) - 6px));
   -webkit-backdrop-filter: blur(calc(var(--glass-blur) - 6px));
+  white-space: nowrap;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
 }
 .status-pill.offline{ color: rgba(255, 200, 120, 0.95); }
 .status-pill.ready{ color: rgba(160, 255, 210, 0.95); }
