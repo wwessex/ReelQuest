@@ -470,6 +470,12 @@ function moodMatchesTmdb(tmdbObj) {
       const state = {
         activeTab: "for-you",
         searchTerm: "",
+        recentSearches: [],
+        searchPopular: [],
+        currentDetailItem: null,
+        currentDetailKey: "",
+        quickUi: { horrorShortcut: false },
+
         discoverResults: [],
         forYouResults: [],
         forYouLoading: false,
@@ -7801,10 +7807,22 @@ container.appendChild(pickBtn);
 function render() {
         updateCopyForTab();
 
+        try { renderQuickFilters(); } catch (e) {}
+        try { updateStatusPill(); } catch (e) {}
+
         for (let i = 0; i < els.tabButtons.length; i++) {
           const btn = els.tabButtons[i];
           btn.classList.toggle("active", btn.dataset.tab === state.activeTab);
         }
+
+        if (els.bottomNavButtons && els.bottomNavButtons.length) {
+          for (let i = 0; i < els.bottomNavButtons.length; i++) {
+            const btn = els.bottomNavButtons[i];
+            if (!btn || !btn.dataset) continue;
+            btn.classList.toggle("active", btn.dataset.tab === state.activeTab);
+          }
+        }
+
 
         if (els.sortSelect) els.sortSelect.value = state.sortBy;
         if (els.ratingFilterSelect) els.ratingFilterSelect.value = String(state.minRating);
@@ -7957,10 +7975,16 @@ function render() {
         }
         // Filtering is handled in getViewItemsForCurrentTab(); just re-render.
         render();
+        try {
+          if (els && els.searchInput && document.activeElement === els.searchInput) { showSearchSuggest(); }
+        } catch (e) {}
+
       }
 
       function handleSearchSubmit(e) {
         e.preventDefault();
+        try { pushRecentSearch(state.searchTerm); } catch (e) {}
+        try { hideSearchSuggest(); } catch (e) {}
         if (state.activeTab === "discover") {
           performDiscoverSearch();
         } else {
@@ -8100,6 +8124,527 @@ function handleStreamingModeChange(e) {
         els.detailOverlay.setAttribute("aria-hidden", "true");
       }
 
+
+      function setDetailTab(key) {
+        try {
+          const k = String(key || "overview");
+          const btns = els.detailTabButtons || [];
+          const secs = els.detailSections || [];
+          for (let i = 0; i < btns.length; i++) {
+            const b = btns[i];
+            const on = b && b.dataset && b.dataset.detailtab === k;
+            b.classList.toggle("active", !!on);
+            b.setAttribute("aria-selected", on ? "true" : "false");
+          }
+          for (let i = 0; i < secs.length; i++) {
+            const s = secs[i];
+            const on = s && s.dataset && s.dataset.detailsection === k;
+            s.classList.toggle("active", !!on);
+          }
+          // Keep scroll position tidy when switching sections
+          if (els.detailScroll) els.detailScroll.scrollTop = 0;
+        } catch (e) {}
+      }
+
+      function updateDetailSticky() {
+        const it = state.currentDetailItem || null;
+        if (!it) return;
+        try {
+          if (els.detailStickyWatchlist) {
+            els.detailStickyWatchlist.textContent = it.inWatchlist ? "✓ Watchlist" : "+ Watchlist";
+            els.detailStickyWatchlist.classList.toggle("active", !!it.inWatchlist);
+          }
+          if (els.detailStickyWatched) {
+            els.detailStickyWatched.textContent = it.watched ? "✓ Watched" : "○ Watched";
+            els.detailStickyWatched.classList.toggle("active", !!it.watched);
+          }
+        } catch (e) {}
+      }
+
+      function updateStatusPill() {
+        if (!els.statusPill) return;
+        try {
+          if (isOffline()) {
+            els.statusPill.textContent = "Offline";
+            els.statusPill.classList.add("offline");
+            els.statusPill.classList.remove("ready", "problem");
+            return;
+          }
+          let txt = "Local";
+          let cls = "";
+          if (typeof rqGetSyncStatusText === "function") {
+            const s = String(rqGetSyncStatusText() || "");
+            txt = (rqCurrentUser ? "Sync " : "Local ") + s;
+            if (s.indexOf("problem") !== -1 || s.indexOf("error") !== -1) cls = "problem";
+            else if (s.indexOf("connected") !== -1 || s.indexOf("ready") !== -1) cls = "ready";
+          } else if (rqCurrentUser) {
+            txt = "Signed in";
+            cls = "ready";
+          }
+          els.statusPill.textContent = txt;
+          els.statusPill.classList.toggle("ready", cls === "ready");
+          els.statusPill.classList.toggle("problem", cls === "problem");
+          els.statusPill.classList.remove("offline");
+        } catch (e) {}
+      }
+
+      function pushRecentSearch(term) {
+        const t = String(term || "").trim();
+        if (!t) return;
+        const next = [];
+        next.push(t);
+        const existing = Array.isArray(state.recentSearches) ? state.recentSearches : [];
+        for (let i = 0; i < existing.length; i++) {
+          const v = String(existing[i] || "").trim();
+          if (!v) continue;
+          if (v.toLowerCase() === t.toLowerCase()) continue;
+          next.push(v);
+          if (next.length >= 8) break;
+        }
+        state.recentSearches = next;
+        saveState();
+      }
+
+      async function ensureSearchPopular() {
+        if (Array.isArray(state.searchPopular) && state.searchPopular.length) return;
+        const cached = cacheGet("rq_cache_search_popular", 1000 * 60 * 60 * 12);
+        if (cached && Array.isArray(cached.results) && cached.results.length) {
+          state.searchPopular = cached.results;
+          return;
+        }
+        if (isOffline()) return;
+
+        try {
+          const url = new URL("https://api.themoviedb.org/3/trending/all/day");
+          url.searchParams.set("api_key", TMDB_API_KEY);
+          url.searchParams.set("language", "en-GB");
+          const data = await tmdbFetch(url);
+          const res = data && Array.isArray(data.results) ? data.results : [];
+          const slim = [];
+          for (let i = 0; i < res.length; i++) {
+            const m = res[i];
+            const mt = inferMediaTypeFromTmdb(m, "movie");
+            if (!m || !m.id) continue;
+            slim.push({
+              id: m.id,
+              media_type: mt,
+              title: titleFromTmdb(m),
+              poster_path: m.poster_path || null
+            });
+            if (slim.length >= 8) break;
+          }
+          state.searchPopular = slim;
+          cacheSet("rq_cache_search_popular", { results: slim });
+        } catch (e) {}
+      }
+
+      function hideSearchSuggest() {
+        if (!els.searchSuggest) return;
+        els.searchSuggest.classList.add("hidden");
+        els.searchSuggest.innerHTML = "";
+      }
+
+      function showSearchSuggest() {
+        if (!els.searchSuggest) return;
+        const q = String(state.searchTerm || "").trim().toLowerCase();
+        const root = els.searchSuggest;
+        root.innerHTML = "";
+
+        const recent = Array.isArray(state.recentSearches) ? state.recentSearches : [];
+        const recentFiltered = q ? recent.filter((x) => String(x).toLowerCase().indexOf(q) !== -1) : recent.slice();
+
+        if (recentFiltered.length) {
+          const title = document.createElement("div");
+          title.className = "ss-title";
+          title.textContent = "Recent searches";
+          root.appendChild(title);
+
+          for (let i = 0; i < recentFiltered.length; i++) {
+            const t = String(recentFiltered[i] || "");
+            const btn = document.createElement("button");
+            btn.type = "button";
+            btn.className = "ss-item";
+            btn.textContent = t;
+            btn.addEventListener("click", function () {
+              els.searchInput.value = t;
+              state.searchTerm = t;
+              hideSearchSuggest();
+              if (state.activeTab === "discover") performDiscoverSearch();
+              else render();
+            });
+            root.appendChild(btn);
+          }
+        }
+
+        const pop = Array.isArray(state.searchPopular) ? state.searchPopular : [];
+        if (!q && pop.length) {
+          const title2 = document.createElement("div");
+          title2.className = "ss-title";
+          title2.style.marginTop = recentFiltered.length ? "12px" : "2px";
+          title2.textContent = "Popular right now";
+          root.appendChild(title2);
+
+          for (let i = 0; i < pop.length; i++) {
+            const p = pop[i];
+            const btn = document.createElement("button");
+            btn.type = "button";
+            btn.className = "ss-item";
+            const left = document.createElement("span");
+            left.textContent = p.title || "Untitled";
+            const right = document.createElement("small");
+            right.textContent = (p.media_type === "tv") ? "TV" : "Film";
+            btn.appendChild(left);
+            btn.appendChild(right);
+            btn.addEventListener("click", function () {
+              hideSearchSuggest();
+              openDetailForView({ mode: "remote", tmdbMovie: { id: p.id, title: p.title, media_type: p.media_type }, mediaType: p.media_type });
+            });
+            root.appendChild(btn);
+          }
+        }
+
+        if (!root.childElementCount) {
+          hideSearchSuggest();
+          return;
+        }
+
+        root.classList.remove("hidden");
+      }
+
+      function renderQuickFilters() {
+        if (!els.quickFilters) return;
+        const root = els.quickFilters;
+        root.innerHTML = "";
+
+        const chips = [
+          { key: "unwatched", label: "Unwatched", icon: "🙈" },
+          { key: "watched", label: "Watched", icon: "✅" },
+          { key: "horror", label: "Horror", icon: "🔪" },
+          { key: "cinema", label: "In cinemas", icon: "🎟️" },
+          { key: "streaming", label: "Streaming", icon: "📺" }
+        ];
+
+        function isActive(key) {
+          if (key === "unwatched") return !!(state.filters && state.filters.hideWatched);
+          if (key === "horror") return (state.mood === "horror");
+          if (key === "streaming") return (state.streamingMode === "only");
+          if (key === "cinema") return (state.activeTab === "discover" && state.discoverMode === "now-playing");
+          return false;
+        }
+
+        for (let i = 0; i < chips.length; i++) {
+          const c = chips[i];
+          const b = document.createElement("button");
+          b.type = "button";
+          b.className = "qf-chip";
+          b.dataset.qf = c.key;
+          b.textContent = c.icon + " " + c.label;
+          b.classList.toggle("active", isActive(c.key));
+          b.addEventListener("click", function () {
+            const key = c.key;
+            if (key === "unwatched") {
+              if (state.activeTab === "watchlist") return;
+              // in rec/discover/radar: toggle hide watched
+              state.filters.hideWatched = !state.filters.hideWatched;
+              saveState();
+              toast(state.filters.hideWatched ? "Showing unwatched first." : "Showing watched + unwatched.");
+              render();
+            } else if (key === "watched") {
+              switchToTab("watched");
+            } else if (key === "horror") {
+              const next = (state.mood === "horror") ? "any" : "horror";
+              state.mood = next;
+              saveState();
+              if (els.moodSelect) els.moodSelect.value = next;
+              if (state.activeTab === "discover") loadPopularForDiscover();
+              else if (state.activeTab === "for-you") loadForYouRecommendations();
+              else if (state.activeTab === "radar") loadRadarUpcoming();
+              else { ensureDetailsForLocalTab(); render(); }
+            } else if (key === "cinema") {
+              switchToTab("discover");
+              loadNowPlayingForDiscover();
+            } else if (key === "streaming") {
+              const next = (state.streamingMode === "only") ? "any" : "only";
+              state.streamingMode = next;
+              saveState();
+              if (els.streamingSelect) els.streamingSelect.value = next;
+              render();
+            }
+          });
+          root.appendChild(b);
+        }
+      }
+
+      async function loadNowPlayingForDiscover() {
+        if (!els.message || !els.grid) return;
+        state.discoverMode = "now-playing";
+        els.message.style.display = "block";
+        els.message.textContent = "Loading what’s in cinemas…";
+        renderSkeletonGrid(12);
+
+        try {
+          const movieUrl = new URL("https://api.themoviedb.org/3/movie/now_playing");
+          movieUrl.searchParams.set("api_key", TMDB_API_KEY);
+          movieUrl.searchParams.set("language", "en-GB");
+          movieUrl.searchParams.set("region", (state.country || "GB"));
+          movieUrl.searchParams.set("page", "1");
+
+          const data = await tmdbFetch(movieUrl);
+          const res = Array.isArray(data.results) ? data.results : [];
+          for (let i = 0; i < res.length; i++) res[i].media_type = "movie";
+          state.discoverResults = res.slice(0, 40);
+          cacheSet("rq_cache_discover", { results: state.discoverResults, meta: { country: state.country, includeTv: false, mode: "now-playing" } });
+        } catch (e) {
+          console.error(e);
+        } finally {
+          render();
+        }
+      }
+
+      async function fetchCredits(tmdbId, mediaType) {
+        const mt = normaliseMediaType(mediaType);
+        const url = new URL("https://api.themoviedb.org/3/" + (mt === "tv" ? "tv" : "movie") + "/" + tmdbId + "/credits");
+        url.searchParams.set("api_key", TMDB_API_KEY);
+        url.searchParams.set("language", "en-GB");
+        const data = await tmdbFetch(url);
+        return data && Array.isArray(data.cast) ? data.cast : [];
+      }
+
+      async function fetchSimilarTitles(tmdbId, mediaType) {
+        const mt = normaliseMediaType(mediaType);
+        const base = "https://api.themoviedb.org/3/" + (mt === "tv" ? "tv" : "movie") + "/" + tmdbId + "/";
+        const recUrl = new URL(base + "recommendations");
+        recUrl.searchParams.set("api_key", TMDB_API_KEY);
+        recUrl.searchParams.set("language", "en-GB");
+        recUrl.searchParams.set("page", "1");
+        const simUrl = new URL(base + "similar");
+        simUrl.searchParams.set("api_key", TMDB_API_KEY);
+        simUrl.searchParams.set("language", "en-GB");
+        simUrl.searchParams.set("page", "1");
+
+        const pair = await Promise.allSettled([tmdbFetch(recUrl), tmdbFetch(simUrl)]);
+        const rec = (pair[0].status === "fulfilled" && pair[0].value && Array.isArray(pair[0].value.results)) ? pair[0].value.results : [];
+        const sim = (pair[1].status === "fulfilled" && pair[1].value && Array.isArray(pair[1].value.results)) ? pair[1].value.results : [];
+        const seen = {};
+        const out = [];
+        function add(list) {
+          for (let i = 0; i < list.length; i++) {
+            const m = list[i];
+            if (!m || !m.id) continue;
+            if (seen[m.id]) continue;
+            seen[m.id] = true;
+            m.media_type = mt;
+            out.push(m);
+            if (out.length >= 18) break;
+          }
+        }
+        add(rec); add(sim);
+        return out;
+      }
+
+      function renderDetailCast(cast) {
+        if (!els.detailCast) return;
+        els.detailCast.innerHTML = "";
+        const arr = Array.isArray(cast) ? cast.slice(0, 12) : [];
+        if (!arr.length) {
+          const none = document.createElement("div");
+          none.style.color = "var(--text-muted)";
+          none.style.fontSize = "12px";
+          none.textContent = "No cast data available.";
+          els.detailCast.appendChild(none);
+          return;
+        }
+        for (let i = 0; i < arr.length; i++) {
+          const c = arr[i];
+          const card = document.createElement("div");
+          card.className = "cast-pill";
+          const img = document.createElement("img");
+          img.alt = c.name || "";
+          if (c.profile_path) img.src = "https://image.tmdb.org/t/p/w185" + c.profile_path;
+          else img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="rgba(255,255,255,0.06)"/><text x="50%" y="54%" text-anchor="middle" fill="rgba(255,255,255,0.5)" font-size="18">👤</text></svg>');
+          card.appendChild(img);
+
+          const meta = document.createElement("div");
+          const nm = document.createElement("div");
+          nm.className = "cast-name";
+          nm.textContent = c.name || "Unknown";
+          const rl = document.createElement("div");
+          rl.className = "cast-role";
+          rl.textContent = c.character || "";
+          meta.appendChild(nm);
+          meta.appendChild(rl);
+          card.appendChild(meta);
+          els.detailCast.appendChild(card);
+        }
+      }
+
+      function renderDetailSimilar(items, title, mediaType, tmdbId) {
+        if (!els.detailSimilar) return;
+        els.detailSimilar.innerHTML = "";
+
+        const seeAll = document.createElement("button");
+        seeAll.type = "button";
+        seeAll.className = "pill-btn";
+        seeAll.textContent = "See more like this";
+        seeAll.addEventListener("click", function () {
+          closeDetail();
+          loadBecauseYouLiked(tmdbId, title, mediaType);
+        });
+        els.detailSimilar.appendChild(seeAll);
+
+        const arr = Array.isArray(items) ? items.slice(0, 14) : [];
+        if (!arr.length) {
+          const none = document.createElement("div");
+          none.style.color = "var(--text-muted)";
+          none.style.fontSize = "12px";
+          none.style.marginTop = "10px";
+          none.textContent = "No similar titles found.";
+          els.detailSimilar.appendChild(none);
+          return;
+        }
+
+        for (let i = 0; i < arr.length; i++) {
+          const m = arr[i];
+          const card = document.createElement("button");
+          card.type = "button";
+          card.className = "rail-item";
+          const img = document.createElement("img");
+          img.alt = titleFromTmdb(m);
+          if (m.poster_path) img.src = "https://image.tmdb.org/t/p/w342" + m.poster_path;
+          else img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="200" height="300"><rect width="200" height="300" fill="rgba(255,255,255,0.06)"/><text x="50%" y="52%" text-anchor="middle" fill="rgba(255,255,255,0.5)" font-size="32">🎬</text></svg>');
+          card.appendChild(img);
+
+          const t = document.createElement("div");
+          t.className = "rail-title";
+          t.textContent = titleFromTmdb(m);
+          const sub = document.createElement("div");
+          sub.className = "rail-sub";
+          const y = (m.release_date || m.first_air_date) ? String(m.release_date || m.first_air_date).slice(0,4) : "";
+          sub.textContent = y ? y : ((m.media_type === "tv") ? "TV" : "Film");
+          card.appendChild(t);
+          card.appendChild(sub);
+
+          card.addEventListener("click", function () {
+            openDetailForView({ mode: "remote", tmdbMovie: m, mediaType: normaliseMediaType(m.media_type || mediaType) });
+          });
+          els.detailSimilar.appendChild(card);
+        }
+      }
+
+      async function loadDetailExtras(details, mediaType, title) {
+        const key = state.currentDetailKey;
+        const id = details && details.id ? details.id : null;
+        if (!id) return;
+
+        // Providers
+        try {
+          if (els.detailWatch) {
+            els.detailWatch.innerHTML = "";
+            const providers = await fetchWatchProviders(id, mediaType);
+            if (state.currentDetailKey !== key) return;
+
+            const gb = providers && providers[(state.country || "GB")] ? providers[(state.country || "GB")] : null;
+            const wrap = document.createElement("div");
+
+            const providerLink = gb && gb.link ? gb.link : null;
+            if (providerLink) {
+              const jwBtn = document.createElement("a");
+              jwBtn.className = "pill-btn";
+              jwBtn.textContent = "Open on JustWatch";
+              jwBtn.href = providerLink;
+              jwBtn.target = "_blank";
+              jwBtn.rel = "noopener noreferrer";
+              jwBtn.style.display = "inline-flex";
+              jwBtn.style.marginTop = "2px";
+              wrap.appendChild(jwBtn);
+            }
+
+            const row = document.createElement("div");
+            row.style.display = "flex";
+            row.style.flexWrap = "wrap";
+            row.style.gap = "8px";
+            row.style.marginTop = "10px";
+
+            function addProviderPills(list, label) {
+              if (!list || !list.length) return;
+              const lab = document.createElement("div");
+              lab.style.width = "100%";
+              lab.style.fontSize = "12px";
+              lab.style.color = "var(--text-muted)";
+              lab.textContent = label;
+              row.appendChild(lab);
+              for (let i = 0; i < list.length; i++) {
+                const p = list[i];
+                const pill = document.createElement("span");
+                pill.className = "detail-chip";
+                if (providerLink) {
+                  pill.style.cursor = "pointer";
+                  pill.setAttribute("role", "link");
+                  pill.setAttribute("tabindex", "0");
+                  pill.addEventListener("click", function () { window.open(providerLink, "_blank", "noopener"); });
+                  pill.addEventListener("keydown", function (e) {
+                    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); window.open(providerLink, "_blank", "noopener"); }
+                  });
+                }
+                pill.style.display = "inline-flex";
+                pill.style.alignItems = "center";
+                pill.style.gap = "6px";
+                if (p.logo_path) {
+                  const img = document.createElement("img");
+                  img.src = "https://image.tmdb.org/t/p/w45" + p.logo_path;
+                  img.alt = p.provider_name;
+                  img.style.width = "18px";
+                  img.style.height = "18px";
+                  img.style.borderRadius = "4px";
+                  pill.appendChild(img);
+                }
+                const text = document.createElement("span");
+                text.textContent = p.provider_name;
+                pill.appendChild(text);
+                row.appendChild(pill);
+              }
+            }
+
+            if (gb) {
+              addProviderPills(gb.flatrate, "Stream");
+              addProviderPills(gb.rent, "Rent");
+              addProviderPills(gb.buy, "Buy");
+              if ((!gb.flatrate || !gb.flatrate.length) && (!gb.rent || !gb.rent.length) && (!gb.buy || !gb.buy.length)) {
+                const none = document.createElement("div");
+                none.style.fontSize = "12px";
+                none.style.color = "var(--text-muted)";
+                none.textContent = "No provider data available from TMDB for your selected country.";
+                row.appendChild(none);
+              }
+            } else {
+              const none = document.createElement("div");
+              none.style.fontSize = "12px";
+              none.style.color = "var(--text-muted)";
+              none.textContent = "No provider data available from TMDB for your selected country.";
+              row.appendChild(none);
+            }
+
+            wrap.appendChild(row);
+            els.detailWatch.appendChild(wrap);
+          }
+        } catch (e) {
+          // ignore provider failures
+        }
+
+        // Cast
+        try {
+          const cast = await fetchCredits(id, mediaType);
+          if (state.currentDetailKey !== key) return;
+          renderDetailCast(cast);
+        } catch (e) {}
+
+        // Similar
+        try {
+          const sims = await fetchSimilarTitles(id, mediaType);
+          if (state.currentDetailKey !== key) return;
+          renderDetailSimilar(sims, title, mediaType, id);
+        } catch (e) {}
+      }
       async function openDetailForView(view) {
         let tmdbId = null;
         let mediaType = "movie";
@@ -8123,6 +8668,14 @@ function handleStreamingModeChange(e) {
         els.detailChips.innerHTML = "";
         els.detailActions.innerHTML = "";
         els.detailLinks.innerHTML = "";
+        if (els.detailHero) { try { els.detailHero.style.backgroundImage = ""; } catch(e) {} }
+        if (els.detailCast) els.detailCast.innerHTML = "";
+        if (els.detailWatch) els.detailWatch.innerHTML = "";
+        if (els.detailSimilar) els.detailSimilar.innerHTML = "";
+        state.currentDetailItem = null;
+        state.currentDetailKey = "";
+        try { setDetailTab("overview"); } catch (e) {}
+        updateDetailSticky();
         els.detailOverlay.classList.remove("hidden");
         els.detailOverlay.setAttribute("aria-hidden", "false");
 
@@ -8165,6 +8718,16 @@ function handleStreamingModeChange(e) {
             els.detailPoster.appendChild(img);
           }
 
+          if (els.detailHero) {
+            try {
+              if (details.backdrop_path) {
+                els.detailHero.style.backgroundImage = "url(https://image.tmdb.org/t/p/w780" + details.backdrop_path + ")";
+              } else {
+                els.detailHero.style.backgroundImage = "";
+              }
+            } catch (e) {}
+          }
+
           const overview =
             details.overview ||
             (view.tmdbMovie && view.tmdbMovie.overview) ||
@@ -8196,6 +8759,10 @@ function handleStreamingModeChange(e) {
             view.mode === "local" && view.item
               ? view.item
               : ensureItemFromTmdb(details, mediaType);
+
+          state.currentDetailItem = linked;
+          state.currentDetailKey = normaliseMediaType(mediaType) + ":" + String(details.id || tmdbId);
+          updateDetailSticky();
 
           const watchBtn = document.createElement("button");
           watchBtn.type = "button";
@@ -8636,6 +9203,7 @@ orgGrid.appendChild(notesLabel);
 const notesArea = document.createElement("textarea");
 notesArea.className = "settings-textarea";
 notesArea.placeholder = "Add your notes…";
+notesArea.id = "detail-notes";
 notesArea.value = typeof linked.notes === "string" ? linked.notes : "";
 orgGrid.appendChild(notesArea);
 
@@ -8733,119 +9301,10 @@ orgGrid.appendChild(watchRow);
 
 els.detailActions.appendChild(orgWrap);
 
-          
+          // Cast / watch providers / similar
+          loadDetailExtras(details, mediaType, title);
 
-          // Where to watch (UK)
-          try {
-            const providers = await fetchWatchProviders(details.id);
-            const gb = providers && providers[(state.country || "GB")] ? providers[(state.country || "GB")] : null;
-            const wrap = document.createElement("div");
-            wrap.style.marginTop = "10px";
-
-            const heading = document.createElement("div");
-            heading.style.fontSize = "13px";
-            heading.style.fontWeight = "600";
-            heading.textContent = "Where to watch (" + (state.country || "GB") + ")";
-            wrap.appendChild(heading);
-
-            const providerLink = gb && gb.link ? gb.link : null;
-            if (providerLink) {
-              const jwBtn = document.createElement("a");
-              jwBtn.className = "pill-btn";
-              jwBtn.textContent = "Open on JustWatch";
-              jwBtn.href = providerLink;
-              jwBtn.target = "_blank";
-              jwBtn.rel = "noopener noreferrer";
-              jwBtn.style.display = "inline-flex";
-              jwBtn.style.marginTop = "8px";
-              wrap.appendChild(jwBtn);
-
-              const hint = document.createElement("div");
-              hint.style.fontSize = "12px";
-              hint.style.color = "var(--text-muted)";
-              hint.style.marginTop = "6px";
-              hint.textContent = "Provider buttons open the JustWatch page for this film.";
-              wrap.appendChild(hint);
-            }
-
-            const row = document.createElement("div");
-            row.style.display = "flex";
-            row.style.flexWrap = "wrap";
-            row.style.gap = "8px";
-            row.style.marginTop = "6px";
-
-            function addProviderPills(list, label) {
-              if (!list || !list.length) return;
-              const lab = document.createElement("div");
-              lab.style.width = "100%";
-              lab.style.fontSize = "12px";
-              lab.style.color = "var(--text-muted)";
-              lab.textContent = label;
-              row.appendChild(lab);
-              for (let i = 0; i < list.length; i++) {
-                const p = list[i];
-                const pill = document.createElement("span");
-                pill.className = "detail-chip";
-                if (providerLink) {
-                  pill.style.cursor = "pointer";
-                  pill.setAttribute("role", "link");
-                  pill.setAttribute("tabindex", "0");
-                  pill.addEventListener("click", function () {
-                    window.open(providerLink, "_blank", "noopener");
-                  });
-                  pill.addEventListener("keydown", function (e) {
-                    if (e.key === "Enter" || e.key === " ") {
-                      e.preventDefault();
-                      window.open(providerLink, "_blank", "noopener");
-                    }
-                  });
-                }
-                pill.style.display = "inline-flex";
-                pill.style.alignItems = "center";
-                pill.style.gap = "6px";
-                if (p.logo_path) {
-                  const img = document.createElement("img");
-                  img.src = "https://image.tmdb.org/t/p/w45" + p.logo_path;
-                  img.alt = p.provider_name;
-                  img.style.width = "18px";
-                  img.style.height = "18px";
-                  img.style.borderRadius = "4px";
-                  row.appendChild(pill);
-                  pill.appendChild(img);
-                }
-                const text = document.createElement("span");
-                text.textContent = p.provider_name;
-                pill.appendChild(text);
-                row.appendChild(pill);
-              }
-            }
-
-            if (gb) {
-              addProviderPills(gb.flatrate, "Stream");
-              addProviderPills(gb.rent, "Rent");
-              addProviderPills(gb.buy, "Buy");
-              if ((!gb.flatrate || !gb.flatrate.length) && (!gb.rent || !gb.rent.length) && (!gb.buy || !gb.buy.length)) {
-                const none = document.createElement("div");
-                none.style.fontSize = "12px";
-                none.style.color = "var(--text-muted)";
-                none.textContent = "No provider data available from TMDB for your selected country.";
-                row.appendChild(none);
-              }
-            } else {
-              const none = document.createElement("div");
-              none.style.fontSize = "12px";
-              none.style.color = "var(--text-muted)";
-              none.textContent = "No provider data available from TMDB for your selected country.";
-              row.appendChild(none);
-            }
-
-            wrap.appendChild(row);
-            els.detailLinks.appendChild(wrap);
-          } catch (e) {
-            // ignore provider failures
-          }
-
-          const videos = details.videos && details.videos.results
+const videos = details.videos && details.videos.results
             ? details.videos.results
             : [];
           let trailer = null;
@@ -9684,10 +10143,13 @@ async function init() {
         } catch (e) {}
         els = {
           tabButtons: document.querySelectorAll(".tab-btn"),
+          bottomNavButtons: document.querySelectorAll(".bottom-nav-btn"),
           sectionTitle: document.getElementById("section-title"),
           sectionSubtitle: document.getElementById("section-subtitle"),
           searchForm: document.getElementById("search-form"),
           searchInput: document.getElementById("search-input"),
+          searchSuggest: document.getElementById("search-suggest"),
+          quickFilters: document.getElementById("quick-filters"),
           message: document.getElementById("message"),
           grid: document.getElementById("card-grid"),
           settingsPanel: document.getElementById("settings-panel"),
@@ -9697,6 +10159,7 @@ async function init() {
           userChip: document.getElementById("user-chip"),
           userChipAvatar: document.getElementById("user-chip-avatar"),
           userChipName: document.getElementById("user-chip-name"),
+          statusPill: document.getElementById("status-pill"),
           debug: document.getElementById("debug"),
           controlsBar: document.getElementById("controls-bar"),
           sortSelect: document.getElementById("sort-select"),
@@ -9714,6 +10177,18 @@ async function init() {
           detailChips: document.getElementById("detail-chips"),
           detailActions: document.getElementById("detail-actions"),
           detailLinks: document.getElementById("detail-links"),
+          detailHero: document.getElementById("detail-hero"),
+          detailTabs: document.getElementById("detail-tabs"),
+          detailTabButtons: document.querySelectorAll(".detail-tab-btn"),
+          detailSections: document.querySelectorAll(".detail-section"),
+          detailScroll: document.getElementById("detail-scroll"),
+          detailCast: document.getElementById("detail-cast"),
+          detailWatch: document.getElementById("detail-watch"),
+          detailSimilar: document.getElementById("detail-similar"),
+          detailStickyWatchlist: document.getElementById("detail-sticky-watchlist"),
+          detailStickyWatched: document.getElementById("detail-sticky-watched"),
+          detailStickyRate: document.getElementById("detail-sticky-rate"),
+          detailStickyNotes: document.getElementById("detail-sticky-notes"),
           themeToggle: document.getElementById("theme-toggle"),
           settingsToggle: document.getElementById("settings-toggle"),
           menuToggle: document.getElementById("menu-toggle"),
@@ -9762,6 +10237,20 @@ try { rqCloudSyncOnAuthChange(); } catch (e) {}render();
           els.tabButtons[i].addEventListener("click", handleTabClick);
         }
 
+        if (els.bottomNavButtons && els.bottomNavButtons.length) {
+          for (let i = 0; i < els.bottomNavButtons.length; i++) {
+            const b = els.bottomNavButtons[i];
+            b.addEventListener("click", function () {
+              const t = b.dataset.tab;
+              if (t && t !== state.activeTab) {
+                try { closeDetail(); } catch (e) {}
+                try { closeMenu(); } catch (e) {}
+                switchToTab(t);
+              }
+            });
+          }
+        }
+
         if (els.brandHome) {
           els.brandHome.addEventListener("click", function () {
             if (state.activeTab !== "for-you") {
@@ -9780,6 +10269,21 @@ try { rqCloudSyncOnAuthChange(); } catch (e) {}render();
 
 
         if (els.searchInput) els.searchInput.addEventListener("input", handleSearchInput);
+        els.searchInput.addEventListener("focus", async function () {
+          try { await ensureSearchPopular(); } catch (e) {}
+          try { showSearchSuggest(); } catch (e) {}
+        });
+        els.searchInput.addEventListener("blur", function () {
+          // let clicks land
+          setTimeout(function () { try { hideSearchSuggest(); } catch (e) {} }, 160);
+        });
+        els.searchInput.addEventListener("keydown", function (e) {
+          if (e.key === "Escape") {
+            hideSearchSuggest();
+            try { els.searchInput.blur(); } catch (e2) {}
+          }
+        });
+
         if (els.searchForm) els.searchForm.addEventListener("submit", handleSearchSubmit);
         if (els.sortSelect) els.sortSelect.addEventListener("change", handleSortChange);
         if (els.ratingFilterSelect) els.ratingFilterSelect.addEventListener("change", handleRatingFilterChange);
@@ -9854,6 +10358,64 @@ try { rqCloudSyncOnAuthChange(); } catch (e) {}render();
             }
           });
         }
+
+
+        // Detail tabs
+        if (els.detailTabButtons && els.detailTabButtons.length) {
+          for (let i = 0; i < els.detailTabButtons.length; i++) {
+            els.detailTabButtons[i].addEventListener("click", function (e) {
+              const k =
+                e && e.currentTarget && e.currentTarget.dataset
+                  ? e.currentTarget.dataset.detailtab
+                  : "overview";
+              setDetailTab(k);
+            });
+          }
+        }
+
+        // Detail sticky actions
+        if (els.detailStickyWatchlist) {
+          els.detailStickyWatchlist.addEventListener("click", function () {
+            const it = state.currentDetailItem;
+            if (!it) return;
+            toggleWatchlistForItem(it);
+            updateDetailSticky();
+          });
+        }
+        if (els.detailStickyWatched) {
+          els.detailStickyWatched.addEventListener("click", function () {
+            const it = state.currentDetailItem;
+            if (!it) return;
+            toggleWatchedForItem(it);
+            updateDetailSticky();
+          });
+        }
+        if (els.detailStickyRate) {
+          els.detailStickyRate.addEventListener("click", function () {
+            setDetailTab("organise");
+            setTimeout(function () {
+              const el = document.getElementById("detail-rating");
+              if (el) el.scrollIntoView({ block: "center", behavior: "smooth" });
+              try { el && el.focus(); } catch (e) {}
+            }, 50);
+          });
+        }
+        if (els.detailStickyNotes) {
+          els.detailStickyNotes.addEventListener("click", function () {
+            setDetailTab("organise");
+            setTimeout(function () {
+              const el = document.getElementById("detail-notes");
+              if (el) el.scrollIntoView({ block: "center", behavior: "smooth" });
+              try { el && el.focus(); } catch (e) {}
+            }, 50);
+          });
+        }
+
+        // Sync/connection pill
+        window.addEventListener("online", function () { updateStatusPill(); });
+        window.addEventListener("offline", function () { updateStatusPill(); });
+        setInterval(updateStatusPill, 5000);
+        updateStatusPill();
 
         updateDebug("CineSafari ready (JS initialised) • build v16-stability-hotfix");
       }

@@ -46,8 +46,6 @@
   --cloud-a: rgba(64, 188, 244, 0.18);
   --cloud-b: rgba(255, 128, 0, 0.12);
   --cloud-c: rgba(139, 92, 246, 0.14);
-  --detail-glass-bg: rgba(17, 24, 39, 0.55);
-  --detail-glass-border: rgba(255, 255, 255, 0.16);
 }
 
 body.theme-light {
@@ -81,16 +79,7 @@ body.theme-light {
   --cloud-a: rgba(64, 188, 244, 0.20);
   --cloud-b: rgba(255, 128, 0, 0.14);
   --cloud-c: rgba(139, 92, 246, 0.12);
-  --detail-glass-bg: rgba(255, 255, 255, 0.66);
-  --detail-glass-border: rgba(15, 23, 42, 0.10);
 }
-
-body.theme-light .detail-close {
-  border-color: rgba(15, 23, 42, 0.10);
-  background: rgba(255, 255, 255, 0.45);
-  color: rgba(15, 23, 42, 0.70);
-}
-
 * {
       box-sizing: border-box;
       margin: 0;
@@ -745,49 +734,19 @@ color: var(--text-main);
     }
 
     .detail-panel {
-  max-width: 760px;
-  width: 100%;
-  max-height: 90vh;
-
-  /* Extra-glassy: more transparency + stronger blur */
-  background: var(--detail-glass-bg);
-  border: 1px solid var(--detail-glass-border);
-  border-radius: 24px;
-  padding: 16px 16px 18px;
-
-  box-shadow: 0 30px 90px rgba(0, 0, 0, 0.55);
-  backdrop-filter: blur(24px) saturate(160%);
-  -webkit-backdrop-filter: blur(24px) saturate(160%);
-
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  overflow: hidden;
-  position: relative;
-}
-
-/* Glass highlights / sheen */
-.detail-panel::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background:
-    radial-gradient(120% 70% at 18% 8%, rgba(255, 255, 255, 0.22), transparent 60%),
-    radial-gradient(90% 60% at 85% 0%, rgba(64, 188, 244, 0.18), transparent 55%),
-    radial-gradient(85% 60% at 10% 100%, rgba(255, 128, 0, 0.10), transparent 62%);
-  opacity: 0.9;
-}
-
-.detail-panel::after {
-  content: "";
-  position: absolute;
-  inset: 1px;
-  border-radius: 23px;
-  pointer-events: none;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  opacity: 0.55;
-}
+      max-width: 720px;
+      width: 100%;
+      max-height: 90vh;
+      background: var(--bg-elevated);
+      border-radius: 24px;
+      padding: 16px 16px 18px;
+      border: 1px solid var(--border-subtle);
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.8);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      overflow: hidden;
+    }
 
     .detail-header {
       display: flex;
@@ -813,29 +772,19 @@ color: var(--text-main);
     }
 
     .detail-close {
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  width: 32px;
-  height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-
-  background: rgba(255, 255, 255, 0.06);
-  color: var(--text-muted);
-  font-size: 16px;
-  cursor: pointer;
-  flex-shrink: 0;
-
-  backdrop-filter: blur(16px) saturate(150%);
-  -webkit-backdrop-filter: blur(16px) saturate(150%);
-  transition: transform 0.08s ease, background 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
-}
-.detail-close:hover {
-  background: rgba(255, 255, 255, 0.10);
-  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.35);
-}
-.detail-close:active { transform: translateY(1px) scale(0.97); }
+      border-radius: 999px;
+      border: 1px solid var(--border-subtle);
+      width: 30px;
+      height: 30px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--bg);
+      color: var(--text-muted);
+      font-size: 16px;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
 
     .detail-body {
       display: flex;
@@ -1849,6 +1798,309 @@ body.theme-light .ripple-ink {
   }
   .ripple-ink { display: none !important; }
 }
+/* =============================
+   Modern UI add-ons (bottom nav, suggestions, detail tabs)
+   ============================= */
+
+/* Status pill */
+.status-pill{
+  display:inline-flex;
+  align-items:center;
+  gap:8px;
+  font-size:11px;
+  padding:6px 10px;
+  border-radius:999px;
+  color:var(--text-muted);
+  background:var(--glass-bg);
+  border:1px solid var(--glass-border);
+  backdrop-filter: blur(calc(var(--glass-blur) - 6px));
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur) - 6px));
+}
+.status-pill.offline{ color: rgba(255, 200, 120, 0.95); }
+.status-pill.ready{ color: rgba(160, 255, 210, 0.95); }
+.status-pill.problem{ color: rgba(255, 160, 160, 0.95); }
+
+/* Search suggestions */
+.search-wrapper{ position:relative; }
+.search-suggest{
+  position:absolute;
+  top:calc(100% + 8px);
+  left:0;
+  right:0;
+  z-index:60;
+  padding:10px;
+  border-radius:16px;
+  background: var(--glass-bg-strong);
+  border:1px solid var(--glass-border);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  box-shadow: var(--glass-shadow);
+}
+.search-suggest.hidden{ display:none; }
+.search-suggest .ss-title{
+  font-size:11px;
+  color:var(--text-muted);
+  margin:2px 2px 8px;
+}
+.search-suggest .ss-item{
+  width:100%;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  text-align:left;
+  padding:10px 10px;
+  border-radius:14px;
+  background: var(--glass-bg);
+  border:1px solid var(--glass-border);
+  color: var(--text-main);
+}
+.search-suggest .ss-item + .ss-item{ margin-top:8px; }
+.search-suggest .ss-item:hover{ filter: brightness(1.06); }
+.search-suggest .ss-item small{ color: var(--text-muted); }
+
+/* Quick filters row */
+.quick-filters{
+  display:flex;
+  gap:10px;
+  flex-wrap:nowrap;
+  overflow:auto;
+  padding:8px 2px 2px;
+  margin-top:10px;
+  -webkit-overflow-scrolling: touch;
+}
+.quick-filters:empty{ display:none; }
+.qf-chip{
+  display:inline-flex;
+  align-items:center;
+  gap:8px;
+  white-space:nowrap;
+  padding:8px 12px;
+  border-radius:999px;
+  background: var(--glass-bg);
+  border:1px solid var(--glass-border);
+  color: var(--text-main);
+}
+.qf-chip.active{
+  background: linear-gradient(135deg, rgba(255,255,255,0.12), rgba(255,255,255,0.02)), var(--accent-pill-bg);
+  border:1px solid rgba(255,255,255,0.14);
+}
+.qf-chip:active{ transform: translateY(1px); }
+
+/* Bottom navigation (mobile) */
+.bottom-nav{
+  position:fixed;
+  left:10px;
+  right:10px;
+  bottom:10px;
+  z-index:70;
+  display:none;
+  gap:10px;
+  padding:10px;
+  border-radius:22px;
+  background: var(--glass-bg-strong);
+  border:1px solid var(--glass-border);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  box-shadow: var(--glass-shadow);
+}
+.bottom-nav-btn{
+  flex:1;
+  min-width:0;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap:4px;
+  border-radius:16px;
+  padding:10px 8px;
+  background: transparent;
+  border:1px solid transparent;
+  color: var(--text-muted);
+}
+.bottom-nav-btn .bn-label{ font-size:11px; }
+.bottom-nav-btn.active{
+  color: var(--text-main);
+  background: rgba(255,255,255,0.06);
+  border:1px solid rgba(255,255,255,0.12);
+}
+@media (max-width: 780px){
+  .bottom-nav{ display:flex; padding-bottom: calc(10px + env(safe-area-inset-bottom)); }
+  main{ padding-bottom: 110px; }
+}
+
+/* Detail panel: hero + tabs + sections + sticky actions */
+.detail-panel{
+  position:relative;
+  display:flex;
+  flex-direction:column;
+  overflow:hidden;
+}
+.detail-hero{
+  min-height: 140px;
+  padding: 14px 14px 10px;
+  background-size: cover;
+  background-position: center;
+  background-image: radial-gradient(1200px 500px at 20% 0%, rgba(64,188,244,0.30), rgba(64,188,244,0.00)),
+                    radial-gradient(800px 420px at 90% 10%, rgba(255,128,0,0.20), rgba(255,128,0,0.00));
+}
+.detail-hero::before{
+  content:"";
+  position:absolute;
+  inset:0;
+  background: linear-gradient(180deg, rgba(0,0,0,0.20), rgba(0,0,0,0.70));
+  pointer-events:none;
+}
+body.theme-light .detail-hero::before{
+  background: linear-gradient(180deg, rgba(255,255,255,0.25), rgba(255,255,255,0.75));
+}
+.detail-hero-inner{
+  position:relative;
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:12px;
+}
+.detail-hero .detail-title,
+.detail-hero .detail-meta{ text-shadow: 0 8px 24px rgba(0,0,0,0.45); }
+
+.detail-tabs{
+  display:flex;
+  gap:8px;
+  padding:10px 12px 8px;
+  overflow:auto;
+  -webkit-overflow-scrolling: touch;
+  background: rgba(0,0,0,0.10);
+  border-top:1px solid rgba(255,255,255,0.10);
+  border-bottom:1px solid rgba(255,255,255,0.10);
+}
+.detail-tab-btn{
+  white-space:nowrap;
+  padding:8px 12px;
+  border-radius:999px;
+  background: rgba(255,255,255,0.06);
+  border:1px solid rgba(255,255,255,0.12);
+  color: var(--text-muted);
+}
+.detail-tab-btn.active{
+  color: var(--text-main);
+  background: linear-gradient(135deg, rgba(255,255,255,0.12), rgba(255,255,255,0.02)), var(--accent-pill-bg);
+  border:1px solid rgba(255,255,255,0.16);
+}
+.detail-scroll{
+  flex:1;
+  overflow:auto;
+  -webkit-overflow-scrolling: touch;
+}
+.detail-section{ display:none; padding: 14px; }
+.detail-section.active{ display:block; animation: csViewUp 220ms ease-out; }
+.detail-section-title{
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: 4px 0 10px;
+}
+
+/* Overview layout stays as before */
+.detail-body{ gap: 14px; }
+
+/* Cast rail */
+.cast-rail{
+  display:flex;
+  gap:10px;
+  overflow:auto;
+  padding-bottom: 4px;
+}
+.cast-pill{
+  min-width: 120px;
+  max-width: 160px;
+  display:flex;
+  gap:10px;
+  align-items:center;
+  padding:10px;
+  border-radius:16px;
+  background: var(--glass-bg);
+  border:1px solid var(--glass-border);
+}
+.cast-pill img{
+  width:38px;
+  height:38px;
+  border-radius:999px;
+  object-fit:cover;
+}
+.cast-pill .cast-name{ font-size: 12px; font-weight: 700; }
+.cast-pill .cast-role{ font-size: 11px; color: var(--text-muted); }
+
+/* Similar rail */
+.detail-rail{
+  display:flex;
+  gap:12px;
+  overflow:auto;
+  padding-bottom: 6px;
+}
+.rail-item{
+  min-width: 120px;
+  max-width: 140px;
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+  padding:10px;
+  border-radius:16px;
+  background: var(--glass-bg);
+  border:1px solid var(--glass-border);
+}
+.rail-item img{
+  width:100%;
+  aspect-ratio: 2 / 3;
+  object-fit: cover;
+  border-radius:14px;
+}
+.rail-item .rail-title{
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+.rail-item .rail-sub{
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* Sticky actions row */
+.detail-sticky{
+  position:sticky;
+  bottom:0;
+  display:flex;
+  gap:10px;
+  padding:10px 12px;
+  background: rgba(0,0,0,0.22);
+  border-top:1px solid rgba(255,255,255,0.12);
+  backdrop-filter: blur(calc(var(--glass-blur) - 8px));
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur) - 8px));
+}
+body.theme-light .detail-sticky{ background: rgba(255,255,255,0.45); }
+.detail-sticky .pill-btn{ flex:1; justify-content:center; }
+
+/* Glass realism: edge light + subtle noise */
+.detail-panel::after{
+  content:"";
+  position:absolute;
+  inset:0;
+  pointer-events:none;
+  background:
+    linear-gradient(135deg, rgba(255,255,255,0.18), rgba(255,255,255,0.00) 35%),
+    linear-gradient(315deg, rgba(0,0,0,0.22), rgba(0,0,0,0.00) 35%);
+  opacity: 0.55;
+}
+.detail-panel::before{
+  content:"";
+  position:absolute;
+  inset:0;
+  pointer-events:none;
+  background-image:
+    repeating-linear-gradient(0deg, rgba(255,255,255,0.035), rgba(255,255,255,0.035) 1px, rgba(0,0,0,0.0) 2px, rgba(0,0,0,0.0) 4px),
+    repeating-linear-gradient(90deg, rgba(255,255,255,0.02), rgba(255,255,255,0.02) 1px, rgba(0,0,0,0.0) 2px, rgba(0,0,0,0.0) 5px);
+  opacity: 0.06;
+  mix-blend-mode: overlay;
+}
 </style>
 <link href="./manifest.webmanifest" rel="manifest"/>
 <meta content="#0b1220" name="theme-color"/>
@@ -1871,6 +2123,8 @@ body.theme-light .ripple-ink {
   <img id="user-chip-avatar" alt="" />
   <span id="user-chip-name"></span>
 </button>
+
+<div class="status-pill" id="status-pill" role="status" aria-live="polite">Local</div>
 
 <button aria-label="Menu" class="theme-toggle burger-btn" id="menu-toggle" type="button">
           ☰
@@ -1903,6 +2157,7 @@ body.theme-light .ripple-ink {
 <div class="search-wrapper">
 <span class="search-icon">🔍</span>
 <input class="search-input" id="search-input" placeholder="Search within your recommendations…" type="search"/>
+<div class="search-suggest hidden" id="search-suggest" role="listbox" aria-label="Search suggestions"></div>
 </div>
 </form><div class="controls-bar" id="controls-bar">
 <div class="controls-group">
@@ -1963,28 +2218,90 @@ body.theme-light .ripple-ink {
 <div class="debug" id="debug"></div>
 </main>
 </div>
+<!-- Bottom navigation (mobile-first) -->
+<nav class="bottom-nav" id="bottom-nav" aria-label="Bottom navigation">
+  <button class="bottom-nav-btn" type="button" data-tab="for-you" aria-label="For You">
+    <span class="bn-icon" aria-hidden="true">🏠</span>
+    <span class="bn-label">For You</span>
+  </button>
+  <button class="bottom-nav-btn" type="button" data-tab="discover" aria-label="Discover">
+    <span class="bn-icon" aria-hidden="true">🔭</span>
+    <span class="bn-label">Discover</span>
+  </button>
+  <button class="bottom-nav-btn" type="button" data-tab="watchlist" aria-label="Watchlist">
+    <span class="bn-icon" aria-hidden="true">📌</span>
+    <span class="bn-label">Watchlist</span>
+  </button>
+  <button class="bottom-nav-btn" type="button" data-tab="lists" aria-label="Lists">
+    <span class="bn-icon" aria-hidden="true">🗂️</span>
+    <span class="bn-label">Lists</span>
+  </button>
+  <button class="bottom-nav-btn" type="button" data-tab="account" aria-label="Account">
+    <span class="bn-icon" aria-hidden="true">👤</span>
+    <span class="bn-label">Account</span>
+  </button>
+</nav>
 <!-- Detail overlay -->
 <div aria-hidden="true" class="detail-overlay hidden" id="detail-overlay">
-<div aria-modal="true" class="detail-panel" role="dialog">
-<div class="detail-header">
-<div class="detail-title-block">
-<div class="detail-title" id="detail-title"></div>
-<div class="detail-meta" id="detail-meta"></div>
-</div>
-<button aria-label="Close" class="detail-close" id="detail-close" type="button">
-          ×
-        </button>
-</div>
-<div class="detail-body">
-<div class="detail-poster" id="detail-poster"></div>
-<div class="detail-main">
-<div class="detail-overview" id="detail-overview"></div>
-<div class="detail-chips" id="detail-chips"></div>
-<div class="detail-actions" id="detail-actions"></div>
-<div id="detail-links"></div>
-</div>
-</div>
-</div>
+  <div aria-modal="true" class="detail-panel" role="dialog">
+    <div class="detail-hero" id="detail-hero">
+      <div class="detail-hero-inner">
+        <div class="detail-title-block">
+          <div class="detail-title" id="detail-title"></div>
+          <div class="detail-meta" id="detail-meta"></div>
+        </div>
+        <button aria-label="Close" class="detail-close" id="detail-close" type="button">×</button>
+      </div>
+    </div>
+
+    <div class="detail-tabs" id="detail-tabs" role="tablist" aria-label="Title sections">
+      <button class="detail-tab-btn active" type="button" data-detailtab="overview" role="tab" aria-selected="true">Overview</button>
+      <button class="detail-tab-btn" type="button" data-detailtab="cast" role="tab" aria-selected="false">Cast</button>
+      <button class="detail-tab-btn" type="button" data-detailtab="watch" role="tab" aria-selected="false">Where to watch</button>
+      <button class="detail-tab-btn" type="button" data-detailtab="similar" role="tab" aria-selected="false">Similar</button>
+      <button class="detail-tab-btn" type="button" data-detailtab="organise" role="tab" aria-selected="false">Organise</button>
+    </div>
+
+    <div class="detail-scroll" id="detail-scroll">
+      <section class="detail-section active" data-detailsection="overview" role="tabpanel">
+        <div class="detail-body">
+          <div class="detail-poster" id="detail-poster"></div>
+          <div class="detail-main">
+            <div class="detail-overview" id="detail-overview"></div>
+            <div class="detail-chips" id="detail-chips"></div>
+            <div id="detail-links"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="detail-section" data-detailsection="cast" role="tabpanel">
+        <div class="detail-section-title">Top cast</div>
+        <div class="cast-rail" id="detail-cast"></div>
+      </section>
+
+      <section class="detail-section" data-detailsection="watch" role="tabpanel">
+        <div class="detail-section-title">Where to watch</div>
+        <div class="detail-watch" id="detail-watch"></div>
+      </section>
+
+      <section class="detail-section" data-detailsection="similar" role="tabpanel">
+        <div class="detail-section-title">More like this</div>
+        <div class="detail-rail" id="detail-similar"></div>
+      </section>
+
+      <section class="detail-section" data-detailsection="organise" role="tabpanel">
+        <div class="detail-section-title">Your stuff</div>
+        <div class="detail-actions" id="detail-actions"></div>
+      </section>
+    </div>
+
+    <div class="detail-sticky" id="detail-sticky">
+      <button class="pill-btn" id="detail-sticky-watchlist" type="button">+ Watchlist</button>
+      <button class="pill-btn" id="detail-sticky-watched" type="button">✓ Watched</button>
+      <button class="pill-btn" id="detail-sticky-rate" type="button">★ Rate</button>
+      <button class="pill-btn" id="detail-sticky-notes" type="button">✎ Notes</button>
+    </div>
+  </div>
 </div>
 <!-- Burger menu overlay (mobile) -->
 <div aria-hidden="true" class="menu-overlay hidden" id="menu-overlay">
